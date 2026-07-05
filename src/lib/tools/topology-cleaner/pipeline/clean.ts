@@ -1,65 +1,26 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { buildCoverageCleanInput, runCoverageClean } from "$lib/db/coverageClean";
 
 // The topology-cleaner pipeline. Reads the loader-owned `layer_01` (fid, geom)
 // + `layer_attr` tables, then runs DuckDB spatial's ST_CoverageClean over the
-// whole coverage. ST_CoverageClean is a scalar over a GEOMETRY[] that returns a
-// collection in the SAME order as the input list, so we freeze the input order
-// once (tc_input) and rejoin cleaned elements to their fid by the top-level
-// dump-path index.
+// whole coverage via the shared src/lib/db/coverageClean.ts helpers (also used
+// by Edge Extender's input-clean gate and merge finalization).
 
-// DuckDB accepts scientific notation in numeric literals, but format defensively.
-function fmt(n: number): string {
-  return Number.isFinite(n) ? n.toString() : "-1";
-}
-
-// Build the frozen input list ONCE per load. Both array_agg's share the same
-// ORDER BY fid in one SELECT so geoms[i] ↔ fids[i] — the explicit ordering is
-// load-bearing because preserve_insertion_order=false is set globally.
-// Returns the feature count (length of the list).
+// Build the frozen input list ONCE per load (tc_input). `inputTable` is the
+// frozen list to clean (tc_input, or the precision-reduced tc_input_reduced on
+// the robustness-retry path).
 export async function buildInput(conn: AsyncDuckDBConnection): Promise<number> {
-  await conn.query(`--sql
-    CREATE OR REPLACE TABLE tc_input AS
-    SELECT
-      array_agg(geom ORDER BY fid)::GEOMETRY[] AS geoms,
-      array_agg(fid  ORDER BY fid)             AS fids
-    FROM layer_01
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-  `);
-  const r = await conn.query("SELECT COALESCE(len(fids), 0) AS n FROM tc_input");
-  return Number((r.toArray()[0] as { n: bigint | number }).n ?? 0);
+  return buildCoverageCleanInput(conn, "layer_01", "tc_input");
 }
 
-// Run ST_CoverageClean and explode the resulting collection back to one row per
-// input feature. We key on the top-level dump path index (s.path[1], 1-based),
-// regrouping a cleaned MultiPolygon element's parts ([2,1],[2,2]) back to one
-// fid with a per-element (tiny) ST_Union_Agg — never a global union. ST_Dump
-// drops EMPTY elements, so collapsed polygons simply don't appear in the output
-// (the caller derives the collapsed count from the row delta).
-//
-// snap=-1 (auto): GEOS computes tolerance as dataset_diameter/1e8, which absorbs
-// float jitter and crossing-edge topology without needing an explicit value.
 // `gapDeg` is already in degrees (see units.ts); 0 = no gap filling.
-// `inputTable` is the frozen list to clean (tc_input, or the precision-reduced
-// tc_input_reduced on the robustness-retry path).
 export async function buildClean(
   conn: AsyncDuckDBConnection,
   targetTable: string,
   gapDeg: number,
   inputTable = "tc_input",
 ): Promise<void> {
-  await conn.query(`--sql
-    CREATE OR REPLACE TABLE ${targetTable} AS
-    WITH cleaned AS (
-      SELECT fids, ST_CoverageClean(geoms, -1, ${fmt(gapDeg)}) AS coll
-      FROM ${inputTable}
-    ),
-    dumped AS (
-      SELECT fids, UNNEST(ST_Dump(coll)) AS s FROM cleaned
-    )
-    SELECT fids[s.path[1]] AS fid, ST_MakeValid(ST_Union_Agg(s.geom)) AS geom
-    FROM dumped
-    GROUP BY fids[s.path[1]]
-  `);
+  await runCoverageClean(conn, inputTable, targetTable, { snap: -1, gap: gapDeg });
 }
 
 // Precision-reduced copy of layer_01, built lazily for GEOS overlay-robustness

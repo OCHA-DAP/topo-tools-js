@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { tableToGeoJSON } from "$lib/db/geojson";
+import { stageCleanInput } from "./clean";
 import { stageLines } from "./lines";
 import { stageMerge } from "./merge";
 import { stagePoints } from "./points";
@@ -75,7 +76,12 @@ export async function runPipeline(
   distance: number,
   onProgress: ProgressFn,
 ): Promise<PipelineResult> {
-  // Stage 2: lines (single attempt; _02a/_02b are stable across retries)
+  // Repair input coverage violations (overlaps/gaps) before the algorithm runs
+  // — Voronoi generation assumes a clean starting coverage. No-op, and no
+  // progress update, when the input already has no invalid edges.
+  await stageCleanInput(conn);
+
+  // Stage 2: lines (single attempt; _02a is stable across retries)
   onProgress(2, "Extracting boundary lines");
   await stageLines(conn);
 

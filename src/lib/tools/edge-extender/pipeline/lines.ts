@@ -37,19 +37,6 @@ export async function stageLines(conn: AsyncDuckDBConnection): Promise<void> {
     LEFT JOIN layer_02_tmp2 AS n ON a.fid = n.afid
   `);
 
-  await conn.query(`--sql
-    CREATE OR REPLACE TABLE layer_02b AS
-    SELECT UNNEST(ST_Dump(ST_LineMerge(geom))).geom AS geom
-    FROM (
-      SELECT ST_CollectionExtract(
-        ST_Intersection(a.geom, n.neighbor_union), 2
-      ) AS geom
-      FROM layer_02_tmp1 AS a
-      JOIN layer_02_tmp2 AS n ON a.fid = n.afid
-    )
-    WHERE NOT ST_IsEmpty(geom)
-  `);
-
   await conn.query("DROP TABLE IF EXISTS layer_02_tmp1");
   await conn.query("DROP TABLE IF EXISTS layer_02_tmp2");
 }
