@@ -1,9 +1,10 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { stageCleanInput } from "./clean";
+import { computeEffectiveDistance } from "./distance";
 import { stageLines } from "./lines";
 import { stageMerge } from "./merge";
-import { stagePoints } from "./points";
+import { buildSegments, stagePoints } from "./points";
 import { stageVoronoi } from "./voronoi";
 
 export type ProgressFn = (stage: number, label: string) => void;
@@ -73,7 +74,6 @@ async function runValidation(
 
 export async function runPipeline(
   conn: AsyncDuckDBConnection,
-  distance: number,
   onProgress: ProgressFn,
 ): Promise<PipelineResult> {
   // Repair input coverage violations (overlaps/gaps) before the algorithm runs
@@ -85,48 +85,57 @@ export async function runPipeline(
   onProgress(2, "Extracting boundary lines");
   await stageLines(conn);
 
+  // Segments are distance-independent — build once, reuse across every retry attempt below.
+  await buildSegments(conn);
+
   // Stages 3+4: points → MAX_POINTS check → voronoi, retry with doubling
   let succeeded = false;
   let lastFailedStage = "";
-  let lastDistance = distance;
-  for (let i = 0; i < MAX_ATTEMPTS; i++) {
-    const d = distance * Math.pow(2, i);
-    lastDistance = d;
-    let inVoronoi = false;
-    try {
-      onProgress(
-        3,
-        i === 0
-          ? "Interpolating points"
-          : `Interpolating points (retry ${i}, distance=${d.toFixed(6)}, ${lastFailedStage} failed)`,
-      );
-      await stagePoints(conn, d);
+  let lastDistance = 0;
+  try {
+    const startDistance = await computeEffectiveDistance(conn);
+    lastDistance = startDistance;
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      const d = startDistance * Math.pow(2, i);
+      lastDistance = d;
+      let inVoronoi = false;
+      try {
+        onProgress(
+          3,
+          i === 0
+            ? "Interpolating points"
+            : `Interpolating points (retry ${i}, distance=${d.toFixed(6)}, ${lastFailedStage} failed)`,
+        );
+        await stagePoints(conn, d);
 
-      const cnt = Number(
-        (await conn.query("SELECT COUNT(*) AS n FROM layer_03b")).toArray()[0].n,
-      );
-      if (cnt > MAX_POINTS) throw new Error(`too many points: ${cnt.toLocaleString()}`);
+        const cnt = Number(
+          (await conn.query("SELECT COUNT(*) AS n FROM layer_03b")).toArray()[0].n,
+        );
+        if (cnt > MAX_POINTS) throw new Error(`too many points: ${cnt.toLocaleString()}`);
 
-      inVoronoi = true;
-      onProgress(4, "Building Voronoi diagram");
-      await stageVoronoi(conn);
+        inVoronoi = true;
+        onProgress(4, "Building Voronoi diagram");
+        await stageVoronoi(conn);
 
-      succeeded = true;
-      break;
-    } catch (e) {
-      lastFailedStage = inVoronoi ? "voronoi" : "points";
-      console.warn(`Attempt ${i + 1} failed at ${lastFailedStage} stage (distance=${d}):`, e);
-      // Drop only points/voronoi tables; preserve _02a/_02b across retries.
-      for (const t of [
-        "layer_03a",
-        "layer_03b",
-        "layer_04_tmp1",
-        "layer_04_tmp2",
-        "layer_04",
-      ]) {
-        await conn.query(`DROP TABLE IF EXISTS ${t}`);
+        succeeded = true;
+        break;
+      } catch (e) {
+        lastFailedStage = inVoronoi ? "voronoi" : "points";
+        console.warn(`Attempt ${i + 1} failed at ${lastFailedStage} stage (distance=${d}):`, e);
+        // Drop only points/voronoi tables; preserve _02a/_02b across retries.
+        for (const t of [
+          "layer_03a",
+          "layer_03b",
+          "layer_04_tmp1",
+          "layer_04_tmp2",
+          "layer_04",
+        ]) {
+          await conn.query(`DROP TABLE IF EXISTS ${t}`);
+        }
       }
     }
+  } finally {
+    await conn.query("DROP TABLE IF EXISTS layer_03_tmp1");
   }
   if (!succeeded) {
     const failedStageNum = lastFailedStage === "voronoi" ? 4 : 3;

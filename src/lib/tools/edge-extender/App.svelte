@@ -17,7 +17,6 @@
   ];
 
   let files = $state<File[]>([]);
-  let distance = $state(0.0002);
   let running = $state(false);
   let currentStage = $state(0); // 0=idle, 1-5=active stage, 6=done
   let errorStage = $state(0); // stage number that failed, 0=none
@@ -92,14 +91,10 @@
       }
       originalGeoJSON = origGeoJSON;
 
-      const result = await runPipeline(
-        duckdbState.conn!,
-        distance,
-        (stage, label) => {
-          currentStage = stage;
-          stageLabel = label;
-        },
-      );
+      const result = await runPipeline(duckdbState.conn!, (stage, label) => {
+        currentStage = stage;
+        stageLabel = label;
+      });
 
       resultGeoJSON = result.geojson;
       resultBounds = result.bounds ?? resultBounds;
@@ -179,25 +174,6 @@
         disabled={running}
         helpText="Polygon layer in WGS84 — admin boundaries, basins, etc. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />
-
-      <details class="advanced">
-        <summary>Advanced settings</summary>
-        <div class="field">
-          <label for="distance">Point spacing along boundary</label>
-          <input
-            id="distance"
-            type="number"
-            bind:value={distance}
-            min="0.00001"
-            step="0.0001"
-            disabled={running}
-          />
-          <p class="field-hint">
-            Default 0.0002° (~22 m) handles country-scale data. Increase to ~0.002° for world-scale;
-            decrease to ~0.00002° for neighbourhood-scale.
-          </p>
-        </div>
-      </details>
 
       {#if running || errorStage > 0}
         <ol class="stages">
@@ -349,58 +325,6 @@
     color: #6b7280;
     margin: 0;
     line-height: 1.4;
-  }
-
-  .advanced {
-    font-size: 0.8rem;
-  }
-
-  .advanced > summary {
-    cursor: pointer;
-    color: #6b7280;
-    user-select: none;
-    padding: 0.1rem 0;
-  }
-
-  .advanced > summary:hover {
-    color: #374151;
-  }
-
-  .advanced[open] > summary {
-    margin-bottom: 0.5rem;
-  }
-
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .field label {
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: #374151;
-  }
-
-  .field input {
-    padding: 0.4rem 0.6rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    width: 100%;
-    box-sizing: border-box;
-    background: #fff;
-  }
-
-  .field input:disabled {
-    background: #f3f4f6;
-    color: #9ca3af;
-  }
-
-  .field-hint {
-    font-size: 0.75rem;
-    color: #9ca3af;
-    margin: 0;
   }
 
   .stages {
