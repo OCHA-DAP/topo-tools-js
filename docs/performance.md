@@ -45,7 +45,19 @@ The mitigation: wrap the join with `SET memory_limit = '999GB'` and restore the 
 
 An earlier version also created an explicit `USING RTREE (geom)` index on `_04_tmp1` before the join. It has been removed. Edge-extender's RTREE-index experiment (`edge-extender/docs/performance.md`) measured the same `_04_tmp1` site as net-negative: SPATIAL_JOIN already builds its own internal spatial index, so the explicit RTREE was a redundant index that the planner had to weigh, plus a 0.9s build cost. Dropping it also dodges the v1.5.x "RTree indexes can only be created over GEOMETRY columns" rejection on CRS-tagged outputs from `ST_Read` (GeoPackage etc.), which removed the load-time WKB strip that had been added as a workaround.
 
-The 999GB override is **not** applied anywhere else in the pipeline. `lines.ts` (bbox self-join), `merge.ts` `_05_tmp1` (bbox-prefiltered NOT EXISTS), and `merge.ts` `_05` (bbox-prefiltered LEFT JOIN) all plan as `PIECEWISE_MERGE_JOIN` or `HASH_JOIN` and stay safely within the WASM heap.
+The 999GB override is **not** applied anywhere else in the pipeline. `lines.ts` (bbox self-join) and `merge.ts` (bbox-prefiltered joins in `layer_05_tmp1`/`layer_05_tmp2`) all plan as `PIECEWISE_MERGE_JOIN` or `HASH_JOIN` and stay safely within the WASM heap.
+
+---
+
+## Voronoi collinearity cap and memory-budget-derived distance (`points.ts`, `distance.ts`)
+
+Ported from edge-extender's `ce7fc0f`/`a3b1687`/`7f0a1a4` (see that repo's `docs/voronoi-memory.md` for the full derivation and profiling history). Two related fixes, both driven by the same root cause: a flat, user-supplied interpolation distance either wastes detail on fine boundaries or lets pathological inputs blow up.
+
+**Segment cap.** `points.ts`'s `buildSegments` decomposes each `layer_02a` line into real vertex-to-vertex segments (`layer_03_tmp1`), independent of distance. `stagePoints` then caps interpolation density on any segment longer than `distance * MAX_POINTS_PER_SEGMENT` (100) — this bounds the size of the largest exactly-collinear point cluster fed to `ST_VoronoiDiagram`, which otherwise degrades toward worst-case behaviour independent of point count on long, straight, collinear boundaries (e.g. desert admin lines). Normal (non-capped) segments are re-merged per fid and resampled with the original whole-line formula, so the fix doesn't put a raw-vertex-count floor under every file's point count.
+
+**Memory-budget-derived starting distance.** `distance.ts`'s `computeEffectiveDistance` replaces the old flat/user-supplied starting distance (the "Point spacing along boundary" Advanced-settings field has been removed — a coarser manual override could never win over natural-resolution auto-detection anyway) with `MAX(MIN(DEFAULT_DISTANCE, naturalRes), totalLength / targetPointBudget)`, using `current_setting('memory_limit')` as the `--memory-gb` equivalent from the Python port. `naturalRes` (median real segment length) lets finer-than-default boundaries start sharper; the budget term protects files whose exterior boundary would otherwise generate more points than the browser's memory budget can hold. If the raw segment count alone (independent of any resampling) already exceeds the budget, this falls back to `DEFAULT_DISTANCE` with a console warning rather than blocking — `memory_limit` is a soft target, not a hard gate, same as the Python port's `--memory-gb`.
+
+**Constants not yet WASM-calibrated.** The memory-model constants (`REMERGE_BYTES_PER_RAW_SEGMENT`, `BASELINE_OVERHEAD_MB`, `BYTES_PER_POINT`, `SAFETY_MARGIN`) are carried over verbatim from the Python port's fitted values — measured against native GEOS process RSS inside a real `--memory=4g --memory-swap=4g` Docker container. WASM's `memory.grow()` physical-page-only model has no swap and different per-allocation overhead than a native GEOS process, so these should be treated as a provisional safeguard, not a validated budget, pending real-device recalibration.
 
 ---
 
@@ -66,9 +78,9 @@ The 999GB override is **not** applied anywhere else in the pipeline. `lines.ts` 
 | ----- | ------ | -------------- | ----- |
 | Load | `loader.ts` | Low | File buffer registered directly; no copy |
 | Lines | `lines.ts` | Medium | Bbox-self-join materializes per-polygon neighbor unions (3–10 geoms each). No global aggregate. |
-| Points | `points.ts` | Low–medium | Proportional to interpolated point count. `MAX_POINTS = 10M` enforces a hard cap with retry-and-double-distance fallback. |
+| Points | `points.ts`, `distance.ts` | Low–medium | Starting distance is derived per-file from `memory_limit` + natural boundary resolution (`distance.ts`), not user-supplied. Segments longer than `distance * MAX_POINTS_PER_SEGMENT` are capped to avoid Voronoi collinearity degeneracy. `MAX_POINTS = 10M` enforces a hard cap with retry-and-double-distance fallback. |
 | **Voronoi** | `voronoi.ts` | **High** | `ST_VoronoiDiagram(ST_Collect(list(geom)))` materialises entire point cloud in GEOS. `_04_tmp2` join uses the `999GB` override. Retry mechanism doubles spacing until it fits. |
-| **Merge** | `merge.ts` | **High** | `ST_Node(ST_Collect(...))` collects all interior + extension boundaries. The corner-snap step (`_05_tmp2`) snaps to a discrete corner set rather than nearest segment — see `merge.ts` for the rationale. Bbox-prefiltered `_05_tmp1` and `_05` joins avoid SPATIAL_JOIN. |
+| **Merge** | `merge.ts` | **High** | Per-part bbox-prefiltered neighbor-union differencing (`layer_05_tmp1`/`layer_05_tmp2`) computes each fid's Voronoi-cell remainder against nearby originals, then a single whole-table `ST_CoverageClean` pass (`layer_05_tmp3` → `layer_05`) closes floating-point-scale seams left by the independent per-fid `ST_Difference` calls. Bbox-prefiltered joins avoid SPATIAL_JOIN. |
 | Export | `index.ts` | Medium | `ST_AsGeoJSON` per row, then JS string concat. Validation checks (overlap / gap / row count) run first; `runValidation` warnings go to console. |
 
 The retry loop in `pipeline/index.ts` (up to 10 attempts, doubling distance each time) is the safety valve for Points and Voronoi OOMs. It only covers stages 3–4; an OOM at lines (stage 2) or merge (stage 5) propagates as an unrecoverable error — the user is expected to fall back to the Python `edge-extender` for inputs that don't fit.
