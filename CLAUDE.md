@@ -100,3 +100,24 @@ File drop → format detection + ZIP extraction (DropZone)
 ### Supported input formats
 
 GeoJSON, GeoParquet, GeoPackage, Shapefile (zip), KML, GML, GPX. Loader detects format, extracts from ZIPs via `fflate`, and registers buffers with DuckDB. GeoParquet is loaded without `ST_Read` (no geometry tag); all others use `ST_Read`.
+
+## Test Datasets
+
+A full portolan catalog (real, large-scale admin boundary data, multiple
+countries and admin levels, some with multiple historical versions) is
+available for at-scale/real-data stress testing in the browser (drop a file
+in via the tool's DropZone):
+
+- **Local copy**: `/Users/computer/GitHub/OCHA-DAP/hdx-scraper-cod-ab-global/portolan`
+- **Live/canonical source**: [source.coop/hdx/cod-ab](https://source.coop/hdx/cod-ab),
+  STAC root catalog at `https://data.source.coop/hdx/cod-ab/catalog.json`
+  (`id: portolan`; per-country `child` links, e.g. `./chl/catalog.json`)
+
+STAC-like layout: `{iso3}/{latest,vNN}/{adm0..adm3,lines,points}/{original,
+extended,matched}.parquet`. Distinct `vNN` directories are always genuinely
+different content (a new `vNN` is only cut when the boundaries actually
+change), and `latest` points to whichever `vNN` is newest — but not every
+country has more than one `vNN` yet, so there's no old/new pair to diff
+(e.g. Chile only has `v01` so far). Check for multiple `vNN` directories
+before picking a country for an old/new comparison; Philippines admin3
+`v02`→`v03` is a real diff, used for `change`'s first at-scale test.
