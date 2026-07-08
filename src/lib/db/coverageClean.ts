@@ -71,6 +71,42 @@ export async function runCoverageClean(
   `);
 }
 
+// Runs ST_CoverageClean on `table` in place, but only if
+// ST_CoverageInvalidEdges_Agg actually flags a defect on it first. Mirrors
+// Edge Extender's original input-side clean gate — forcing ST_CoverageClean
+// unconditionally onto data that doesn't need it was tried early in the WASM
+// noding investigation (docs/wasm-geos-noding-investigation.md, fix #1) and
+// made the crash rate *worse*, because ST_CoverageClean's own WASM-GEOS
+// implementation has its own robustness edges that get exercised more often
+// the more it's called. Every caller that wants a "clean this derived output"
+// pass should go through this gate rather than calling ST_CoverageClean
+// directly. A CoverageClean failure here is swallowed (warn + leave `table`
+// untouched) rather than propagated — a not-quite-seamless output is still a
+// valid, usable result; failing the whole run over a cosmetic cleanup step
+// isn't worth it. Always pass `preserveOriginal: true` semantics implicitly
+// (this always uses it) so `table`'s fid set never changes.
+export async function gatedCoverageClean(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  opts: CoverageCleanOptions = {},
+): Promise<void> {
+  const r = await conn.query(`--sql
+    SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL AS bad
+    FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${table})
+  `);
+  if (!r.toArray()[0].bad) return;
+
+  const scratch = `${table}_cc_gated`;
+  try {
+    await buildCoverageClean(conn, table, scratch, { preserveOriginal: true, ...opts });
+    await conn.query(`CREATE OR REPLACE TABLE ${table} AS SELECT * FROM ${scratch}`);
+  } catch (e) {
+    console.warn(`CoverageClean failed on ${table}, leaving as-is:`, e);
+  } finally {
+    await conn.query(`DROP TABLE IF EXISTS ${scratch}`);
+  }
+}
+
 // One-shot convenience wrapper for callers that don't need to reuse the frozen
 // input array across a retry (e.g. Topology Cleaner's precision-reduction
 // retry path reuses buildCoverageCleanInput/runCoverageClean directly instead).

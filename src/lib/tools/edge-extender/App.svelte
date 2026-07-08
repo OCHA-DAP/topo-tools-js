@@ -1,7 +1,6 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
-  import { loadClipFile, loadFile } from "$lib/db/loader";
-  import { runClip } from "./pipeline/clip";
+  import { loadFile } from "$lib/db/loader";
   import { getOriginalGeojson, PipelineError, runPipeline } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
@@ -26,17 +25,17 @@
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let error = $state<string | null>(null);
 
-  let clipFiles = $state<File[]>([]);
-  let clipRunning = $state(false);
-  let clipStageLabel = $state("");
-  let clipGeoJSON = $state<string | null>(null);
-  let clipError = $state<string | null>(null);
-
   let clearMap: (() => void) | undefined;
-  let clearClip: (() => void) | undefined;
 
   onMount(() => {
     initDuckDB();
+  });
+
+  $effect(() => {
+    if (duckdbState.ready) {
+      // @ts-expect-error temporary debug hook, removed after manual QA
+      window.__dbg = { conn: duckdbState.conn, db: duckdbState.db };
+    }
   });
 
   $effect(() => {
@@ -44,15 +43,6 @@
     if (f.length > 0 && duckdbState.ready) {
       untrack(() => {
         if (!running) handleRun();
-      });
-    }
-  });
-
-  $effect(() => {
-    const f = clipFiles;
-    if (f.length > 0 && resultGeoJSON) {
-      untrack(() => {
-        if (!clipRunning) handleClip();
       });
     }
   });
@@ -67,11 +57,6 @@
     currentStage = 0;
     errorStage = 0;
     stageLabel = "";
-    clipFiles = [];
-    clipGeoJSON = null;
-    clipError = null;
-    await duckdbState.conn?.query("DROP TABLE IF EXISTS clip_layer");
-    await duckdbState.conn?.query("DROP TABLE IF EXISTS layer_clip");
 
     try {
       currentStage = 1;
@@ -126,26 +111,6 @@
   function fileStem(file: File): string {
     return file.name.replace(/\.[^.]+$/, "");
   }
-
-  async function handleClip() {
-    clearClip?.();
-    clipError = null;
-    clipRunning = true;
-    clipGeoJSON = null;
-    try {
-      clipStageLabel = "Loading clip file…";
-      await loadClipFile(duckdbState.db!, duckdbState.conn!, clipFiles);
-      clipStageLabel = "Clipping…";
-      const result = await runClip(duckdbState.conn!);
-      clipGeoJSON = result.geojson;
-      resultBounds = result.bounds ?? resultBounds;
-    } catch (e) {
-      clipError = e instanceof Error ? e.message : String(e);
-    } finally {
-      clipRunning = false;
-      clipStageLabel = "";
-    }
-  }
 </script>
 
 <div class="layout">
@@ -168,7 +133,6 @@
     {/if}
 
     <section class="step">
-      <h2 class="step-heading">Step 1 — Extend boundaries</h2>
       <DropZone
         bind:files
         disabled={running}
@@ -207,38 +171,6 @@
       {/if}
     </section>
 
-    {#if resultGeoJSON}
-    <section class="step">
-      <h2 class="step-heading">
-        Step 2 — Clip to a known boundary <span class="optional">(optional)</span>
-      </h2>
-      <p class="step-blurb">
-        Trim the extended result to a boundary you trust (e.g. an official ADM0) to remove ocean
-        overshoot.
-      </p>
-      <DropZone
-        bind:files={clipFiles}
-        disabled={!resultGeoJSON || running || clipRunning}
-        helpText="Single polygon (or polygons) to clip the extended result to."
-        disabledMessage="Finish Step 1 first"
-      />
-      {#if clipRunning}
-        <p class="clip-status">{clipStageLabel}</p>
-      {/if}
-      {#if clipError}
-        <div class="error-panel">{clipError}</div>
-      {/if}
-      {#if clipGeoJSON}
-        <DownloadMenu
-          primaryLabel="Download GeoJSON (matched)"
-          filenameStem={fileStem(clipFiles[0])}
-          cachedGeoJSON={clipGeoJSON}
-          exportSource="clip"
-        />
-      {/if}
-    </section>
-    {/if}
-
     <p class="privacy">Your files never leave your device.</p>
   </aside>
 
@@ -246,11 +178,9 @@
     <MapView
       geojson={resultGeoJSON}
       originalGeojson={originalGeoJSON}
-      clipGeojson={clipGeoJSON}
       bounds={resultBounds}
       processing={running}
       registerClear={(fn: () => void) => { clearMap = fn; }}
-      registerClearClip={(fn: () => void) => { clearClip = fn; }}
     />
   </div>
 </div>
@@ -305,26 +235,6 @@
     gap: 0.75rem;
     padding-top: 0.75rem;
     border-top: 1px solid #e5e7eb;
-  }
-
-  .step-heading {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #111;
-    margin: 0;
-  }
-
-  .optional {
-    font-weight: 400;
-    color: #9ca3af;
-    font-size: 0.85rem;
-  }
-
-  .step-blurb {
-    font-size: 0.8rem;
-    color: #6b7280;
-    margin: 0;
-    line-height: 1.4;
   }
 
   .stages {
@@ -408,11 +318,5 @@
   .map-container {
     height: 100%;
     overflow: hidden;
-  }
-
-  .clip-status {
-    font-size: 0.825rem;
-    color: #6b7280;
-    margin: 0;
   }
 </style>

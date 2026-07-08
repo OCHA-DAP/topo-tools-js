@@ -14,7 +14,7 @@
     type TableRow,
     type ComparisonMethod,
   } from "./pipeline";
-  import { detectColumns, type ColumnGuess } from "./pipeline/columns";
+  import { detectColumns, type ColumnGuess } from "$lib/db/columns";
   import { buildKeyed, loadSide } from "./pipeline/load";
 
   const STAGE_LABELS = [

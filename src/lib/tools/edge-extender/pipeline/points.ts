@@ -20,6 +20,7 @@ const MAX_POINTS_PER_SEGMENT = 100;
 // exterior), and partitioning by fid alone would wrongly stitch the last vertex of one piece
 // to the first vertex of the next.
 export async function buildSegments(conn: AsyncDuckDBConnection): Promise<void> {
+  console.log("[EE-DEBUG] points:buildSegments (layer_03_tmp1)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_03_tmp1 AS
     WITH lines AS (
@@ -53,6 +54,7 @@ export async function stagePoints(conn: AsyncDuckDBConnection, distance: number)
   // Buffered union of all line endpoints — marks the shared-boundary zone.
   // Subtracting this zone from interpolated points removes redundant Voronoi
   // generators at junction vertices.
+  console.log("[EE-DEBUG] points:1 buffer+union boundary zone (layer_03a)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_03a AS
     SELECT ST_Union_Agg(ST_Buffer(ST_Boundary(geom), ${SNAP_TOLERANCE})) AS geom
@@ -68,6 +70,7 @@ export async function stagePoints(conn: AsyncDuckDBConnection, distance: number)
   // before resampling restores the old arc-length behaviour, which can shrink below the raw
   // vertex count as distance grows, for the overwhelming majority of segments that were never
   // the pathological case to begin with.
+  console.log("[EE-DEBUG] points:2 interpolate long segments (layer_03_tmp2)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_03_tmp2 AS
     SELECT
@@ -84,6 +87,7 @@ export async function stagePoints(conn: AsyncDuckDBConnection, distance: number)
     WHERE seg_len > ${capThreshold}
   `);
 
+  console.log("[EE-DEBUG] points:3 remerge+interpolate normal segments (layer_03_tmp3)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_03_tmp3 AS
     SELECT
@@ -105,6 +109,7 @@ export async function stagePoints(conn: AsyncDuckDBConnection, distance: number)
   // against the shared-boundary zone — differencing per segment instead of per fid caused a
   // ~240x call-count blowup that OOM'd Indonesia-scale inputs in the Python port. Aggregating
   // first restores the original per-fid call count regardless of segment count.
+  console.log("[EE-DEBUG] points:4 union both branches (layer_03_tmp4)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_03_tmp4 AS
     SELECT fid, ST_Union_Agg(geom) AS geom FROM (
@@ -118,6 +123,7 @@ export async function stagePoints(conn: AsyncDuckDBConnection, distance: number)
   // Points from above minus the shared-boundary zone, union'd with line endpoints also minus
   // the shared-boundary zone. CROSS JOIN against single-row layer_03a is safe (nested loop, no
   // SPATIAL_JOIN).
+  console.log("[EE-DEBUG] points:5 difference vs boundary zone (layer_03b)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_03b AS
     SELECT fid, geom FROM (
@@ -137,6 +143,7 @@ export async function stagePoints(conn: AsyncDuckDBConnection, distance: number)
     )
     WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `);
+  console.log("[EE-DEBUG] points:6 done, dropping tmp tables");
 
   await conn.query("DROP TABLE IF EXISTS layer_03_tmp2");
   await conn.query("DROP TABLE IF EXISTS layer_03_tmp3");

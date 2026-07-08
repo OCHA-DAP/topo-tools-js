@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { gatedCoverageClean } from "$lib/db/coverageClean";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { stageCleanInput } from "./clean";
 import { computeEffectiveDistance } from "./distance";
@@ -19,6 +20,39 @@ export class PipelineError extends Error {
 const MAX_ATTEMPTS = 10;
 const MAX_POINTS = 10_000_000;
 
+// Every table this pipeline creates downstream of the caller-supplied
+// layer_01/layer_attr. Dropped defensively at the start of every run so
+// runPipeline is safe to call repeatedly against changing input in the same
+// session (e.g. once per group in Edge Matcher) without the caller having
+// to track internal table names — a stale leftover here would otherwise be
+// silently picked up by the next run's ST_Union_Agg/JOIN calls.
+const INTERNAL_TABLES = [
+  "layer_01_tmp_clean",
+  "layer_02_tmp1",
+  "layer_02_tmp2",
+  "layer_02a",
+  "layer_03_tmp1",
+  "layer_03a",
+  "layer_03b",
+  "layer_03_tmp2",
+  "layer_03_tmp3",
+  "layer_03_tmp4",
+  "layer_04_tmp1",
+  "layer_04_tmp2",
+  "layer_04",
+  "layer_04_orig",
+  "layer_05_tmp1",
+  "layer_05_tmp2",
+  "layer_05",
+  "layer_05_cc_gated",
+];
+
+async function dropInternalTables(conn: AsyncDuckDBConnection): Promise<void> {
+  for (const t of INTERNAL_TABLES) {
+    await conn.query(`DROP TABLE IF EXISTS ${t}`);
+  }
+}
+
 export interface PipelineResult {
   geojson: string;
   bounds: [number, number, number, number] | null;
@@ -27,6 +61,12 @@ export interface PipelineResult {
 export async function getOriginalGeojson(conn: AsyncDuckDBConnection): Promise<string> {
   return tableToGeoJSON(conn, "layer_01", null);
 }
+
+// Gap width for every gatedCoverageClean call in this pipeline: ~111mm, this
+// investigation's established ceiling for derived-geometry precision fixes
+// (docs/wasm-geos-noding-investigation.md) — small enough to never touch a
+// real, intentional cartographic gap.
+export const OUTPUT_CLEAN_GAP = 1e-6;
 
 async function runValidation(
   conn: AsyncDuckDBConnection,
@@ -72,20 +112,40 @@ async function runValidation(
   }
 }
 
+export interface RunPipelineOptions {
+  // Edge Matcher calls runPipeline once per group, then clips and
+  // accumulates every group's output into one final assembled result before
+  // running its own single gatedCoverageClean pass over the whole batch —
+  // cleaning per-group here as well would just be redundant middle-of-the-
+  // pipeline cleaning of geometry that gets reshaped again before the real
+  // final output exists. Plain Edge Extender (a single, non-looped
+  // runPipeline call) leaves this false: layer_05 genuinely is (one of) its
+  // final outputs, so cleaning here is cleaning at the end, not the middle.
+  skipOutputClean?: boolean;
+}
+
 export async function runPipeline(
   conn: AsyncDuckDBConnection,
   onProgress: ProgressFn,
+  { skipOutputClean = false }: RunPipelineOptions = {},
 ): Promise<PipelineResult> {
+  // Defensive sweep in case a prior run in this session left tables behind
+  // (e.g. an Edge Matcher loop iterating over multiple groups).
+  await dropInternalTables(conn);
+
   // Repair input coverage violations (overlaps/gaps) before the algorithm runs
   // — Voronoi generation assumes a clean starting coverage. No-op, and no
   // progress update, when the input already has no invalid edges.
+  console.log("[EE-DEBUG] === stageCleanInput ===");
   await stageCleanInput(conn);
 
   // Stage 2: lines (single attempt; _02a is stable across retries)
+  console.log("[EE-DEBUG] === stageLines ===");
   onProgress(2, "Extracting boundary lines");
   await stageLines(conn);
 
   // Segments are distance-independent — build once, reuse across every retry attempt below.
+  console.log("[EE-DEBUG] === buildSegments ===");
   await buildSegments(conn);
 
   // Stages 3+4: points → MAX_POINTS check → voronoi, retry with doubling
@@ -100,6 +160,7 @@ export async function runPipeline(
       lastDistance = d;
       let inVoronoi = false;
       try {
+        console.log(`[EE-DEBUG] === stagePoints (attempt ${i + 1}, distance=${d}) ===`);
         onProgress(
           3,
           i === 0
@@ -114,6 +175,7 @@ export async function runPipeline(
         if (cnt > MAX_POINTS) throw new Error(`too many points: ${cnt.toLocaleString()}`);
 
         inVoronoi = true;
+        console.log(`[EE-DEBUG] === stageVoronoi (attempt ${i + 1}, distance=${d}) ===`);
         onProgress(4, "Building Voronoi diagram");
         await stageVoronoi(conn);
 
@@ -146,8 +208,15 @@ export async function runPipeline(
   }
 
   // Stage 5: merge
+  console.log("[EE-DEBUG] === stageMerge ===");
   onProgress(5, "Merging polygons");
   await stageMerge(conn);
+  console.log("[EE-DEBUG] === stageMerge done, runPipeline continuing ===");
+
+  if (!skipOutputClean) {
+    console.log("[EE-DEBUG] === stageOutputClean ===");
+    await gatedCoverageClean(conn, "layer_05", { gap: OUTPUT_CLEAN_GAP });
+  }
 
   // Topology validation (warn-only)
   await runValidation(conn, "layer_05", "layer_01");

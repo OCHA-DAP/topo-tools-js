@@ -2,6 +2,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
 export async function stageVoronoi(conn: AsyncDuckDBConnection): Promise<void> {
   // Voronoi diagram from all generator points
+  console.log("[EE-DEBUG] voronoi:1 ST_VoronoiDiagram (layer_04_tmp1)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_04_tmp1 AS
     SELECT UNNEST(ST_Dump(
@@ -22,6 +23,7 @@ export async function stageVoronoi(conn: AsyncDuckDBConnection): Promise<void> {
     .v as string;
   await conn.query("SET memory_limit = '999GB'");
   try {
+    console.log("[EE-DEBUG] voronoi:2 ST_Intersects cell-to-fid join (layer_04_tmp2)");
     await conn.query(`--sql
       CREATE OR REPLACE TABLE layer_04_tmp2 AS
       SELECT a.fid, b.geom
@@ -50,6 +52,7 @@ export async function stageVoronoi(conn: AsyncDuckDBConnection): Promise<void> {
   // Union Voronoi cells by fid. ST_MakeValid defends against invalid cells
   // produced by ST_VoronoiDiagram on degenerate point configurations — feeding
   // an invalid polygon to ST_Union_Agg segfaults GEOS.
+  console.log("[EE-DEBUG] voronoi:3 union cells by fid (layer_04)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_04 AS
     SELECT fid, ST_Union_Agg(ST_MakeValid(geom)) AS geom
