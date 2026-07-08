@@ -622,6 +622,283 @@ arbitrary magic-number fix this project's precision conventions warn
 against, and the actual reported defect (the type-breaking collection) is
 already fully resolved without one.
 
+## Four OOM-mitigation options tested and ruled out
+
+Following the independent Topology Cleaner OOM confirmation above, four ways
+to make the whole-batch `ST_CoverageClean` OOM (on the ~465-feature Burundi
+Zone output) survivable were evaluated. All four are dead ends, each with
+direct evidence rather than assumption:
+
+**Option 1 — scope the clean to only seam-adjacent polygons, skip interior
+ones.** Rejected *without* testing, on correctness grounds: this exact
+pattern (multiple gated-clean call sites, each scoped to less than the full
+final output) was tried earlier in this investigation and reverted — see
+"Follow-up 2: consolidated to a single clean per batch, at the true end"
+above. Cross-group seams can only be observed at the whole-batch assembled
+state, since adjacent groups never share table state during the per-group
+loop; a geometric "near a seam" filter has the same blind spot, and a missed
+polygon means a real defect ships silently uncleaned. Withdrawn before
+implementation.
+
+**Option 2 — proactively reduce precision before freezing the
+`ST_CoverageClean` input array** (distinct from the existing noding-retry
+precision reduction, which only fires after a crash). Tested natively via
+`ST_ReducePrecision` at five grid sizes before the same `ST_CoverageClean`
+call used elsewhere in this doc:
+
+| Precision | Time | Peak memory | Parts |
+|---|---|---|---|
+| none (baseline) | 18.21s | 2.29 GB | 547 |
+| 1e-9 (0.1mm) | 22.62s | 2.11 GB | — |
+| 1e-8 (~1mm) | 18.99s | 2.06 GB | — |
+| 1e-7 (~11mm) | **51.69s (2.8x slower)** | 1.98 GB | 476 |
+| 1e-6 (~111mm) | **hung — killed after 2+ minutes, no result** | — | — |
+
+Non-monotonic and dangerous: the two finest values are a wash with baseline,
+and the two coarsest — the values someone would naturally reach for first
+to "snap harder" — are catastrophically worse or hang outright. Ruled out.
+
+**Option 3 — pass an explicit `snap` tolerance to `ST_CoverageClean` instead
+of `-1` (auto = `dataset_diameter / 1e8`).** Tested natively at five values:
+
+| Explicit `snap` | Time | Peak memory |
+|---|---|---|
+| `-1` (auto ≈ 2.8e-8) | 17.76s | 2.13 GB |
+| `1e-9` (finer) | 46.12s (2.6x slower) | 2.13 GB |
+| `2.8e-8` (≈ auto) | 18.09s | 2.13 GB |
+| `1e-7` | 17.40s | 2.16 GB |
+| `1e-6` | 16.73s | 2.06 GB |
+| `1e-5` (coarser) | **>120s — killed, never finished** | unknown |
+
+Same shape as option 2: auto is already near-optimal, and no tested
+alternative gives a real win; the coarser end hangs. Ruled out.
+
+**Option 4 — raise `SET memory_limit` above DuckDB's auto-detected ~3.1
+GiB default.** The setting *is* accepted (`current_setting('memory_limit')`
+reports the new value, e.g. `7.4 GiB` after `SET memory_limit='8GB'`), and a
+synthetic stress test (incompressible 6M-row table, ~1GB+ resident) succeeds
+past the old default — so the config change isn't rejected outright. But
+tested against the *actual* end-to-end failure (real `loadFile` →
+`runFromLoaded` on the real 116MB file, via a temporary `window.__dbg` hook
+added to `topology-cleaner/App.svelte` and reverted after testing), default
+vs. raised produced **bit-for-bit identical timing and failure**:
+
+| | Default (3.1 GiB) | Raised (7.4 GiB) |
+|---|---|---|
+| Reaches "Fixing topology" | 24.713s | 24.701s |
+| Fails (OOM) | 58.486s | 58.451s |
+
+`memory_limit` is DuckDB's own internal accounting threshold, not a real
+memory grant — it has zero power over the browser's actual wasm32
+`memory.grow()` ceiling. Definitively ruled out, not just "insufficient."
+
+**Conclusion**: no lever tested makes `ST_CoverageClean` itself survive at
+this data scale in WASM. The existing mitigation (export the pre-clean
+result before attempting the clean, keep it if the clean fails — see
+"Second real-world dataset: Burundi" above) is the correct behavior, not a
+stopgap pending a real fix.
+
+## Near-miss edges are pervasive, not a handful of seams
+
+Prompted by the user loading Edge Matcher's Burundi Zone output into QGIS
+and noticing "almost all the errors are gaps." Investigated as a possible
+cheap alternative to `ST_CoverageClean`: if there are only a few genuine gap
+defects, detecting them (already fast — `buildGapRegions`/
+`buildOverlapRegions` in `topology-cleaner/pipeline/issues.ts` run independent
+of `ST_CoverageClean` and only take ~1.2s) and fixing just those locally
+(union each gap into its best neighbor) would sidestep the expensive global
+graph algorithm entirely.
+
+**First check ruled out true area defects.** Running the same
+`gapRegionsQuery`/`overlapRegionsQuery` SQL from `issues.ts` natively against
+the Burundi Zone matched output: **zero enclosed-area gaps, zero overlaps**,
+at a threshold (1e-10 deg², ~1.2mm²) far finer than the app's own 1cm² noise
+floor. Total union area matches the original input to full float64
+precision (`2.176030274385891`), confirming no area is missing or
+duplicated anywhere in the coverage.
+
+**But `ST_CoverageInvalidEdges_Agg` (10m tolerance) does flag defects — a
+lot of them.** 135,547 invalid edge segments, ~11.19° total length (~1,245
+km), longest single segment ~1,018m. The original (pre-Edge-Matcher) source
+data has 469 such edges totaling ~330m at the identical tolerance — roughly
+**300x more edges and 3,800x more invalid length** in the derived output.
+Size distribution: only 6,310 of the 135,547 are sub-1cm (plausible float
+jitter); 84% (114,380) are >1m, and 33,134 exceed 10m, totaling ~879 km.
+This is not floating-point noise — individual mismatches up to a kilometer
+are a real, if benign (zero net area impact — see above), structural defect.
+
+**A screenshot of the user's own QGIS Topology Checker confirmed the scale
+directly**: 85,568 errors, all under its "gaps" rule, with red error markers
+scattered essentially uniformly across the *entire interior* of the Burundi
+coverage — not clustered at a few isolated cross-group seams as initially
+assumed. Ruled out one candidate explanation before drawing conclusions: a
+native check for whether the flagged edges cluster at the coverage's true
+*exterior* perimeter (which by definition has no matching neighbor and could
+be a validator false-positive, not a real defect) was attempted but the
+query itself OOM'd natively (12.7 GiB) doing a buffered `ST_Within` test over
+135K rows against one large exterior-ring buffer — inconclusive, not
+retried with a cheaper formulation yet.
+
+**Working hypothesis, not yet confirmed**: since total area is exactly
+conserved (no true gap/overlap) yet tens of thousands of edges fail GEOS's
+edge-matching, the two sides of a genuinely-coincident shared boundary are
+likely being represented by *different vertex sequences along the same
+line* — same geometric path, different sampling/density — rather than a
+true positional offset. `ST_CoverageInvalidEdges_Agg` matches edges by
+vertex-exact equality between rings, not by geometric coincidence, so two
+polygons whose shared boundary traces an identical line but was independently
+re-sampled (plausible given Edge Extender's per-cell Voronoi/point
+interpolation, `layer_03`) would both get flagged as "unmatched" even
+with zero true area defect.
+
+### Confirmed: cross-group boundaries, not same-group boundaries, are the defect
+
+Direct positive/negative-control test, both against real output data:
+
+- **Negative control — same group.** `OGC_FID` 295 and 298 (group 28,
+  "Ruyigi") genuinely touch along ~20,547m of boundary (confirmed via
+  `ST_Touches` + measured shared-boundary length). `ST_CoverageInvalidEdges_Agg`
+  over just this pair returns `NULL` — zero invalid edges. Same-group
+  polygons come from one shared `runPipeline`/`ST_Union_Agg` dissolve pass
+  (`stageMerge`), so their shared edges are vertex-identical by construction,
+  as expected.
+- **Positive control — cross group.** `OGC_FID` 31 (group 4, "Gisagara") and
+  63 (group 7, "Ruyigi") border the single longest invalid edge in the whole
+  dataset (~1,018m, centroid `30.5278, -3.3145`). The invalid edge's own
+  vertices sit within 0.0–0.16mm of *both* polygons' boundaries (i.e. all
+  three lines occupy essentially the same physical location), but each
+  polygon samples that stretch at a different vertex density (261 pts/1799m
+  vs. 151 pts/1878m nearby) — confirming "same line, different sampling," not
+  a real positional offset.
+  - **Caveat found while trying to reproduce this in isolation**: testing
+    just this one pair (`ST_CoverageInvalidEdges_Agg` over a 2-row array
+    containing only fid 31 and fid 63) reports **zero** invalid edges —
+    it does *not* reproduce the defect found when the same pair is checked
+    inside the full 465-row array. `ST_CoverageInvalidEdges_Agg`'s matching
+    is apparently context-sensitive to the full candidate-neighbor set, not
+    just a pairwise check; a 2-row subset is not a valid isolated repro for
+    this class of check, unlike the noding-crash bugs elsewhere in this doc
+    where per-fid isolation worked directly. All measurements of invalid-edge
+    length in this investigation use the full 465-feature array.
+
+**Root cause, confirmed**: each Edge Matcher group clips its own independent
+Voronoi-derived output (`layer_05`) against its own parent polygon via
+`clipToBoundary()`'s `ST_Intersection(a.geom, c.geom)`
+(`src/lib/db/clipToBoundary.ts`). When a group's `layer_05` boundary fully
+*overshoots* the parent boundary everywhere (the common case), the
+intersection's boundary along that stretch is just `c.geom`'s own boundary,
+verbatim — clean. But wherever a group's own extension *undershoots* the
+parent boundary at some interior point (Voronoi cell didn't reach all the
+way out, or Edge Extender's own residual `GAPS`/interior-ring artifacts —
+see "Second bug class" above), GEOS has no choice but to use `a.geom`'s own
+vertex there instead of `c.geom`'s — introducing a location-specific,
+group-specific vertex that the *adjacent* group (clipping a differently-shaped
+`layer_05` against a different parent polygon) has no way to agree with, even
+though both groups' outputs pass through virtually the same physical point.
+Two independent, unrelated per-group computations landing within millimeters
+of each other by geometry, but never exactly, is exactly what
+`ST_CoverageInvalidEdges_Agg` (and QGIS's Topology Checker) is built to flag.
+
+### Two candidate fixes tested, both ruled out as sufficient on their own
+
+**Tested: proactive `ST_ReducePrecision` snap, both sides, at the full-dataset
+scale** (same mechanism as "Option 2" above, but measuring invalid-edge
+*length*, not OOM timing — a different question). If the mismatch were mostly
+sub-grid floating-point jitter, rounding both sides onto a shared coordinate
+grid before checking should collapse most of it:
+
+| Precision | Invalid edge length | Reduction | Total area |
+|---|---|---|---|
+| none (baseline) | 1,245,882 m | — | 2.176030274385891 |
+| 1e-8 (~1mm) | 998,667 m | 20% | 2.176030273392548 |
+| 1e-7 (~11mm) | 918,338 m | 26% | 2.176030273985414 |
+| 1e-6 (~111mm) | 897,206 m | 28% | 2.176030282652497 |
+
+Even at 111mm — a grid far coarser than acceptable for real admin boundary
+data — 72% of the invalid length remains, and area has started measurably
+drifting. **Ruled out as a sufficient fix**: this confirms the mismatch is
+not primarily sub-grid rounding noise; it's a structural difference in the
+actual vertex paths (different sampling density along a near-identical line),
+which uniform rounding can't collapse unless the two paths already happen to
+land in the same grid cell — evidently rare here.
+
+**Tested: rebuild the parent/coarse layer from one globally-noded boundary
+network**, so every parent polygon shares literal vertex identity with its
+neighbors at the source (`ST_Node(ST_Union_Agg(ST_Boundary(geom)))` over all
+43 communes once, `ST_Polygonize` back into per-commune polygons, reassigned
+to original fids via `ST_PointOnSurface` + `ST_Intersects`). Validated against
+the *original* Commune layer alone (COM_BURUNDI, 43 features) before ever
+touching Edge Matcher's pipeline:
+
+- Area conserved to float64 precision (`2.176030278914693` vs.
+  `2.17603027891472`) — the rebuild is geometrically faithful.
+- But: **43 input communes → 51 output pieces**, and invalid-edge length
+  **increased** (163m vs. 81.5m baseline on the raw original commune layer).
+  The naive point-in-polygon fid reassignment mis-partitions some communes
+  into extra fragments (likely multi-part real features, or noding-introduced
+  slivers, not yet distinguished), and those fragment boundaries introduce
+  *new* invalid edges of their own. **Ruled out as implemented** — a real
+  version of this idea would need a more robust fragment-to-fid reassignment
+  than `ST_PointOnSurface`/`ST_Intersects` (e.g. largest-overlap-area
+  matching, explicit multi-part handling) before it could be trusted, which
+  is real, non-trivial engineering, not a quick fix.
+
+### Forward-looking: `ST_Snap` (not yet available)
+
+`ST_Snap(geom, target, tolerance)` — added to `duckdb-spatial` via
+[PR #829](https://github.com/duckdb/duckdb-spatial/pull/829), merged
+2026-06-26 — is the function this class of fix actually wants: snap `a.geom`
+directly onto `c.geom`'s own vertices within a tolerance, without the
+fragile Node+Polygonize+reassignment rebuild above. **Not usable yet**:
+confirmed absent from the native `duckdb` CLI's spatial extension as
+currently installed here (pinned at commit `b68b309`, predates the merge),
+and `@duckdb/duckdb-wasm` (`^1.33.1-dev57.0`, per `package.json`) bundles its
+own separately-versioned spatial extension build that would need to pick up
+a release containing this commit. Worth re-testing `clipToBoundary.ts` with
+real `ST_Snap(a.geom, c.geom, tolerance)` (snapping the derived side onto the
+real parent boundary, before the `ST_Intersection` clip — same "never modify
+real input" convention as the rest of this doc) once a spatial extension
+release containing it is available, native or WASM. This wasn't evaluated
+further this session — noted for later, not pursued now.
+
+## Proposed fix: two endpoints, and which one to pick
+
+**Endpoint A — fix it for real.** Build a properly-engineered version of the
+canonical-boundary idea above (robust fragment reassignment, or wait for
+`ST_Snap` and snap `layer_05` onto `coarse_layer_01` before every group's
+clip) so adjacent groups' clipped edges become vertex-identical, driving the
+135,547 invalid edges toward zero. Real engineering, uncertain payoff until
+built — the one concrete attempt this session made the coarse layer's own
+invalid-edge count *worse*, not better, so this is not a small patch.
+
+**Endpoint B — accept and document it.** The defect has **zero measured
+real-world cost**: total area is exactly conserved (confirmed to float64
+precision, twice, on two different datasets), there are no true gaps or
+overlaps (confirmed via `issues.ts`'s own gap/overlap queries at a
+sub-mm² threshold), and the only consumers that notice are strict
+vertex-exact validators (`ST_CoverageInvalidEdges_Agg`, QGIS's Topology
+Checker) — not a correctness problem for anyone using the output as GIS data
+normally. Proactively clean the coarse/parent input layer before matching
+(cheap, real win: fixes the ~81m of pre-existing imprecision already present
+in the raw Commune source data, independent of anything Edge Matcher does),
+and document in the tool's UI/README that strict topology validators may
+flag near-miss "gap" warnings at group boundaries despite verified-zero real
+area defects — so users aren't alarmed by QGIS's Topology Checker the way
+this investigation's user was.
+
+**Recommendation: Endpoint B.** The evidence doesn't support Endpoint A being
+cheap: the one fix idea that could plausibly reach zero (canonical rebuild)
+needs real unbuilt engineering and made a naive first attempt *worse*, and
+the other idea tested (uniform precision snap) tops out at a 28% reduction
+even at an unacceptably coarse grid. Given the underlying data is already
+provably correct (no missing/duplicated area, no real gaps/overlaps),
+spending more engineering time chasing vertex-exact compliance with a
+validator standard that has no bearing on the data's actual correctness is
+not a good trade — versus a cheap, real, immediate win (clean the coarse
+input) plus honest documentation of the known cosmetic limitation. Revisit
+Endpoint A if `ST_Snap` becomes available and a user reports an actual
+downstream breakage (not just a QGIS warning) traceable to this defect.
+
 ## Current state (as of this entry)
 
 - `merge.ts`: dissolve via plain `ST_Union_Agg(geom)` (the `ST_BuildArea`/`ST_Node`
@@ -722,12 +999,39 @@ already fully resolved without one.
   and independently confirmed (via Topology Cleaner) that the whole-batch
   `ST_CoverageClean` OOM is a hard WASM ceiling, not fixable by relocating
   the call. See "Second real-world dataset: Burundi" section above.
-- [OPEN] Shrinking `ST_CoverageClean`'s peak memory footprint (or otherwise
-  raising the effective ceiling past 3 GiB) so it can succeed outright on
-  ~465-feature-scale batches — not investigated. OPFS query-spill was
-  researched and ruled out (see above); chunking the coverage-clean input is
-  an unexplored alternative.
+- [DONE] Four candidate ways to make the whole-batch `ST_CoverageClean` OOM
+  survivable were tried and ruled out, each with direct evidence — see "Four
+  OOM-mitigation options tested and ruled out" below. None is viable;
+  chunking the input by scoping to only seam-adjacent polygons was also
+  considered and rejected *without* testing, on correctness grounds (see
+  same section).
 - [OPEN] Same `OGC_FID`-collision risk exists in principle for GPKG/SHP/KML/
   GML/GPX (binary/XML formats not covered by the loader fix, which only
   patches GeoJSON/GeoJSONL at the file-buffer level) — no repro yet for
   those formats, not fixed.
+- [DONE] Root-caused *why* Edge Matcher's output has ~135,547 near-miss
+  invalid edges (QGIS Topology Checker: 85,568 "gap" errors), vs. 469 in the
+  original source data — see "Near-miss edges are pervasive, not a handful
+  of seams" below. Confirmed via same-group (clean) vs. cross-group
+  (defective) control pair: each group's independent per-group `ST_Intersection`
+  clip (`clipToBoundary.ts`) introduces its own vertices at points where its
+  Voronoi extension undershoots the parent boundary, and adjacent groups have
+  no mechanism to agree on those points. Zero true area gaps/overlaps
+  confirmed throughout — this is a vertex-sampling-density defect, not real
+  missing/duplicated area.
+- [DONE] Two candidate fixes tested and ruled out as insufficient: uniform
+  `ST_ReducePrecision` snap (tops out at 28% invalid-length reduction even at
+  an unacceptably coarse 111mm grid) and a naive canonical-boundary-network
+  rebuild (made the coarse layer's own invalid-edge count *worse*, 163m vs.
+  81.5m baseline, due to fragile fragment-to-fid reassignment). See "Two
+  candidate fixes tested" above.
+- [OPEN, not recommended for now] A properly-engineered canonical-boundary
+  fix (robust fragment reassignment, or `ST_Snap` once available — see
+  "Forward-looking: ST_Snap" above, merged upstream in duckdb-spatial PR #829
+  but not yet in the native or WASM extension build used here) could drive
+  the defect toward zero, but is real unbuilt engineering with unproven
+  payoff. Recommendation (see "Proposed fix: two endpoints" above): don't
+  pursue it now — the defect has zero measured real-world cost (area exactly
+  conserved, no true gaps/overlaps). Instead, proactively clean the
+  coarse/parent input layer before matching (cheap, real win) and document
+  the cosmetic strict-validator limitation for users.
