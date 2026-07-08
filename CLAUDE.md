@@ -121,3 +121,10 @@ country has more than one `vNN` yet, so there's no old/new pair to diff
 (e.g. Chile only has `v01` so far). Check for multiple `vNN` directories
 before picking a country for an old/new comparison; Philippines admin3
 `v02`→`v03` is a real diff, used for `change`'s first at-scale test.
+
+**HARD RULE — the portolan catalog is read-only.** Never write, modify,
+move, rename, or delete anything under
+`/Users/computer/GitHub/OCHA-DAP/hdx-scraper-cod-ab-global/portolan` (or its
+canonical source.coop source). Only ever read from it — drop copies of its
+files into tool DropZones, never point a write/export/cleanup operation at
+it, and never run shell commands there beyond read-only listing/inspection.
