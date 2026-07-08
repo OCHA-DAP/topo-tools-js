@@ -32,6 +32,13 @@
   });
 
   $effect(() => {
+    if (duckdbState.ready) {
+      // @ts-expect-error temporary debug hook, removed after manual QA
+      window.__dbg = { conn: duckdbState.conn, db: duckdbState.db };
+    }
+  });
+
+  $effect(() => {
     const f = files;
     if (f.length > 0 && duckdbState.ready) {
       untrack(() => {

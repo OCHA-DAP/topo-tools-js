@@ -107,6 +107,8 @@ Valle del Risco within Changuinola's 5-member group.
 | 8 | Found (by inspection, prompted by the user asking whether the regular Edge Extender tool's own errors were also fixed) a **third, structurally identical instance** of the same `ST_Intersection(derived, real-boundary)` pattern: `edge-extender/pipeline/clip.ts`'s `runClip` (the optional "clip to external boundary" feature used by plain `/extend`, not `/extend-group`). Applied `withNodingRetry` there too, reducing precision only on `a.geom` (`layer_05`), never `clip_selected` (real input) | `edge-extender/pipeline/clip.ts` | Applied proactively — not yet reproduced/confirmed against a real failing case for this specific code path (unlike #6/#7, which were diagnosed against an actual crash). `npm run check` passes. Should be verified against real data that previously crashed plain Edge Extender's clip step, if such a case is available. |
 | 9 | Reverted `stageMerge`'s final dissolve from `ST_BuildArea(ST_Node(ST_Union_Agg(ST_Boundary(geom))))` (fix #5) back to a direct `ST_Union_Agg(geom)`, keeping the precision retry from #6/#7 | `stageMerge` final dissolve | **Fixes a severe, separate correctness bug** — see "Second bug class: silent area loss" below. Not a crash-related regression risk: the precision retry (not the boundary/buildarea rewrite) was already confirmed as what eliminates the noding crash, so reverting the dissolve algorithm was expected to be safe. Confirmed via full real-batch re-run: still 76/76 succeeded, 0 crashes, and every group's output area now matches its parent area to within floating-point precision (0.00% deficit across all 76, vs up to 80% deficit before). |
 | 10 | Added `stageOutputClean` (`index.ts`): gated `ST_CoverageClean` on `layer_05` after `stageMerge`, `gap=1e-6`, same input-side gating pattern, wrapped in try/catch | `index.ts`, post-`stageMerge` | User-suggested, after spotting residual micro gaps/overlaps in QGIS. Real batch: `GAPS` warning groups 74/76 → 15/76, max ring count per group 111 → 5, still 76/76 no crashes, `ST_CoverageClean` never failed. **Not a complete fix** — see follow-up note below the "silent area loss" section: 3 of the remaining 5 holed features have real, non-micro holes (188m/482m/2.2km diameter), not coverage-clean-fillable seam artifacts. |
+| 11 | `stageMerge`'s final dissolve: apply `ST_ReducePrecision(geom, precision)` to **both** rows being unioned (the untouched original `layer_01` row and the derived remainder), not just the derived side | `stageMerge` final dissolve | **Fixes the whole-dataset monolithic-merge failure** (see "New finding" section, now resolved below). Root cause: reducing only the derived side left it on a different rounding grid than the untouched real-input row, so GEOS could see a near-miss as a crossing instead of a touch. Confirmed on Santa Isabel (PAN adm2 fid 14): reducing only `layer_04` exhausted all 28 candidates every time; reducing both sides fixed it at every candidate down to the finest (0.1mm). Re-verified full real batch for both tools: plain `/extend` monolithic 76-feature merge now succeeds (0 shrunk features, 0 invalid geometries), and `/match` per-group run (including the Santa Isabel group) still 76/76, 0 unassigned, 0 invalid. |
+| 12 | Restructured fix #11 into a **tiered retry**: sweep all 28 candidates reducing only the derived side first (cheaper, never touches real input); only if that entire sweep is exhausted, escalate to a second 28-candidate sweep that also reduces the real-input row | `stageMerge`, `attemptDissolve()` helper | User-requested refinement — keeps the project's "never touch real input unless necessary" default for the common case, while preserving fix #11's robustness as a fallback. Same observable behavior as #11 whenever the derived-only tier succeeds (the vast majority of cases); functionally identical to #11 when it doesn't. See "Precision-density experiment" section below for the follow-up analysis this prompted. |
 
 ## Second root cause found: the group clip step (`groups.ts`)
 
@@ -294,7 +296,7 @@ true end only is exactly as correct as cleaning at every intermediate step,
 for this class of defect — the extra mid-pipeline calls were pure overhead
 with no correctness benefit.
 
-## New finding: the retry fix doesn't scale to a large monolithic merge (unresolved)
+## New finding: the retry fix doesn't scale to a large monolithic merge (RESOLVED)
 
 Discovered while smoke-testing plain `/extend` after removing its clip feature (see
 "Product decision" section below) — unrelated to that removal, `merge.ts` and
@@ -310,21 +312,121 @@ verification of the merge fix in this investigation (76/76 success) ran
 `stageMerge` per-group, on small subsets (5-20 features each) — this is the
 first time it was exercised as one monolithic 76-feature dissolve.
 
-**Interpretation**: this is likely a genuine scale-dependent limitation, not
-a fluke — dissolving 76 features together means resolving noding across many
-more shared-boundary pairs at once than any single small group ever
-required, so the odds that *some* pair in the batch needs a precision value
-outside the current 0.1mm-111mm/28-candidate range go up with feature count.
-This is an argument that Group Extender/Edge Matcher's "partition into small
-groups, merge each independently" design isn't just about clipping to a
-boundary — it's *structurally more robust* against this bug class than
-running one large merge, purely by keeping each individual dissolve small.
+**Diagnosis** (checkpoint methodology: added `window.__dbg` to
+`edge-extender/App.svelte` — it previously only existed on `match/App.svelte`
+— and queried the live connection directly after the crash left
+`layer_05_tmp2`/`layer_04`/`layer_01` populated at their last-attempted
+state). Located the exact pathological point (`-79.521, 9.57798`, from the
+error message) in `layer_05_tmp2`, found two candidate fids nearby, and
+isolated the failure to a single `ST_Union_Agg(geom) WHERE fid = 14`
+("Santa Isabel", a real adm2 unit). **This turned out not to be a
+scale/neighbor-count effect** — Santa Isabel's bbox only pulled in 5
+distinct neighboring parts, well within the size of groups already verified
+elsewhere in this doc. Instead: the union combines two rows — the untouched
+real `layer_01` polygon (full float64 precision, never reduced by design)
+and the derived Voronoi remainder (already `ST_ReducePrecision`'d). Since
+only the derived side is snapped to the retry grid, the two rows' supposedly
+coincident boundary vertices can still land a few ULPs apart, which GEOS can
+report as a crossing instead of a touch — the exact same failure class as
+the rest of this doc, just at a union step whose real-input side had never
+been included in the reduction before.
 
-**Not investigated further tonight** — this needs its own checkpoint-logging
-pass (same methodology as the rest of this doc) to find which specific
-feature pair is pathological and whether a wider/denser candidate list
-would resolve it, or whether some inputs are fundamentally unresolvable by
-precision retry alone at any density. Flagged for follow-up, not fixed.
+**Fix** (table row #11): apply `ST_ReducePrecision` to **both** sides of the
+union at the same per-attempt candidate value, not just the derived side.
+Verified directly against `layer_05_tmp2 WHERE fid = 14`: reducing only the
+derived side failed at every one of the 28 candidates (matching the observed
+crash); reducing both sides succeeded at every candidate tested, including
+the finest (0.1mm) — a cost far below the accuracy of any real admin
+boundary, and it only affects this transient union input, never persisted
+back onto real data.
+
+**Re-verification, full real batch, both tools**:
+- Plain `/extend`, whole 76-feature Panama adm2 dataset as one monolithic
+  merge (the exact failing case): now succeeds. Ground-truth checks: 76/76
+  input fids present in output, 0 features with output area smaller than
+  input (extension should only grow, never shrink), 0 invalid geometries.
+- `/match`, Panama adm3-into-adm2 (76 groups, including the Santa Isabel
+  group that was the isolated failure case): still 76/76 groups succeeded, 0
+  unassigned, 0 invalid geometries, total output area matches expectations
+  from the previously-verified run.
+
+**Conclusion**: not actually a scale-dependent limitation in the sense
+originally hypothesized (more neighbors → more pathological pairs) — it was
+a gap in which side(s) of the union got the precision-retry treatment, that
+happened to only be exercised once a group merge included this specific
+real-input row directly (rather than only via its already-clipped/extended
+form). The "partition into small groups" design is not what makes Edge
+Matcher robust here; both tools now use the same (now-corrected) shared fix.
+
+## Tiered retry restructure, and a precision-density experiment
+
+After fix #11 landed, the user asked two follow-up questions: (1) how much
+precision reduction is actually being applied, and (2) whether the retry
+could try reducing *only* the derived Voronoi remainder first, escalating to
+reducing the real input only if that's insufficient — matching this
+project's existing default of never touching real input unless necessary.
+
+**Tiered restructure** (fixes-table row #12): `merge.ts` now has a single
+`attemptDissolve(conn, precision, reduceOriginalToo)` helper. `stageMerge`
+calls `withNodingRetry` once with `reduceOriginalToo = false` (derived-only,
+all 28 candidates); only if that whole sweep throws does it catch and retry
+with a second `withNodingRetry` pass at `reduceOriginalToo = true`. `layer_04_orig`
+(the pristine, pre-reduction Voronoi output) is preserved across both tiers
+so retries never compound precision loss from a previous failed attempt.
+
+**Precision-density experiment**: the user then asked whether the current
+28-candidate list (integer multiples 1-9 of each decade `{1e-9, 1e-8, 1e-7}`,
+plus `1e-6`) is well-chosen, or whether denser/fractional spacings (0.5x,
+0.25x, 0.333x, etc.) would do better, and asked for an empirical sweep.
+
+Built a 155-candidate list spanning 5 decades (`1e-9` to `1e-5`) x 31
+multiples per decade (integers 1-9.5 plus fractions: halves, thirds,
+quarters, etc.), tested against the reproducible whole-dataset monolithic
+merge failure, isolating the single pathological fid via `window.__dbg`
+against the live connection (same methodology as the original diagnosis).
+
+**A methodological trap surfaced first, itself a useful finding**: rerunning
+the `/extend` pipeline from scratch on the identical input file produced a
+*different* pathological fid than the original diagnosis (fid 62 this time,
+not fid 14/"Santa Isabel") — direct evidence that the Voronoi diagram output
+is not bit-stable across separate pipeline runs on the same input, so
+"the known failing case" is a moving target from run to run, not a fixed
+fixture that can be diagnosed once and reused indefinitely. (This is the
+same underlying non-determinism already flagged below, now observed at finer
+grain: not just "which groups fail" but "which specific fid, within a
+successful monolithic run, ends up on the pathological geometry.") Confirmed
+the new pathological fid by isolating each of the 51 distinct Voronoi-cell
+groups individually at the one precision value (`8e-9`) that failed in a
+whole-dataset re-run, and finding exactly one (fid 62) reproduced the crash
+in isolation — validating that single-fid isolation, done with the *exact*
+production `CASE` logic, faithfully reproduces the full-batch failure (an
+earlier isolation attempt that accidentally reduced precision on both sides
+unconditionally, instead of matching the derived-only tier, silently found
+zero failures — a reminder that isolation tests must mirror the real
+`CASE WHEN is_derived OR reduceOriginalToo` branch exactly, not just the
+general shape of the query).
+
+**Result of the actual density sweep** (155 candidates x 2 modes, fid 62):
+- **Derived-only**: 154/155 passed. The single failure was `8e-9` — with
+  both immediate neighbors in the list, `7.5e-9` and `8.5e-9`, passing. No
+  cluster, no trend by decade or by integer-vs-fractional multiplier: the
+  failure is an isolated point, not a "bad region" a denser grid would help
+  route around.
+- **Both-sides**: 155/155 passed, matching fix #11's original finding that
+  reducing both sides is robust across the full tested range.
+
+**Conclusion**: density and non-integer spacing do not measurably help. A
+155-value sweep found essentially the same signal as the original 28-value
+list — a single-point, needle-in-a-haystack failure with immediate
+neighbors on either side succeeding — which is the signature of an exact
+floating-point coincidence at one specific rounding grid, not a systematic
+region of instability that finer or differently-spaced candidates would
+avoid. This validates the current `NODING_RETRY_PRECISIONS` list as already
+adequate: the value of the retry loop is having *several* independent
+candidates to try (so a single unlucky exact-coincidence miss doesn't stop
+the pipeline), not the specific spacing or density of those candidates. No
+change made to `src/lib/db/precisionRetry.ts` as a result of this
+experiment.
 
 ## Non-determinism (important, unresolved)
 
@@ -343,19 +445,29 @@ the more meaningful number than any single run's exact failure list.
 
 ## Current state (as of this entry)
 
-- `merge.ts`: dissolve via `ST_BuildArea(ST_Node(ST_Union_Agg(ST_Boundary(geom))))`,
-  wrapped in a retry loop over `MERGE_PRECISION_CANDIDATES` applied to `layer_04`
-  only. 28 candidates, 0.1mm–111mm.
+- `merge.ts`: dissolve via plain `ST_Union_Agg(geom)` (the `ST_BuildArea`/`ST_Node`
+  reconstruction from fix #5 was reverted, see "Second bug class: silent area
+  loss" above), wrapped in `withNodingRetry` (`src/lib/db/precisionRetry.ts`), 28
+  candidates, 0.1mm–111mm. As of fix #12 (tiered restructure of fix #11), the
+  retry is two-tiered: first sweep all 28 candidates reducing only the
+  derived remainder (never the real input); only if that whole sweep is
+  exhausted, escalate to a second 28-candidate sweep that also reduces the
+  real-input row at the same value. A 155-candidate density experiment
+  (fractional/non-decade-aligned spacings) found no benefit over the current
+  28-value list — see "Tiered retry restructure, and a precision-density
+  experiment" above — so the candidate list itself is unchanged.
 - `clean.ts`, `index.ts`: back to original (pre-investigation) behavior — the
   unconditional-CoverageClean and stage-2 retry attempts were both reverted.
+  `index.ts` also runs a single gated `ST_CoverageClean` on the true final
+  output (see "Follow-up 2: consolidated to a single clean per batch").
 - Temporary `[EE-DEBUG]` checkpoint logging is still present in `clean.ts`,
   `lines.ts`, `points.ts`, `voronoi.ts`, `merge.ts`, `index.ts`, `groups.ts` — left
-  in place for continued investigation, not yet cleaned up.
-- Still-failing groups (most recent full run): La Pintada, Colon, Gualaca, Pinogana,
-  Sambu, Capira. **Root cause now diagnosed** — see "Second root cause found" above:
-  all six fail in `groups.ts`'s clip step (`ge_group_clip`), not in `stageMerge`.
-  `stageMerge`'s fix (#6) is confirmed working for every group observed, including
-  these six.
+  in place for continued investigation, not yet cleaned up. The `window.__dbg`
+  debug hook now exists on **both** `edge-extender/App.svelte` and
+  `match/App.svelte` (added to the former during the fix-#11 investigation).
+- All previously-failing groups (La Pintada, Colon, Gualaca, Pinogana, Sambu,
+  Capira; Santa Isabel via the whole-dataset monolithic-merge case) are now
+  confirmed passing. No known failing case remains as of this entry.
 
 ## Open questions / next steps
 
@@ -390,10 +502,25 @@ the more meaningful number than any single run's exact failure list.
     location surfaced. See fixes-tried table row #7 for detail.
 - [DONE] Failure rate: 18% baseline → 7.9% (fix #6) → **0%** (fix #7, this session).
   Table updated with row #7.
+- [DONE] Whole-dataset monolithic-merge failure (Santa Isabel, PAN adm2 fid 14) —
+  root-caused and fixed by reducing precision on both sides of the final
+  dissolve union, not just the derived side. See fixes-table row #11 and the
+  "New finding... (RESOLVED)" section above. Re-verified on both `/extend`
+  (the originally-failing monolithic case) and `/match` (per-group, including
+  the Santa Isabel group).
+- [DONE] Tiered retry restructure (derived-only sweep first, escalate to
+  both-sides only if exhausted) — implemented, fixes-table row #12.
+- [DONE] Precision-density experiment (155 fractional/dense candidates vs.
+  the current 28-value list) — no improvement found; failures are isolated
+  single-point floating-point coincidences, not a region a denser/differently
+  -spaced grid would avoid. `NODING_RETRY_PRECISIONS` left unchanged.
+- [OPEN] Root-cause the 3 non-micro residual holes (188m/482m/2.2km) from the
+  coverage-clean follow-up above — still not investigated.
 - [IN PROGRESS] Once satisfied with the fix's stability across more real-world
   datasets (not just this one Panama file pair), remove the temporary
   `[EE-DEBUG]` checkpoint logging from `clean.ts`, `lines.ts`, `points.ts`,
   `voronoi.ts`, `merge.ts`, `index.ts`, `groups.ts`, and the `window.__dbg`
-  debug hook from `extend-group/App.svelte`. Not removed yet — one clean run
-  on one dataset is a good signal, not full confidence; leaving the
-  diagnostics in costs nothing and de-risks a second real-world test.
+  debug hook from `edge-extender/App.svelte` and `match/App.svelte`. Not
+  removed yet — clean runs on one dataset are a good signal, not full
+  confidence; leaving the diagnostics in costs nothing and de-risks a second
+  real-world test.
