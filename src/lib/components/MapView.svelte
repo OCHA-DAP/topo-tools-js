@@ -11,26 +11,21 @@
   let {
     geojson = null,
     originalGeojson = null,
-    clipGeojson = null,
     bounds = null,
     processing = false,
     registerClear = undefined,
-    registerClearClip = undefined,
   }: {
     geojson?: string | null;
     originalGeojson?: string | null;
-    clipGeojson?: string | null;
     bounds?: [number, number, number, number] | null;
     processing?: boolean;
     registerClear?: (fn: () => void) => void;
-    registerClearClip?: (fn: () => void) => void;
   } = $props();
 
   let container: HTMLDivElement | undefined;
   let map: MaplibreMap | undefined;
   let blobUrl: string | undefined;
   let origBlobUrl: string | undefined;
-  let clipBlobUrl: string | undefined;
   const { start: startSpin, stop: stopSpin } = createSpin(() => map);
 
   $effect(() => {
@@ -119,8 +114,8 @@
       map.on("wheel", stopSpin);
       registerClear?.(() => {
         if (!map) return;
-        const layers = ["original-fill", "original-line", "result-fill", "result-line", "clip-fill", "clip-line"];
-        const sources = ["original", "result", "clip"];
+        const layers = ["original-fill", "original-line", "result-fill", "result-line"];
+        const sources = ["original", "result"];
         for (const layer of layers) {
           if (map.getLayer(layer)) map.removeLayer(layer);
         }
@@ -128,37 +123,7 @@
           if (map.getSource(source)) map.removeSource(source);
         }
       });
-      registerClearClip?.(() => {
-        if (!map) return;
-        if (map.getLayer("clip-fill")) map.removeLayer("clip-fill");
-        if (map.getLayer("clip-line")) map.removeLayer("clip-line");
-        if (map.getSource("clip")) map.removeSource("clip");
-      });
     });
-  });
-
-  $effect(() => {
-    const clip = clipGeojson;
-    if (!clip || !map) return;
-
-    if (clipBlobUrl) URL.revokeObjectURL(clipBlobUrl);
-    clipBlobUrl = URL.createObjectURL(new Blob([clip], { type: "application/json" }));
-    const cUrl = clipBlobUrl;
-
-    function apply() {
-      if (!map) return;
-      const before = map.getLayer("original-fill") ? "original-fill" : undefined;
-      if (map.getSource("clip")) {
-        (map.getSource("clip") as GeoJSONSource).setData(cUrl);
-      } else {
-        map.addSource("clip", { type: "geojson", data: cUrl });
-        map.addLayer({ id: "clip-fill", type: "fill", source: "clip", filter: polyFilter, paint: { "fill-color": "#FB9A99", "fill-opacity": 1 } }, before);
-        map.addLayer({ id: "clip-line", type: "line", source: "clip", paint: { "line-color": "#222222", "line-width": lineWidth } }, before);
-      }
-    }
-
-    if (map.isStyleLoaded()) apply();
-    else map.once("load", () => apply());
   });
 
   onDestroy(() => {
@@ -166,7 +131,6 @@
     map?.remove();
     if (blobUrl) URL.revokeObjectURL(blobUrl);
     if (origBlobUrl) URL.revokeObjectURL(origBlobUrl);
-    if (clipBlobUrl) URL.revokeObjectURL(clipBlobUrl);
   });
 </script>
 

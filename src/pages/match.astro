@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/match/App.svelte";
+---
+
+<Layout
+  title="Edge Matcher — match fine polygons to a coarse boundary and extend to fit"
+  description="Browser-only tool that assigns fine polygons to their best-overlapping coarse boundary — admin 4 into 3, admin 4 straight into 0, or any other pair of levels — then extends each group so it meets its boundary exactly."
+>
+  <App client:load />
+</Layout>

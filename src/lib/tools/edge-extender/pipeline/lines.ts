@@ -1,6 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
 export async function stageLines(conn: AsyncDuckDBConnection): Promise<void> {
+  console.log("[EE-DEBUG] lines:1 boundary (layer_02_tmp1)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_02_tmp1 AS
     SELECT fid, ST_Boundary(geom) AS geom FROM layer_01
@@ -10,6 +11,7 @@ export async function stageLines(conn: AsyncDuckDBConnection): Promise<void> {
   // as PIECEWISE_MERGE_JOIN, avoiding SPATIAL_JOIN's ~1× RAM virtual reservation.
   // Bbox-only is correct: a non-touching neighbor adds nothing to ST_Difference
   // / ST_Intersection against a's boundary.
+  console.log("[EE-DEBUG] lines:2 neighbor union (layer_02_tmp2)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_02_tmp2 AS
     SELECT a.fid AS afid, ST_Union_Agg(b.geom) AS neighbor_union
@@ -23,6 +25,7 @@ export async function stageLines(conn: AsyncDuckDBConnection): Promise<void> {
     GROUP BY a.fid
   `);
 
+  console.log("[EE-DEBUG] lines:3 difference+linemerge (layer_02a)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_02a AS
     SELECT
@@ -36,6 +39,7 @@ export async function stageLines(conn: AsyncDuckDBConnection): Promise<void> {
     FROM layer_02_tmp1 AS a
     LEFT JOIN layer_02_tmp2 AS n ON a.fid = n.afid
   `);
+  console.log("[EE-DEBUG] lines:4 done, dropping tmp tables");
 
   await conn.query("DROP TABLE IF EXISTS layer_02_tmp1");
   await conn.query("DROP TABLE IF EXISTS layer_02_tmp2");

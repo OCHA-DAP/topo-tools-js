@@ -5,11 +5,12 @@ import { duckdbState } from "./duckdb.svelte";
 
 export type ExportSource =
   | "extend"
-  | "clip"
   | "clean_topology"
   | "topology_issues"
   | "crosswalk_overlay"
-  | "crosswalk_changelog";
+  | "crosswalk_changelog"
+  | "match"
+  | "match_unassigned";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -125,7 +126,6 @@ interface SourceConfig {
 
 const SOURCES: Record<ExportSource, SourceConfig> = {
   extend: { table: "layer_05", attrTable: "layer_attr", suffix: "_ee", kind: "spatial" },
-  clip: { table: "layer_clip", attrTable: "layer_attr", suffix: "_em", kind: "spatial" },
   clean_topology: { table: "tc_clean", attrTable: "layer_attr", suffix: "_cleaned", kind: "spatial" },
   topology_issues: {
     table: "tc_issues",
@@ -145,6 +145,18 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: null,
     suffix: "_changelog",
     kind: "tabular",
+  },
+  match: {
+    table: "ge_results",
+    attrTable: "ge_results_attr",
+    suffix: "_matched",
+    kind: "spatial",
+  },
+  match_unassigned: {
+    table: "ge_unassigned",
+    attrTable: "child_layer_attr",
+    suffix: "_unassigned",
+    kind: "spatial",
   },
 };
 

@@ -65,7 +65,7 @@ Notes:
 
 ## Architecture
 
-**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly — no data leaves the browser. The root `/` is a landing page that lists tools. Today there are three: **Topology Cleaner** at `/clean` (detects overlaps/gaps and cleans a coverage with DuckDB's `ST_CoverageClean`), **Edge Extender** at `/extend` (extends polygon boundaries outward using Voronoi diagrams), and **Changelog** at `/changelog` (compares two versions of a polygon layer and classifies each unit).
+**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly — no data leaves the browser. The root `/` is a landing page that lists tools. Today there are four: **Topology Cleaner** at `/clean` (detects overlaps/gaps and cleans a coverage with DuckDB's `ST_CoverageClean`), **Edge Extender** at `/extend` (extends polygon boundaries outward using Voronoi diagrams), **Changelog** at `/changelog` (compares two versions of a polygon layer and classifies each unit), and **Edge Matcher** at `/match` (assigns a fine polygon layer to its best-overlapping coarse boundary — any pair of levels, e.g. admin 4 into 3 or straight into 0 — then runs Edge Extender independently within each group so every group's result meets its own boundary exactly).
 
 **Stack:** Astro 6 (static site) + Svelte 5 (interactive islands) + DuckDB WASM (spatial SQL engine) + MapLibre GL (map rendering)
 
