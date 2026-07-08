@@ -899,6 +899,35 @@ input) plus honest documentation of the known cosmetic limitation. Revisit
 Endpoint A if `ST_Snap` becomes available and a user reports an actual
 downstream breakage (not just a QGIS warning) traceable to this defect.
 
+**Endpoint B's cheap win, implemented.** `src/lib/tools/match/pipeline/load.ts`'s
+`loadLayers` now runs `gatedCoverageClean(conn, "parent_layer_01")` and
+`gatedCoverageClean(conn, "child_layer_01")` right after loading, at default
+settings (`snap=-1` auto, `gap=0` no gap-fill), same gated/preserve-fid-set
+pattern already used elsewhere in this doc (`stageCleanInput`, the final
+output clean). The parent layer was never cleaned anywhere in this pipeline
+before; the child layer was only ever cleaned per-group, after splitting,
+which misses defects between child units assigned to different groups.
+Verified natively (this SQL doesn't touch any WASM-only code path, so native
+verification is representative here, unlike the noding-crash bugs elsewhere
+in this doc): on the real Burundi data, the parent (Commune, 43 features)
+layer's own pre-existing 81.5m of invalid-edge length drops to exactly
+**0m**, and the child (Zone, 465 features) layer's own pre-existing 328m
+(consistent with the "469 edges/~330m" figure quoted earlier in this doc for
+the original source data) drops to **133m** (60% reduction) — both with fid
+count and total area preserved to float64 precision. This does **not**
+address the much larger cross-group clip-introduced defect (135,547 edges,
+1,245km) — that mechanism is untouched by cleaning the inputs, since it's
+introduced downstream by the per-group clip step, not present in the raw
+inputs. `npm run check` passes with this change. A live end-to-end browser
+verification (driving the real `runEdgeMatch` pipeline via `window.__dbg`,
+the same technique used throughout this doc) was attempted but not
+completed cleanly — the shared `playwright-cli` browser instance was
+repeatedly taken over by an unrelated concurrent process mid-run in this
+session's environment, unrelated to this change. Worth a clean live rerun
+when the environment is uncontended, though the native SQL-level
+verification above already directly confirms the intended effect using the
+identical query `gatedCoverageClean`/`buildCoverageClean` execute.
+
 ## Current state (as of this entry)
 
 - `merge.ts`: dissolve via plain `ST_Union_Agg(geom)` (the `ST_BuildArea`/`ST_Node`
@@ -1032,6 +1061,11 @@ downstream breakage (not just a QGIS warning) traceable to this defect.
   the defect toward zero, but is real unbuilt engineering with unproven
   payoff. Recommendation (see "Proposed fix: two endpoints" above): don't
   pursue it now — the defect has zero measured real-world cost (area exactly
-  conserved, no true gaps/overlaps). Instead, proactively clean the
-  coarse/parent input layer before matching (cheap, real win) and document
-  the cosmetic strict-validator limitation for users.
+  conserved, no true gaps/overlaps).
+- [DONE] Proactively clean both the coarse/parent AND fine/child input layers
+  before matching (`match/pipeline/load.ts`) — cheap, real win, gated at
+  default settings, verified natively (parent invalid-edge length 81.5m→0m,
+  child 328m→133m, both with fid count/area preserved exactly). See
+  "Endpoint B's cheap win, implemented" above.
+- [OPEN] Document the cosmetic strict-validator limitation for users (UI copy
+  or README) — not yet done.
