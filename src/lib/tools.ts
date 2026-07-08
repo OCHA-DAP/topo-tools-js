@@ -21,17 +21,17 @@ export const tools: Tool[] = [
     iconHref: "/icons/tools/edge-extender.svg",
   },
   {
-    slug: "change",
-    name: "Changelog",
-    tagline:
-      "Compare two versions of a polygon layer and classify each unit as unchanged, modified, merged, split, created, or removed.",
-    iconHref: "/icons/tools/polygon-changelog.svg",
-  },
-  {
     slug: "match",
     name: "Edge Matcher",
     tagline:
       "Match fine polygons to their best-overlapping coarse boundary — admin 4 into 3, admin 4 into 0, or any other pair — then extend each group to fit its boundary exactly.",
     iconHref: "/icons/tools/match.svg",
+  },
+  {
+    slug: "change",
+    name: "Changelog",
+    tagline:
+      "Compare two versions of a polygon layer and classify each unit as unchanged, modified, merged, split, created, or removed.",
+    iconHref: "/icons/tools/polygon-changelog.svg",
   },
 ];
