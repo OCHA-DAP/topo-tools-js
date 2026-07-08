@@ -549,6 +549,79 @@ would need to either shrink `ST_CoverageClean`'s peak memory footprint
 ceiling (blocked on OPFS spill support, per above) — both out of scope for
 this round.
 
+### Independent confirmation: Topology Cleaner hits the same ceiling standalone
+
+The user asked whether feeding Edge Matcher's pre-clean `ge_results` export
+into Topology Cleaner (`/clean`, a separate, dedicated, well-tested tool)
+would do better than the in-line `gatedCoverageClean` call — a fresh page,
+fresh WASM connection, no match-pipeline state competing for memory.
+
+Downloaded the actual 465-feature GeoJSON output (116MB) and dropped it into
+`/clean`. **Result: identical OOM** — the user confirmed it failed at the
+same step, `ST_CoverageClean` itself (Topology Cleaner has no separate
+"clean" button; fixing topology is its one final step, run automatically).
+This is a clean, valuable negative result: it rules out "something specific
+to how Edge Matcher orders its work" as the cause, and confirms the ~3 GiB
+WASM ceiling is a property of `ST_CoverageClean` at this feature
+count/geometry complexity, full stop — not fixable by moving the call to a
+different tool or a fresher connection.
+
+### Two more real bugs found while preparing this test (unrelated to the OOM)
+
+**1. Loader crash on re-ingesting a prior export (`duplicate column name
+"OGC_FID"`).** Feeding Edge Matcher's own GeoJSON output back into Topology
+Cleaner failed immediately with `Binder Error: table "st_read" has duplicate
+column name "OGC_FID"`, even before any pipeline logic ran. Root cause:
+DuckDB's `ST_Read` always adds its own FID column hardcoded to the name
+`OGC_FID` (confirmed empirically — present even when the source data has no
+such field at all; no `st_read` parameter suppresses it). The Burundi source
+shapefiles' attribute table already had a real property literally named
+`OGC_FID` (a common artifact of any data that passed through a prior
+`ogr2ogr`/GDAL export, since that's GDAL's own default FID field name), and
+that property survived Edge Matcher's attribute join into the final export —
+so re-reading that export collided with `ST_Read`'s synthetic column of the
+same name. Confirmed the binder error happens even on `SELECT COUNT(*)` or
+positional `SELECT #1` — the whole relation fails to bind, not just `SELECT
+*`, so there's no SQL-side workaround once the file is registered.
+**Fix** (`src/lib/db/loader.ts`, `renameCollidingOgcFid`): for `.geojson`/
+`.geojsonl` inputs specifically (plain JSON, cheap to parse/rewrite
+losslessly — unlike the binary/XML formats also supported), scan every
+feature's `properties` for a key literally named `OGC_FID` before
+registering the file buffer with DuckDB, and rename it to `OGC_FID_orig` if
+present. Verified directly against the failing file natively (`duckdb` CLI):
+`DESCRIBE`/`SELECT *` on the renamed file now bind cleanly, with
+`OGC_FID_orig` preserving the original value and `OGC_FID` unambiguously
+DuckDB's own FID. Not yet extended to GPKG/SHP/KML/GML/GPX — same collision
+risk exists there in principle (DBF's 10-char field limit even accommodates
+`OGC_FID` exactly), but binary/XML formats aren't cheaply patchable at the
+file-buffer level the way JSON is, and no repro exists yet for those formats.
+
+**2. `clipToBoundary`'s `ST_Intersection` can produce a `GEOMETRYCOLLECTION`
+instead of a clean polygon.** Loading the (loader-bug-fixed) match output
+into QGIS surfaced a feature QGIS couldn't render as part of the polygon
+layer. Isolated to `OGC_FID_orig=226` (group 23, "Mabanda" zone): its
+geometry was a `GEOMETRYCOLLECTION` of 38 parts — one real polygon
+(area 0.00982, the whole feature) plus 37 near-zero-area sliver polygons
+(areas from `1e-15` down to `1e-24` — pure floating-point noise) and one
+zero-area stray `POINT`. Root cause: `src/lib/db/clipToBoundary.ts`'s
+`ST_Intersection(a.geom, c.geom)` between the group's extended geometry and
+its parent boundary — where the two edges are supposed to touch exactly
+rather than cross — can return mixed-type noise at the near-tangent contact
+points instead of a clean polygonal result; GEOS's overlay doesn't guarantee
+a pure-polygon result type for boundary-touching cases the way it does for a
+proper crossing. Any consumer expecting `POLYGON`/`MULTIPOLYGON` (QGIS
+included) breaks on the resulting `GEOMETRYCOLLECTION`.
+**Fix**: wrap the intersection in `ST_CollectionExtract(geom, 3)` (keep only
+polygonal parts, code `3`). Verified directly against the actual failing
+geometry: total area unchanged (`0.009824911645464169`, exact match before
+and after), only the zero-area stray point dropped, output type now a clean
+`MULTIPOLYGON`. The 36 remaining sliver polygons (still present, still
+absurdly small) are geometrically valid and harmless — no area-threshold
+filtering added, since picking a cutoff would be exactly the kind of
+arbitrary magic-number fix this project's precision conventions warn
+against, and the actual reported defect (the type-breaking collection) is
+already fully resolved without one.
+
 ## Current state (as of this entry)
 
 - `merge.ts`: dissolve via plain `ST_Union_Agg(geom)` (the `ST_BuildArea`/`ST_Node`
@@ -574,6 +647,19 @@ this round.
 - All previously-failing groups (La Pintada, Colon, Gualaca, Pinogana, Sambu,
   Capira; Santa Isabel via the whole-dataset monolithic-merge case) are now
   confirmed passing. No known failing case remains as of this entry.
+- `clipToBoundary.ts`: `ST_Intersection` result now wrapped in
+  `ST_CollectionExtract(geom, 3)` to guarantee polygon-only output — fixes
+  the `GEOMETRYCOLLECTION` defect found on Burundi group 23 (see "Two more
+  real bugs found" above).
+- `loader.ts`: GeoJSON/GeoJSONL inputs now have any `OGC_FID` property
+  renamed to `OGC_FID_orig` before registration, avoiding a collision with
+  `ST_Read`'s own hardcoded synthetic `OGC_FID` FID column.
+- Whole-batch `ST_CoverageClean` OOM on ~465-feature Burundi output is
+  confirmed to be a hard WASM heap ceiling, independent of which tool/call
+  site triggers it — reproduced identically standalone in Topology Cleaner.
+  Not fixed (no code change makes `ST_CoverageClean` itself fit in 3 GiB at
+  this scale); Edge Matcher's export-before-clean fallback (see "Second
+  real-world dataset: Burundi" above) is the mitigation in place.
 
 ## Open questions / next steps
 
@@ -630,3 +716,18 @@ this round.
   removed yet — clean runs on one dataset are a good signal, not full
   confidence; leaving the diagnostics in costs nothing and de-risks a second
   real-world test.
+- [DONE] Second real-world dataset (Burundi) tested end-to-end on both tools
+  — noding fixes hold, 0 crashes. Surfaced and fixed two new, unrelated bugs
+  (loader `OGC_FID` collision, `clipToBoundary` `GEOMETRYCOLLECTION` output)
+  and independently confirmed (via Topology Cleaner) that the whole-batch
+  `ST_CoverageClean` OOM is a hard WASM ceiling, not fixable by relocating
+  the call. See "Second real-world dataset: Burundi" section above.
+- [OPEN] Shrinking `ST_CoverageClean`'s peak memory footprint (or otherwise
+  raising the effective ceiling past 3 GiB) so it can succeed outright on
+  ~465-feature-scale batches — not investigated. OPFS query-spill was
+  researched and ruled out (see above); chunking the coverage-clean input is
+  an unexplored alternative.
+- [OPEN] Same `OGC_FID`-collision risk exists in principle for GPKG/SHP/KML/
+  GML/GPX (binary/XML formats not covered by the loader fix, which only
+  patches GeoJSON/GeoJSONL at the file-buffer level) — no repro yet for
+  those formats, not fixed.
