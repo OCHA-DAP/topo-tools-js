@@ -234,9 +234,24 @@ export async function buildSliverRegions(
 
 // Overlap regions = polygonal pairwise intersections of polygons in the source
 // table (touching borders intersect as lines and are dropped by
-// CollectionExtract). Uses bbox predicates instead of ST_Intersects in the JOIN
-// so DuckDB plans this as PIECEWISE_MERGE_JOIN rather than SPATIAL_JOIN (which
-// OOMs in WASM). Exported: also reused by verify.ts to sweep tc_clean.
+// CollectionExtract). Uses bbox predicates instead of a bare spatial predicate
+// in the JOIN so DuckDB plans this as PIECEWISE_MERGE_JOIN rather than
+// SPATIAL_JOIN (which OOMs in WASM). Exported: also reused by verify.ts to
+// sweep tc_clean.
+//
+// The join predicate is ST_Overlaps/ST_Contains, not ST_Intersects.
+// ST_Intersects is true for any pair of polygons that merely share a boundary
+// edge -- the normal case for every adjacent pair in a real coverage layer,
+// not a defect. At admin-boundary scale (thousands of fids, e.g. an
+// archipelago admin3 layer) that floods the join with candidates whose
+// ST_Intersection is a degenerate line/point, each still paying for
+// ST_Intersection + ST_MakeValid + ST_CollectionExtract before the area
+// filter below drops them -- confirmed on the Python port (topo-tools-py)
+// against Indonesia admin3 (7,069 fids): ST_Intersects matched 18,457 pairs
+// and the stage didn't finish in 6+ minutes natively, let alone in WASM.
+// ST_Overlaps alone would miss a fully-duplicated or nested polygon pair (its
+// intersection equals both/one input, so ST_Overlaps is false by OGC
+// definition) -- ST_Contains in both directions covers that case.
 export function overlapRegionsQuery(targetTable: string, sourceTable: string): string {
   return `--sql
     CREATE OR REPLACE TABLE ${targetTable} AS
@@ -247,7 +262,11 @@ export function overlapRegionsQuery(targetTable: string, sourceTable: string): s
         ON a.fid < b.fid
         AND ST_XMax(b.geom) >= ST_XMin(a.geom) AND ST_XMin(b.geom) <= ST_XMax(a.geom)
         AND ST_YMax(b.geom) >= ST_YMin(a.geom) AND ST_YMin(b.geom) <= ST_YMax(a.geom)
-        AND ST_Intersects(a.geom, b.geom)
+        AND (
+          ST_Overlaps(a.geom, b.geom)
+          OR ST_Contains(a.geom, b.geom)
+          OR ST_Contains(b.geom, a.geom)
+        )
     )
     SELECT row_number() OVER () AS n, fa, fb, geom
     FROM pairs
