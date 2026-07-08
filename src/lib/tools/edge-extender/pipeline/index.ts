@@ -47,7 +47,12 @@ const INTERNAL_TABLES = [
   "layer_05_cc_gated",
 ];
 
-async function dropInternalTables(conn: AsyncDuckDBConnection): Promise<void> {
+// Exported so a caller looping runPipeline over many groups (Edge Matcher)
+// can free the last iteration's scratch tables once the loop ends, not just
+// at the top of the next call — otherwise they linger through whatever
+// memory-heavy step runs after the loop (e.g. a final whole-batch
+// CoverageClean + GeoJSON export), right when peak memory matters most.
+export async function dropInternalTables(conn: AsyncDuckDBConnection): Promise<void> {
   for (const t of INTERNAL_TABLES) {
     await conn.query(`DROP TABLE IF EXISTS ${t}`);
   }

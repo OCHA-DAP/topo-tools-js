@@ -443,6 +443,112 @@ sequential batch — see Timeline entries on concurrent-execution confounds). Ex
 some run-to-run variance in exactly which groups fail; the aggregate rate (~8%) is
 the more meaningful number than any single run's exact failure list.
 
+## Second real-world dataset: Burundi (validates fixes #11/#12, surfaces an unrelated OOM bug)
+
+Tested against a second, independent, larger real-world dataset (Burundi's
+"Nouveau découpage administratif": Province/Commune/Zone/Colline hierarchy) to
+check whether the noding-crash fixes generalize beyond the one Panama file
+pair every prior entry in this doc was diagnosed and verified against.
+
+**Plain `/extend`** (43-feature Commune layer, monolithic single-pass merge —
+the same code path as the Santa Isabel whole-dataset case in fix #11):
+succeeded with zero noding crashes, 0 invalid geometries, correct area
+preservation.
+
+**`/match`** (Zone → Commune, 43 groups covering 465 fine features): also
+completed with zero noding crashes across all 43 groups. Confirms fixes
+#11/#12 (both-sides precision reduction on the monolithic case, tiered retry
+restructure) hold on a dataset roughly 6x larger by feature count than
+Panama, with a different real-world topology. No new noding failure surfaced.
+
+### New, unrelated bug found during this test: whole-batch OOM on final CoverageClean
+
+Distinct from every bug above — this is a memory-capacity limit, not a
+GEOS/noding robustness issue. Symptom: `/match`'s Zone→Commune run (465
+features, 43 groups) reached `DONE - 43/43 groups done` (every group's own
+`runPipeline` succeeded) but then threw `Out of Memory Error: Allocation
+failure` and lost the entire result.
+
+**Root cause**: `current_setting('memory_limit')` in this WASM build reports a
+hard **3.0 GiB** ceiling, independent of host RAM (confirmed 16GB via
+`sysctl hw.memsize` — this is a 32-bit WASM linear-memory constraint, not a
+DuckDB config value that can be raised). The final whole-batch
+`gatedCoverageClean(conn, "ge_results", ...)` call (added in "Follow-up 2"
+above, run once at the true end over the fully assembled 465-feature result)
+is the dominant memory cost at this scale and exceeds that ceiling.
+Critically, WASM's `memory.grow()` is one-directional: once a large
+allocation fails and the heap is left fragmented/exhausted, the connection is
+poisoned for the rest of the session — confirmed empirically that even a
+trivial subsequent query (`SET temp_directory`, a small `CREATE TABLE`) fails
+to commit with the same `Allocation failure` after the first OOM.
+`gatedCoverageClean` itself never throws (it catches `ST_CoverageClean`
+failures internally and leaves the target table untouched) — the uncaught
+crash was in the *next* step, `tableToGeoJSON`, which runs on the same
+poisoned connection.
+
+**OPFS investigated as a possible fix, not adopted.** The app already uses
+OPFS for persistent *storage* (the main DB and an ATTACHed "edge" data DB both
+live at `opfs://...` paths), so the natural question was whether OPFS could
+also serve as *query-execution spill* (DuckDB's `temp_directory`
+out-of-core mechanism) to raise the effective ceiling past 3 GiB. Confirmed
+via GitHub discussion duckdb/duckdb-wasm#1322 and direct testing that
+`temp_directory`-backed spilling is not reliably supported in the officially
+published `@duckdb/duckdb-wasm` package — it only works via an unofficial
+third-party fork (`duckdb-wasm-opfs-tempdir`), which was explicitly **not**
+adopted here due to supply-chain risk (unaudited third-party fork of a
+security/data-integrity-sensitive dependency). Went with a lower-risk
+in-house fix instead.
+
+**Fix, three rounds:**
+
+1. Export `dropInternalTables` (`edge-extender/pipeline/index.ts`) so Edge
+   Matcher's per-group loop can free the *last* group's `runPipeline` scratch
+   tables once the loop ends, not just at the top of the next call (which
+   never happens after the last iteration). Correct and free, but measured as
+   **insufficient alone**: timing comparison with/without showed virtually no
+   change (25.8s vs 25.6s to OOM) — a single group's leaked scratch tables are
+   small relative to the 3 GiB ceiling.
+2. Reordered `runEdgeMatch` (`match/pipeline/index.ts`) to export the GeoJSON
+   from the correct, already-verified `ge_results` **before** attempting the
+   whole-batch `gatedCoverageClean`, wrapped in try/catch so a clean failure
+   falls back to the pre-clean export instead of losing the whole batch.
+   `ge_results` without this clean is still fully valid (every fid clipped to
+   its own parent boundary) — the only cost of the clean failing is possible
+   micro-seams at group boundaries that a per-group clean couldn't have seen
+   anyway. **Verified working**: full re-run reached `Download GeoJSON`,
+   `ge_results` ground truth unchanged (465/465 valid, area
+   `2.176030274385892`), downloaded file confirmed correct
+   (465 features, correct `group_id`/`parent_*` attribute join).
+3. User follow-up ("did you clean up all the memory before trying that last
+   `ST_CoverageClean`?") caught that round 1 only covered
+   `edge-extender`-pipeline-owned scratch tables, not match-tool-level session
+   tables that were also still resident and unneeded by clean time:
+   `ge_pairs` (dropped in `assign.ts`, right after `computeAssignment`'s three
+   output tables are built — nothing downstream reads it), and `ge_groups` /
+   `child_layer_01` / `parent_layer_01` / `parent_layer_attr` / `ge_assignment`
+   (dropped in `index.ts`, after `buildResultsAttrTable` — the last reader of
+   each). Deliberately did **not** drop `ge_unassigned` or `child_layer_attr`
+   — `src/lib/db/export.ts`'s `match_unassigned` download source reads both
+   live, on demand, whenever the user clicks that button, which can happen
+   well after `runEdgeMatch` returns.
+
+**Result of round 3, re-verified on the same Burundi batch**: `ST_CoverageClean`
+still OOMs at the same point (`Out of Memory Error: Allocation failure`) —
+freeing these additional tables was not enough to let the clean succeed
+outright at this scale. The round-2 fallback held as designed: "Output
+CoverageClean/re-export failed, keeping pre-clean export" logged, run still
+reached completion, `ge_results` ground truth identical to the round-2 run
+(465/465 features, 0 invalid, area `2.176030274385892`). **Conclusion**: the
+whole-batch `ST_CoverageClean` step itself, not scratch-table bloat, is the
+actual ceiling at ~465-feature scale — round 3's cleanup is still correct and
+worth keeping (frees memory sooner, costs nothing), but the load-bearing fix
+for *not losing the run* is round 2's export-before-clean reorder, not the
+table cleanup. A real fix for letting the clean itself succeed at this scale
+would need to either shrink `ST_CoverageClean`'s peak memory footprint
+(chunking the input? not investigated) or find a way to raise the 3 GiB WASM
+ceiling (blocked on OPFS spill support, per above) — both out of scope for
+this round.
+
 ## Current state (as of this entry)
 
 - `merge.ts`: dissolve via plain `ST_Union_Agg(geom)` (the `ST_BuildArea`/`ST_Node`

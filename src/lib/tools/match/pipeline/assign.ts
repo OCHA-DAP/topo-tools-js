@@ -47,6 +47,12 @@ export async function computeAssignment(conn: AsyncDuckDBConnection): Promise<As
     conn.query("SELECT COUNT(*) AS n FROM ge_groups"),
   ]);
 
+  // ge_pairs (every fine x nearby-coarse candidate pair) is only an
+  // intermediate for the three tables above — nothing downstream reads it,
+  // so free it now rather than letting it sit through the whole per-group
+  // loop and the final memory-heavy assembly steps.
+  await conn.query("DROP TABLE IF EXISTS ge_pairs");
+
   return {
     method,
     assignedCount: Number((assigned.toArray()[0] as { n: bigint | number }).n),

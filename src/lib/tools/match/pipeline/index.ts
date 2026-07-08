@@ -3,7 +3,7 @@ import { gatedCoverageClean } from "$lib/db/coverageClean";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns } from "$lib/db/columns";
 import type { OverlapMethod } from "$lib/db/overlap";
-import { OUTPUT_CLEAN_GAP } from "$lib/tools/edge-extender/pipeline/index";
+import { dropInternalTables, OUTPUT_CLEAN_GAP } from "$lib/tools/edge-extender/pipeline/index";
 import { loadLayers } from "./load";
 import { computeAssignment } from "./assign";
 import { listGroups, runGroups, type GroupInfo, type GroupResult } from "./groups";
@@ -93,6 +93,9 @@ export async function runEdgeMatch(
   const nameGuess = await detectColumns(conn, "parent_layer_attr");
   const groups = await listGroups(conn, nameGuess.name);
   onProgress({ phase: "groups-listed", groups });
+  // ge_groups only exists to build the groups list above — nothing later
+  // reads it.
+  await conn.query("DROP TABLE IF EXISTS ge_groups");
 
   const groupResults = await runGroups(
     conn,
@@ -103,20 +106,61 @@ export async function runEdgeMatch(
       onProgress({ phase: "group-done", groupIndex, groupTotal, result }),
   );
 
+  // The last group's own runPipeline call only cleans its scratch tables
+  // (layer_04, layer_05_tmp1/2, layer_03a, etc.) at the *start* of the next
+  // call — there is no next call after the loop ends, so they'd otherwise
+  // linger through the two heaviest remaining steps below (whole-batch
+  // CoverageClean and the final GeoJSON export), right when peak memory
+  // matters most. (Measured on a real 43-group/465-feature batch: this alone
+  // is not sufficient to avoid the OOM below — the scratch tables from just
+  // the last group are small — but it's free, correct, and still worth doing.)
+  await dropInternalTables(conn);
+
+  await buildResultsAttrTable(conn);
+
+  // child_layer_01/parent_layer_01/parent_layer_attr/ge_assignment were all
+  // needed throughout the per-group loop above (population, clip target,
+  // parent attribute join) and by buildResultsAttrTable just above (the last
+  // reader of parent_layer_attr and ge_assignment) — nothing downstream reads
+  // any of them again. child_layer_attr and ge_unassigned are deliberately
+  // NOT dropped here: DownloadMenu's "unassigned" export reads both live,
+  // on demand, whenever the user clicks it, which can happen well after this
+  // function returns.
+  await conn.query("DROP TABLE IF EXISTS child_layer_01");
+  await conn.query("DROP TABLE IF EXISTS parent_layer_01");
+  await conn.query("DROP TABLE IF EXISTS parent_layer_attr");
+  await conn.query("DROP TABLE IF EXISTS ge_assignment");
+
+  // Export from the already-correct, already-verified geometry BEFORE
+  // attempting the memory-heavy whole-batch CoverageClean pass below.
+  // ST_CoverageClean's WASM-GEOS implementation has known robustness edges
+  // (docs/performance.md) and on a large assembled batch can exceed the
+  // WASM heap's ~3GiB ceiling. `gatedCoverageClean` itself catches that and
+  // leaves `ge_results` untouched, but WASM linear memory can't shrink back
+  // down once grown — confirmed empirically that once the clean OOMs, even a
+  // trivial subsequent query fails to commit for the rest of the session. If
+  // clean-then-export were the order, a clean failure would silently take
+  // the whole, already-correct 43-group result down with it. Exporting first
+  // means the worst case is "not perfectly seamless" instead of "nothing at
+  // all" — ge_results without this clean is still a fully valid result (every
+  // fid clipped to its own parent boundary), just with possible micro seams
+  // at group boundaries that a per-group clean couldn't see.
+  let geojson = await tableToGeoJSON(conn, "ge_results", "ge_results_attr");
+  const bounds = await computeBounds(conn);
+
   // The one and only coverage-clean pass for the whole batch, run here on
   // the fully assembled result rather than per-group inside runGroups —
   // per-group cleaning would be redundant (this table gets reshaped again
   // by each group's clip step before this point exists) and this single
   // pass also catches cross-group seams that no per-group clean could see
-  // in the first place, since adjacent groups never share table state.
-  await gatedCoverageClean(conn, "ge_results", { gap: OUTPUT_CLEAN_GAP });
-
-  await buildResultsAttrTable(conn);
-
-  const [geojson, bounds] = await Promise.all([
-    tableToGeoJSON(conn, "ge_results", "ge_results_attr"),
-    computeBounds(conn),
-  ]);
+  // in the first place, since adjacent groups never share table state. Only
+  // replace the export above if both the clean and the re-export succeed.
+  try {
+    await gatedCoverageClean(conn, "ge_results", { gap: OUTPUT_CLEAN_GAP });
+    geojson = await tableToGeoJSON(conn, "ge_results", "ge_results_attr");
+  } catch (e) {
+    console.warn("Output CoverageClean/re-export failed, keeping pre-clean export:", e);
+  }
 
   return {
     geojson,
