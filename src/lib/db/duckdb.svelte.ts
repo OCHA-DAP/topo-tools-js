@@ -1,4 +1,5 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
+import { randomId } from "./id";
 
 // Workers stay self-hosted (small JS files, no size cap problem) so we don't
 // need a Blob shim around them. The engine `.wasm` binaries are loaded from
@@ -40,11 +41,7 @@ class DuckDBState {
 export const duckdbState = new DuckDBState();
 
 function makeSessionDbName(): string {
-  const id =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  return `__edge_matcher_${id}.duckdb`;
+  return `__edge_matcher_${randomId()}.duckdb`;
 }
 
 export async function initDuckDB(): Promise<void> {

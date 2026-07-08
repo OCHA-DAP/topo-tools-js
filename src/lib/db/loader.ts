@@ -1,5 +1,6 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { unzip } from "fflate";
+import { randomId } from "./id";
 
 // DuckDB's spatial extension hooks into read_parquet to parse the GeoParquet "geo"
 // key-value metadata entry. Certain files have a field in that JSON that causes
@@ -168,13 +169,21 @@ export async function loadFile(
   await conn.query(`DROP TABLE IF EXISTS ${geomName}`);
   await conn.query(`DROP TABLE IF EXISTS ${attrName}`);
 
+  // DuckDB's registered-file namespace is keyed by name, and multiple drops in one
+  // session commonly share a literal basename (e.g. every country in the portolan
+  // catalog exports as "original.parquet"). Reusing a name across registrations
+  // left stale Parquet metadata behind even after dropFile(), producing
+  // "ZSTD Decompression failure" on the second load of a same-named file. A
+  // per-call id keeps every registration unique regardless of the source filename.
+  const uid = randomId();
+
   let filePath: string;
   let isParquet = false;
   const registered: string[] = [];
 
   if (group.parquet) {
     const file = group.parquet;
-    const registeredName = prefix + file.name;
+    const registeredName = `${prefix}${uid}_${file.name}`;
     const buffer = removeGeoMetaKey(new Uint8Array(await file.arrayBuffer()));
     await db.registerFileBuffer(registeredName, buffer);
     registered.push(registeredName);
@@ -182,7 +191,7 @@ export async function loadFile(
     isParquet = true;
   } else if (group.spatial) {
     const file = group.spatial;
-    const registeredName = prefix + file.name;
+    const registeredName = `${prefix}${uid}_${file.name}`;
     const e = ext(file.name);
     let buffer = new Uint8Array(await file.arrayBuffer());
     if (e === ".geojson" || e === ".geojsonl") {
@@ -195,7 +204,8 @@ export async function loadFile(
   } else if (group.shapefile) {
     // Register all component files; use the .shp path for ST_Read
     const relPaths = group.shapefile.map(
-      (f) => prefix + ((f as File & { webkitRelativePath: string }).webkitRelativePath || f.name),
+      (f) =>
+        `${prefix}${uid}_${(f as File & { webkitRelativePath: string }).webkitRelativePath || f.name}`,
     );
     await Promise.all(
       group.shapefile.map(async (file, i) => {
