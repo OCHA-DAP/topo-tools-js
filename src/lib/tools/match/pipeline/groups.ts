@@ -118,10 +118,19 @@ export async function runGroups(
       const failedStage = e instanceof PipelineError ? e.failedStage : undefined;
       result = { ...group, status: "error", error: msg, failedStage };
     } finally {
-      await conn.query("DROP TABLE IF EXISTS layer_01");
-      await conn.query("DROP TABLE IF EXISTS layer_attr");
-      await conn.query("DROP TABLE IF EXISTS layer_05");
-      await conn.query("DROP TABLE IF EXISTS ge_group_clip");
+      // If the group above failed because the connection is OOM-poisoned,
+      // these cleanup queries fail too — and since that throw would otherwise
+      // escape this finally block, it replaces the already-caught error above
+      // and aborts the whole loop instead of recording one failed group and
+      // continuing (WASM linear memory can't recover mid-session either way).
+      try {
+        await conn.query("DROP TABLE IF EXISTS layer_01");
+        await conn.query("DROP TABLE IF EXISTS layer_attr");
+        await conn.query("DROP TABLE IF EXISTS layer_05");
+        await conn.query("DROP TABLE IF EXISTS ge_group_clip");
+      } catch (cleanupError) {
+        console.warn(`Cleanup after group ${group.label} failed:`, cleanupError);
+      }
     }
     results.push(result);
     onDone(i, groups.length, result);

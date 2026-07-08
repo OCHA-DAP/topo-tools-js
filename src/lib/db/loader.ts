@@ -39,6 +39,44 @@ function removeGeoMetaKey(buffer: Uint8Array): Uint8Array {
 const SINGLE_EXTS = [".parquet", ".geojson", ".geojsonl", ".gpkg", ".fgb", ".kml", ".gml", ".gpx"];
 const SHP_EXTS = [".shp", ".dbf", ".shx", ".prj", ".cpg"];
 
+// DuckDB's ST_Read always adds its own FID column literally named "OGC_FID"
+// (this is fixed, not configurable via open_options). If the source data
+// already has a property with that exact name — common for anything that
+// passed through a prior ogr2ogr/GDAL export, since "OGC_FID" is GDAL's own
+// default FID field name in many target formats — the resulting relation has
+// two same-named columns, and even `SELECT *`/`DESCRIBE` fail to bind at all
+// (not just a projection issue). GeoJSON/GeoJSONL are the only formats here
+// cheap to fix at the file level (plain JSON, no binary layout to preserve),
+// so rename the colliding property before handing the buffer to DuckDB.
+function renameCollidingOgcFid(text: string): string {
+  const renameProps = (props: Record<string, unknown> | null | undefined): boolean => {
+    if (props && Object.prototype.hasOwnProperty.call(props, "OGC_FID")) {
+      props.OGC_FID_orig = props.OGC_FID;
+      delete props.OGC_FID;
+      return true;
+    }
+    return false;
+  };
+
+  if (text.trimStart().startsWith("{")) {
+    const geo = JSON.parse(text);
+    const features = geo.type === "FeatureCollection" ? geo.features : [geo];
+    let renamed = false;
+    for (const f of features) renamed = renameProps(f?.properties) || renamed;
+    return renamed ? JSON.stringify(geo) : text;
+  }
+
+  // GeoJSONL: one Feature per line
+  let renamedAny = false;
+  const lines = text.split("\n").map((line) => {
+    if (!line.trim()) return line;
+    const f = JSON.parse(line);
+    if (renameProps(f?.properties)) renamedAny = true;
+    return JSON.stringify(f);
+  });
+  return renamedAny ? lines.join("\n") : text;
+}
+
 // Normalized geometry expression: fid + MakeValid + Force2D + optional Transform.
 // ST_Read tags geometry with source CRS; single-arg ST_Transform infers it.
 // Parquet geometries are untagged EPSG:4326 — skip transform.
@@ -145,7 +183,12 @@ export async function loadFile(
   } else if (group.spatial) {
     const file = group.spatial;
     const registeredName = prefix + file.name;
-    const buffer = new Uint8Array(await file.arrayBuffer());
+    const e = ext(file.name);
+    let buffer = new Uint8Array(await file.arrayBuffer());
+    if (e === ".geojson" || e === ".geojsonl") {
+      const text = renameCollidingOgcFid(new TextDecoder().decode(buffer));
+      buffer = new TextEncoder().encode(text);
+    }
     await db.registerFileBuffer(registeredName, buffer);
     registered.push(registeredName);
     filePath = registeredName;

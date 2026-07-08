@@ -24,10 +24,21 @@ export async function clipToBoundary(
   targetTable: string,
 ): Promise<void> {
   await withNodingRetry(async (precision) => {
+    // ST_Intersection against a boundary it's meant to touch exactly can
+    // return a GeometryCollection: the real polygonal overlap plus stray
+    // near-zero-area point/line noise where the two edges are tangent rather
+    // than crossing. ST_CollectionExtract(..., 3) keeps only the polygonal
+    // parts — confirmed on a real failing case (Burundi group 23) this drops
+    // only a zero-area stray POINT and preserves the polygon area exactly.
+    // Without it, downstream consumers that expect POLYGON/MULTIPOLYGON
+    // (QGIS included) choke on the mixed GEOMETRYCOLLECTION type.
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ${targetTable} AS
       SELECT fid, geom FROM (
-        SELECT a.fid, ST_Intersection(ST_ReducePrecision(a.geom, ${precision}), c.geom) AS geom
+        SELECT a.fid,
+               ST_CollectionExtract(
+                 ST_Intersection(ST_ReducePrecision(a.geom, ${precision}), c.geom), 3
+               ) AS geom
         FROM ${sourceTable} a CROSS JOIN (${boundarySql}) c
         WHERE ST_Intersects(a.geom, c.geom)
       ) WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
