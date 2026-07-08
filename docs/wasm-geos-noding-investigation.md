@@ -918,15 +918,29 @@ count and total area preserved to float64 precision. This does **not**
 address the much larger cross-group clip-introduced defect (135,547 edges,
 1,245km) — that mechanism is untouched by cleaning the inputs, since it's
 introduced downstream by the per-group clip step, not present in the raw
-inputs. `npm run check` passes with this change. A live end-to-end browser
-verification (driving the real `runEdgeMatch` pipeline via `window.__dbg`,
-the same technique used throughout this doc) was attempted but not
-completed cleanly — the shared `playwright-cli` browser instance was
-repeatedly taken over by an unrelated concurrent process mid-run in this
-session's environment, unrelated to this change. Worth a clean live rerun
-when the environment is uncontended, though the native SQL-level
-verification above already directly confirms the intended effect using the
-identical query `gatedCoverageClean`/`buildCoverageClean` execute.
+inputs. `npm run check` passes with this change.
+
+**Live end-to-end browser verification, completed.** An initial attempt hit
+environment trouble unrelated to this change: the shared `playwright-cli`
+browser session ("default") was being driven by a second, concurrent
+`cliDaemon.js` process on the same machine, which repeatedly closed/
+navigated the page mid-run. Switched to a uniquely-named `playwright-cli -s`
+session to get an isolated browser, which resolved it. The real
+`runEdgeMatch` pipeline (driven via `window.__dbg`, same technique used
+throughout this doc) then ran the full real Burundi batch end to end:
+**43/43 groups succeeded, 0 errors** — confirms the two new `gatedCoverageClean`
+calls in `load.ts` introduce no regressions across the full per-group
+Voronoi/clip pipeline. The run's own final step hit the already-documented
+whole-batch `ST_CoverageClean` OOM at this feature scale (see "New,
+unrelated bug found... whole-batch OOM" above) and correctly fell back to
+the pre-clean export, exactly as designed by the existing round-2 fix — not
+a new issue. (One methodological note for future test scripts: a follow-up
+diagnostic query issued by the *test harness itself*, after `runEdgeMatch`
+returned, failed with the same `Out of Memory Error` — not a second bug, but
+the already-documented "connection is poisoned after OOM" behavior, this
+time observed from a test script's own post-hoc query rather than app code.
+Confirms this project's own memory note to capture results immediately and
+avoid any further queries on a connection that has already OOMed once.)
 
 ## Current state (as of this entry)
 
