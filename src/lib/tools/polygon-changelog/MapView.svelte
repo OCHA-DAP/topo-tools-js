@@ -9,7 +9,7 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import { onDestroy, onMount } from "svelte";
   import { createSpin } from "$lib/utils/spin";
-  import { loadStyle, polyFilter, lineWidth } from "$lib/utils/mapStyle";
+  import { loadMaplibre, loadStyle, polyFilter, lineWidth } from "$lib/utils/mapStyle";
   import { REL_COLORS, REL_ORDER } from "./pipeline";
 
   let {
@@ -308,7 +308,7 @@
 
   onMount(async () => {
     if (!container) return;
-    const maplibregl = await import("maplibre-gl");
+    const maplibregl = await loadMaplibre();
     const style = await loadStyle();
     map = new maplibregl.Map({
       container,
