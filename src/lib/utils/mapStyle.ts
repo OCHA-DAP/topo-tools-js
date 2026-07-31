@@ -4,6 +4,25 @@ import type {
   StyleSpecification,
 } from "maplibre-gl";
 
+// v6 requires bundlers to set the worker URL explicitly — import.meta.url
+// auto-detection doesn't reliably resolve inside a bundler's module graph.
+// See: https://maplibre.org/maplibre-gl-js/docs/guides/v5-to-v6-migration-guide/
+let maplibreModulePromise: Promise<typeof import("maplibre-gl")> | undefined;
+
+export function loadMaplibre(): Promise<typeof import("maplibre-gl")> {
+  if (!maplibreModulePromise) {
+    maplibreModulePromise = (async () => {
+      const [maplibregl, { default: workerUrl }] = await Promise.all([
+        import("maplibre-gl"),
+        import("maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"),
+      ]);
+      maplibregl.setWorkerUrl(workerUrl);
+      return maplibregl;
+    })();
+  }
+  return maplibreModulePromise;
+}
+
 const LAND_SOURCE_ID = "ne-land";
 const LAND_LAYER_ID = "ne-land-fill";
 const LAND_URL = "/data/ne_50m_land.geojson";

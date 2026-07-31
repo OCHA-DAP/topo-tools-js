@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { lineWidth, loadStyle, polyFilter } from "$lib/utils/mapStyle";
+  import { lineWidth, loadMaplibre, loadStyle, polyFilter } from "$lib/utils/mapStyle";
   import { createSpin } from "$lib/utils/spin";
   import type {
     ExpressionSpecification,
@@ -382,7 +382,7 @@
 
   onMount(async () => {
     if (!container) return;
-    const maplibregl = await import("maplibre-gl");
+    const maplibregl = await loadMaplibre();
     const style = await loadStyle();
     map = new maplibregl.Map({
       container,
