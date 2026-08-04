@@ -5,44 +5,33 @@
     rows = [],
     selectedKey = null,
     fixedKeys = new Set<string>(),
-    noResolutionSlivers = new Set<string>(),
     detectionFailed = new Set<IssueKind>(),
     onSelect,
     onHover,
-    onToggleSliverNoResolution,
   }: {
     rows?: IssueRow[];
     selectedKey?: string | null;
     fixedKeys?: Set<string>;
-    noResolutionSlivers?: Set<string>;
     // Kinds whose detection query failed (even after retry) — a 0 count for
     // these means "couldn't check," not "clean." See pipeline/issues.ts.
     detectionFailed?: Set<IssueKind>;
     onSelect?: (key: string) => void;
     onHover?: (key: string | null) => void;
-    onToggleSliverNoResolution?: (key: string) => void;
   } = $props();
 
   let showGaps = $state(true);
   let showOverlaps = $state(true);
-  let showSlivers = $state(true);
 
   const gapCount = $derived(rows.filter((r) => r.kind === "gap").length);
   const overlapCount = $derived(rows.filter((r) => r.kind === "overlap").length);
-  const sliverCount = $derived(rows.filter((r) => r.kind === "sliver").length);
-  // Only overlaps + gaps are auto-fixed (overlaps always, gaps within the gap-width).
-  // Slivers are detection-only (the clean never snaps) — they don't count as fixed.
+  // Both overlaps and gaps are auto-fixed (overlaps always, gaps within the gap-width).
   const isFixable = (r: IssueRow) => r.kind === "overlap" || r.kind === "gap";
   const fixableCount = $derived(rows.filter(isFixable).length);
   const fixedCount = $derived(rows.filter((r) => isFixable(r) && fixedKeys.has(r.key)).length);
-  const reviewedSliverCount = $derived(
-    rows.filter((r) => r.kind === "sliver" && noResolutionSlivers.has(r.key)).length,
-  );
   const visible = $derived(
     rows.filter((r) => {
       if (r.kind === "gap") return showGaps;
       if (r.kind === "overlap") return showOverlaps;
-      if (r.kind === "sliver") return showSlivers;
       return false;
     }),
   );
@@ -62,15 +51,11 @@
   }
 
   function kindLabel(r: IssueRow): string {
-    if (r.kind === "overlap") return "Overlap";
-    if (r.kind === "gap") return "Gap";
-    return "Sliver";
+    return r.kind === "overlap" ? "Overlap" : "Gap";
   }
 
   function kindClass(r: IssueRow): string {
-    if (r.kind === "overlap") return "tc-key--overlap";
-    if (r.kind === "gap") return "tc-key--gap";
-    return "tc-key--sliver";
+    return r.kind === "overlap" ? "tc-key--overlap" : "tc-key--gap";
   }
 
   function isFixed(r: IssueRow): boolean {
@@ -84,12 +69,6 @@
       <span class="tc-fixed-count" class:all={fixedCount === fixableCount && fixableCount > 0}>
         {fixedCount} of {fixableCount} fixed
       </span>
-      {#if sliverCount > 0}
-        <span class="tc-sep">|</span>
-        <span class="tc-sliver-count" class:all={reviewedSliverCount === sliverCount}>
-          {reviewedSliverCount} of {sliverCount} slivers reviewed
-        </span>
-      {/if}
     </div>
     <div class="tc-filters">
       <button
@@ -115,18 +94,6 @@
           : "Toggle gaps"}
       >
         <span class="tc-key tc-key--gap"></span> Gaps {gapCount}{#if detectionFailed.has("gap")}<span class="tc-fail-mark">⚠</span>{/if}
-      </button>
-      <button
-        type="button"
-        class="tc-chip tc-chip--sliver"
-        class:off={!showSlivers}
-        class:failed={detectionFailed.has("sliver")}
-        onclick={() => (showSlivers = !showSlivers)}
-        title={detectionFailed.has("sliver")
-          ? "Sliver detection failed for this coverage (even after retrying) — this count may be incomplete, not necessarily 0"
-          : "Toggle slivers"}
-      >
-        <span class="tc-key tc-key--sliver"></span> Slivers {sliverCount}{#if detectionFailed.has("sliver")}<span class="tc-fail-mark">⚠</span>{/if}
       </button>
     </div>
   </div>
@@ -163,18 +130,9 @@
               onmouseenter={() => onHover?.(r.key)}
             >
               <td class="tc-check-cell">
-                {#if r.kind === "sliver"}
-                  <button
-                    class="tc-checkbox tc-checkbox--no-fix"
-                    class:tc-checkbox--no-fix-on={noResolutionSlivers.has(r.key)}
-                    title={noResolutionSlivers.has(r.key) ? "No resolution needed (click to undo)" : "Mark as no resolution needed"}
-                    onclick={(e) => { e.stopPropagation(); onToggleSliverNoResolution?.(r.key); }}
-                  >{#if noResolutionSlivers.has(r.key)}✓{/if}</button>
-                {:else}
-                  <span class="tc-checkbox" class:tc-checkbox--on={isFixed(r)}>
-                    {#if isFixed(r)}✓{/if}
-                  </span>
-                {/if}
+                <span class="tc-checkbox" class:tc-checkbox--on={isFixed(r)}>
+                  {#if isFixed(r)}✓{/if}
+                </span>
               </td>
               <td>
                 <span class="tc-key {kindClass(r)}"></span>
@@ -219,18 +177,6 @@
     color: #b45309;
   }
   .tc-fixed-count.all {
-    color: #15803d;
-  }
-  .tc-sep {
-    font-size: 0.82rem;
-    color: #d1d5db;
-  }
-  .tc-sliver-count {
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: #6b21a8;
-  }
-  .tc-sliver-count.all {
     color: #15803d;
   }
   .tc-filters {
@@ -335,9 +281,6 @@
   .tc-key--gap {
     background: #f59e0b;
   }
-  .tc-key--sliver {
-    background: #7c3aed;
-  }
   .tc-check-cell {
     text-align: center;
   }
@@ -354,17 +297,6 @@
     color: transparent;
   }
   .tc-checkbox--on {
-    background: #16a34a;
-    border-color: #16a34a;
-    color: #fff;
-  }
-  .tc-checkbox--no-fix {
-    cursor: pointer;
-  }
-  .tc-checkbox--no-fix:hover:not(.tc-checkbox--no-fix-on) {
-    border-color: #9ca3af;
-  }
-  .tc-checkbox--no-fix-on {
     background: #16a34a;
     border-color: #16a34a;
     color: #fff;

@@ -1,12 +1,11 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { buildClean, buildInput, buildReducedInput, countRows } from "./clean";
-import { deleteVerticesInBox, snapVerticesInBox, type PinchResult } from "./close";
 import {
   buildGapRegions,
+  buildIssues,
   buildOverlapRegions,
   checkFixedIssues,
-  rebuildSliversAndIssues,
   type IssueKind,
   type IssueRow,
 } from "./issues";
@@ -30,8 +29,6 @@ export class PipelineError extends Error {
 
 export interface CleanOptions {
   gapWidthM: number; // primary slider, meters (0 = no gap filling)
-  sliverTolM: number; // "Sliver tolerance" slider, meters: DETECTION cutoff only
-  // (ST_CoverageInvalidEdges). The clean never snaps, so this does not affect the fix.
 }
 
 export interface CleanResult {
@@ -61,12 +58,14 @@ export interface RecleanResult {
   exportCheck: ExportCheck;
 }
 
-// Carried from the full run to cheap re-runs.
+// Carried from the full run to cheap re-runs. Gap/overlap detection is static
+// (built once per load, independent of the gap-width slider), so the issues
+// table, its GeoJSON, and its failure state are all cached here and reused
+// as-is by every reclean.
 let totalCount = 0;
 let cachedIssues: IssueRow[] = [];
-// Gap/overlap detection is static (built once per load), so its failure state
-// is carried here for recleanOnly to merge with the live sliver failure state.
-let staticFailedKinds = new Set<IssueKind>();
+let cachedIssuesGeoJSON = "";
+let cachedFailedKinds = new Set<IssueKind>();
 
 // Run ST_CoverageClean, retrying once against a precision-reduced input if GEOS
 // still throws. Auto-snap handles float jitter and crossing-edge topology in the
@@ -105,22 +104,16 @@ async function computeBounds(
   return null;
 }
 
-// Re-clean at the current slider values. snap=-1 (auto): GEOS computes the snap
-// tolerance as dataset_diameter/1e8, which absorbs float jitter and resolves
-// crossing-edge topology without a manually tuned value.
-// Gap + overlap regions are static (built once per load) and are NOT recomputed.
+// Re-clean at the current gap-width slider value. snap=-1 (auto): GEOS computes
+// the snap tolerance as dataset_diameter/1e8, which absorbs float jitter and
+// resolves crossing-edge topology without a manually tuned value.
+// Gap + overlap regions and the issues table are static (built once per load)
+// and are NOT recomputed here.
 export async function recleanOnly(
   conn: AsyncDuckDBConnection,
   opts: CleanOptions,
 ): Promise<RecleanResult> {
   const gapDeg = metersToDegrees(opts.gapWidthM);
-
-  // Re-detect slivers at the new tolerance and rebuild the issues table first, so
-  // checkFixedIssues queries a tc_issues consistent with the slider value.
-  // Pass tc_clean as a fallback: it's always available at reclean time and is
-  // guaranteed valid, so the coverage validator succeeds there even when layer_01 fails.
-  const issuesRes = await rebuildSliversAndIssues(conn, opts.sliverTolM, staticFailedKinds, "tc_clean");
-  cachedIssues = issuesRes.rows;
 
   await cleanResilient(conn, "tc_clean", gapDeg);
   const kept = await countRows(conn, "tc_clean");
@@ -132,19 +125,18 @@ export async function recleanOnly(
     cleanedGeoJSON: await tableToGeoJSON(conn, "tc_clean", "layer_attr"),
     collapsedCount: Math.max(0, totalCount - kept),
     fixedKeys,
-    issues: issuesRes.rows,
-    issuesGeoJSON: issuesRes.geojson,
-    detectionFailed: issuesRes.failedKinds,
+    issues: cachedIssues,
+    issuesGeoJSON: cachedIssuesGeoJSON,
+    detectionFailed: cachedFailedKinds,
     exportCheck,
   };
 }
 
-// Full run from already-loaded layer_01/layer_attr: freeze the input, build the
-// aggressive gap reference, enumerate issues (gaps + overlaps), then clean at the
-// current width.
+// Full run from already-loaded layer_01/layer_attr: freeze the input, enumerate
+// issues (gaps + overlaps), then clean at a gap width auto-derived from the
+// widest detected gap.
 export async function runFromLoaded(
   conn: AsyncDuckDBConnection,
-  opts: CleanOptions,
   onProgress: ProgressFn,
 ): Promise<CleanResult> {
   onProgress(2, "Analyzing coverage");
@@ -156,30 +148,29 @@ export async function runFromLoaded(
   const bounds = await computeBounds(conn);
   const originalGeoJSON = await tableToGeoJSON(conn, "layer_01", null);
 
-  onProgress(3, "Finding gaps, overlaps & slivers");
-  // Static region tables (independent of the sliders): gaps + overlaps are a
-  // property of the input, built once. Best-effort — failures degrade to an empty
-  // region table, never abort the clean (their failure state is recorded instead).
-  // Slivers are built inside recleanOnly, since they depend on the (live)
-  // sliver-tolerance slider.
+  onProgress(3, "Finding gaps & overlaps");
+  // Region tables: gaps + overlaps are a property of the input, built once.
+  // Best-effort — failures degrade to an empty region table, never abort the
+  // clean (their failure state is recorded instead).
   const gapOk = await buildGapRegions(conn);
   const overlapOk = await buildOverlapRegions(conn);
-  staticFailedKinds = new Set();
-  if (!gapOk) staticFailedKinds.add("gap");
-  if (!overlapOk) staticFailedKinds.add("overlap");
+  const failedKinds = new Set<IssueKind>();
+  if (!gapOk) failedKinds.add("gap");
+  if (!overlapOk) failedKinds.add("overlap");
 
   onProgress(4, "Fixing topology");
   // Assemble issues (gap widths via ST_MaximumInscribedCircle), then run a
   // single ST_CoverageClean at the target gap width derived from those widths.
   // This avoids the previous 2-pass approach (gap=0 baseline + gap=max reclean).
-  let issuesRes: Awaited<ReturnType<typeof rebuildSliversAndIssues>>;
   let cleanedGeoJSON: string;
   let collapsedCount: number;
   let fixedKeys: Set<string>;
   let exportCheck: ExportCheck;
   try {
-    issuesRes = await rebuildSliversAndIssues(conn, opts.sliverTolM, staticFailedKinds);
+    const issuesRes = await buildIssues(conn, failedKinds);
     cachedIssues = issuesRes.rows;
+    cachedIssuesGeoJSON = issuesRes.geojson;
+    cachedFailedKinds = issuesRes.failedKinds;
 
     const gapWidths = issuesRes.rows
       .filter((r) => r.kind === "gap")
@@ -188,15 +179,6 @@ export async function runFromLoaded(
     const targetGapM = gapWidths.length > 0 ? niceNum(Math.max(...gapWidths) * 2) : 0;
 
     await cleanResilient(conn, "tc_clean", metersToDegrees(targetGapM));
-
-    // If sliver detection failed on layer_01/layer_01_reduced, retry on tc_clean.
-    // ST_CoverageClean guarantees a valid coverage, so the validator always succeeds there.
-    // Pass staticFailedKinds (gap/overlap only, never sliver) so that a successful
-    // tc_clean detection doesn't carry forward the prior sliver-failure flag.
-    if (issuesRes.failedKinds.has("sliver")) {
-      issuesRes = await rebuildSliversAndIssues(conn, opts.sliverTolM, staticFailedKinds, "tc_clean");
-      cachedIssues = issuesRes.rows;
-    }
 
     const kept = await countRows(conn, "tc_clean");
     fixedKeys = await checkFixedIssues(conn, cachedIssues);
@@ -210,169 +192,13 @@ export async function runFromLoaded(
   return {
     originalGeoJSON,
     cleanedGeoJSON,
-    issues: issuesRes.rows,
-    issuesGeoJSON: issuesRes.geojson,
+    issues: cachedIssues,
+    issuesGeoJSON: cachedIssuesGeoJSON,
     bounds,
     totalCount,
     collapsedCount,
     fixedKeys,
-    detectionFailed: issuesRes.failedKinds,
+    detectionFailed: cachedFailedKinds,
     exportCheck,
   };
-}
-
-// ── Sliver fixing by mouth pinch ─────────────────────────────────────────────
-//
-// The user box-selects a sliver's open mouth and snaps those vertices together
-// (snapVerticesInBox), which encloses the thin crack into a gap. That mutates the
-// working coverage (layer_01), so we rebuild EVERYTHING downstream — the frozen
-// input, the gap + overlap regions (now stale), then re-detect slivers and re-clean.
-// The re-clean's gap-fill absorbs the freshly-enclosed gap. Reversibility is a stack
-// of layer_01 snapshots (DuckDB tables); undo restores the most recent and re-derives.
-
-const undoStack: string[] = [];
-let undoCounter = 0;
-const MAX_UNDO = 20;
-
-export interface PinchOutcome {
-  ok: boolean;
-  reason?: string;
-  movedVertices?: number;
-  // Present when ok: the refreshed results (the input changed, so originalGeoJSON too).
-  result?: RecleanResult & { originalGeoJSON: string };
-}
-
-// Full re-derive from the current (possibly edited) layer_01.
-async function deriveAll(conn: AsyncDuckDBConnection, opts: CleanOptions): Promise<RecleanResult> {
-  totalCount = await buildInput(conn);
-  const gapOk = await buildGapRegions(conn);
-  const overlapOk = await buildOverlapRegions(conn);
-  staticFailedKinds = new Set();
-  if (!gapOk) staticFailedKinds.add("gap");
-  if (!overlapOk) staticFailedKinds.add("overlap");
-  return recleanOnly(conn, opts);
-}
-
-async function refreshedResult(
-  conn: AsyncDuckDBConnection,
-  opts: CleanOptions,
-): Promise<RecleanResult & { originalGeoJSON: string }> {
-  const reclean = await deriveAll(conn, opts);
-  const originalGeoJSON = await tableToGeoJSON(conn, "layer_01", null);
-  return { ...reclean, originalGeoJSON };
-}
-
-// Shared skeleton for snap and delete: snapshot layer_01, run the vertex operation,
-// validate, push to the undo stack, then re-derive. A failed or no-op edit discards
-// the snapshot and is returned as {ok:false} without dirtying the undo stack.
-async function applyVertexEdit(
-  conn: AsyncDuckDBConnection,
-  bbox: [number, number, number, number],
-  opts: CleanOptions,
-  op: (conn: AsyncDuckDBConnection, bbox: [number, number, number, number]) => Promise<PinchResult>,
-): Promise<PinchOutcome> {
-  const snap = `tc_undo_${undoCounter++}`;
-  await conn.query(`CREATE OR REPLACE TABLE ${snap} AS SELECT * FROM layer_01`);
-
-  let res: PinchResult;
-  try {
-    res = await op(conn, bbox);
-  } catch (e) {
-    res = { ok: false, reason: e instanceof Error ? e.message : String(e), movedVertices: 0 };
-  }
-  if (!res.ok) {
-    await conn.query(`DROP TABLE IF EXISTS ${snap}`);
-    return { ok: false, reason: res.reason };
-  }
-
-  undoStack.push(snap);
-  while (undoStack.length > MAX_UNDO) {
-    await conn.query(`DROP TABLE IF EXISTS ${undoStack.shift()}`);
-  }
-  return { ok: true, result: await refreshedResult(conn, opts) };
-}
-
-// Pinch the vertices inside `bbox` together (snap to their centroid), closing a
-// sliver mouth, then re-derive so the existing gap-fill can absorb the resulting gap.
-export async function applyPinch(
-  conn: AsyncDuckDBConnection,
-  bbox: [number, number, number, number],
-  opts: CleanOptions,
-): Promise<PinchOutcome> {
-  return applyVertexEdit(conn, bbox, opts, snapVerticesInBox);
-}
-
-// Delete the vertices inside `bbox`, rebuilding affected polygons without them,
-// then re-derive. Useful for removing stray/spurious vertices.
-export async function applyDelete(
-  conn: AsyncDuckDBConnection,
-  bbox: [number, number, number, number],
-  opts: CleanOptions,
-): Promise<PinchOutcome> {
-  return applyVertexEdit(conn, bbox, opts, deleteVerticesInBox);
-}
-
-// Restore the most recent pre-edit snapshot and re-derive. Null when nothing to undo.
-export async function undoEdit(
-  conn: AsyncDuckDBConnection,
-  opts: CleanOptions,
-): Promise<(RecleanResult & { originalGeoJSON: string }) | null> {
-  const snap = undoStack.pop();
-  if (!snap) return null;
-  await conn.query(`CREATE OR REPLACE TABLE layer_01 AS SELECT * FROM ${snap}`);
-  await conn.query(`DROP TABLE IF EXISTS ${snap}`);
-  return refreshedResult(conn, opts);
-}
-
-export function canUndoEdit(): boolean {
-  return undoStack.length > 0;
-}
-
-// Polygon vertices lying near a detected sliver edge, as a GeoJSON point collection.
-// These are the selectable "snap targets" the map shows so the user can box a mouth.
-export async function sliverVerticesGeoJSON(
-  conn: AsyncDuckDBConnection,
-  tolM: number,
-): Promise<string> {
-  // Show vertices within a few tolerances of a sliver edge (the mouth vertices sit
-  // right on the near-miss boundaries).
-  const d = metersToDegrees(Math.max(tolM, 1) * 4).toExponential();
-  let rows: Array<{ _geom: string }> = [];
-  try {
-    const r = await conn.query(`--sql
-      WITH slu AS (
-        SELECT ST_Union_Agg(geom) AS g FROM tc_sliver_regions
-        WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-      ),
-      nearpoly AS (
-        SELECT geom FROM layer_01
-        WHERE (SELECT g FROM slu) IS NOT NULL AND ST_DWithin(geom, (SELECT g FROM slu), ${d})
-      ),
-      rings AS (
-        SELECT ST_ExteriorRing((d2).geom) AS ring
-        FROM (SELECT UNNEST(ST_Dump(geom)) AS d2 FROM nearpoly)
-      ),
-      verts AS (
-        SELECT UNNEST(list_transform(
-          generate_series(1, ST_NPoints(ring)), i -> ST_PointN(ring, i::INTEGER)
-        )) AS p FROM rings
-      )
-      SELECT DISTINCT ST_AsGeoJSON(p) AS _geom
-      FROM verts WHERE ST_DWithin(p, (SELECT g FROM slu), ${d})
-    `);
-    rows = r.toArray() as Array<{ _geom: string }>;
-  } catch {
-    rows = [];
-  }
-  const features = rows.map((r) => ({
-    type: "Feature",
-    geometry: JSON.parse(r._geom),
-    properties: {},
-  }));
-  return JSON.stringify({ type: "FeatureCollection", features });
-}
-
-// Drop all undo snapshots (call on new file load).
-export async function resetEditUndo(conn: AsyncDuckDBConnection): Promise<void> {
-  for (const s of undoStack.splice(0)) await conn.query(`DROP TABLE IF EXISTS ${s}`);
 }
