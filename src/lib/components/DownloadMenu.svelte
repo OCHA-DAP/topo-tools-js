@@ -16,6 +16,7 @@
     exportSource,
     disabled = false,
     excludeFormatIds = [],
+    variant = "primary",
   }: {
     primaryLabel: string;
     filenameStem: string;
@@ -23,6 +24,7 @@
     exportSource: ExportSource;
     disabled?: boolean;
     excludeFormatIds?: string[];
+    variant?: "primary" | "secondary";
   } = $props();
 
   let rootEl: HTMLDivElement | undefined = $state();
@@ -147,7 +149,7 @@
   }
 </script>
 
-<div class="dl-group" bind:this={rootEl}>
+<div class="dl-group" class:dl-secondary={variant === "secondary"} bind:this={rootEl}>
   <button
     type="button"
     class="dl-btn dl-primary"
@@ -246,6 +248,23 @@
   .dl-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  /* Secondary variant: for a less-prominent action alongside a primary
+     DownloadMenu elsewhere on the same page (e.g. "Download issues" next to
+     the main "Download GeoJSON" CTA) — outline style instead of solid blue. */
+  .dl-group.dl-secondary .dl-btn {
+    background: #fff;
+    color: #374151;
+    border: 1px solid #d1d5db;
+  }
+
+  .dl-group.dl-secondary .dl-btn:hover:not(:disabled) {
+    background: #f3f4f6;
+  }
+
+  .dl-group.dl-secondary .dl-primary {
+    border-right: none;
   }
 
   .dl-primary {
