@@ -6,13 +6,15 @@ import {
   buildIssues,
   buildOverlapRegions,
   checkFixedIssues,
+  resolveGapFillWidths,
   type IssueKind,
   type IssueRow,
 } from "./issues";
-import { metersToDegrees, niceNum, setCentroidLat } from "./units";
+import { metersToDegrees, setCentroidLat } from "./units";
 import { verifyExport, type ExportCheck } from "./verify";
 
 export type { IssueKind, IssueRow } from "./issues";
+export { resolveGapFillWidths } from "./issues";
 export type { ExportCheck } from "./verify";
 
 export type ProgressFn = (stage: number, label: string) => void;
@@ -160,8 +162,8 @@ export async function runFromLoaded(
 
   onProgress(4, "Fixing topology");
   // Assemble issues (gap widths via ST_MaximumInscribedCircle), then run a
-  // single ST_CoverageClean at the target gap width derived from those widths.
-  // This avoids the previous 2-pass approach (gap=0 baseline + gap=max reclean).
+  // single ST_CoverageClean at the Auto-mode gap width (sliver-shaped gaps
+  // only) — the UI's default mode, so the first clean a user sees matches it.
   let cleanedGeoJSON: string;
   let collapsedCount: number;
   let fixedKeys: Set<string>;
@@ -172,13 +174,9 @@ export async function runFromLoaded(
     cachedIssuesGeoJSON = issuesRes.geojson;
     cachedFailedKinds = issuesRes.failedKinds;
 
-    const gapWidths = issuesRes.rows
-      .filter((r) => r.kind === "gap")
-      .map((r) => r.maxWidthM)
-      .filter((w) => w > 0);
-    const targetGapM = gapWidths.length > 0 ? niceNum(Math.max(...gapWidths) * 2) : 0;
+    const { autoFillM } = resolveGapFillWidths(issuesRes.rows);
 
-    await cleanResilient(conn, "tc_clean", metersToDegrees(targetGapM));
+    await cleanResilient(conn, "tc_clean", metersToDegrees(autoFillM));
 
     const kept = await countRows(conn, "tc_clean");
     fixedKeys = await checkFixedIssues(conn, cachedIssues);

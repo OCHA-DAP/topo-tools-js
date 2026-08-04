@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { buildReducedLayer } from "./clean";
-import { degSqToM2, degToM, m2ToDegSq } from "./units";
+import { degSqToM2, degToM, m2ToDegSq, niceNum } from "./units";
 
 // Floor below which a "gap"/"overlap" region is discarded as noise rather than
 // surfaced as an issue. Real-world coverages can produce sub-cm² slivers purely
@@ -13,6 +13,13 @@ import { degSqToM2, degToM, m2ToDegSq } from "./units";
 // noise.
 const MIN_ISSUE_AREA_M2 = 1e-4; // 1 cm²
 
+// Polsby-Popper compactness cutoff (4·π·Area / Perimeter², 1.0 = circle,
+// →0 = elongated crack) below which a gap is treated as a digitization
+// sliver rather than a real feature. Same formula and cutoff guidance
+// ArcGIS Pro's "Polygon Sliver" data-quality check uses. Not user-tunable —
+// see resolveGapFillWidths.
+const DEFAULT_THINNESS_RATIO = 0.3;
+
 // A discrete topology problem in the *input* coverage, surfaced in the issues
 // table so the user can click to zoom to it. Gaps and overlaps are computed once
 // at load (a property of the input).
@@ -21,7 +28,8 @@ export interface IssueRow {
   key: string; // "gap-3" / "overlap-7" — stable id, also the map feature id
   kind: "gap" | "overlap";
   areaM2: number; // approximate, for display/sorting
-  maxWidthM: number; // longer bounding-box dimension, approximate
+  maxWidthM: number; // Maximum Inscribed Circle diameter, approximate
+  thinnessRatio: number | null; // Polsby-Popper compactness; gap rows only, null for overlaps
   units: number[]; // fids involved (overlaps: two units; gaps: none)
   bbox: [number, number, number, number];
 }
@@ -184,16 +192,20 @@ async function assembleIssues(
     SELECT key, kind, area_deg, mic_radius_deg,
            area_deg * ${areaFactor} AS area_m2,
            mic_radius_deg * 2 * ${widthFactor} AS max_width_m,
+           thinness_ratio,
+           FALSE AS fixed,
            unit_a, unit_b, geom, xmin, ymin, xmax, ymax
     FROM (
       SELECT 'gap-' || n AS key, 'gap' AS kind, ST_Area(geom) AS area_deg,
              (ST_MaximumInscribedCircle(geom)).radius AS mic_radius_deg,
+             4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2) AS thinness_ratio,
              NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b, geom,
              ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
       FROM tc_gap_regions WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
       UNION ALL
       SELECT 'overlap-' || n, 'overlap', ST_Area(geom),
              (ST_MaximumInscribedCircle(geom)).radius,
+             NULL::DOUBLE,
              fa, fb, geom,
              ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
       FROM tc_overlap_regions WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
@@ -201,7 +213,7 @@ async function assembleIssues(
   `);
 
   const meta = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, unit_a, unit_b, xmin, ymin, xmax, ymax
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, unit_b, xmin, ymin, xmax, ymax
     FROM tc_issues
     ORDER BY
       CASE kind WHEN 'overlap' THEN 0 ELSE 1 END,
@@ -213,6 +225,7 @@ async function assembleIssues(
       kind: "gap" | "overlap";
       area_m2: number | null;
       max_width_m: number | null;
+      thinness_ratio: number | null;
       unit_a: bigint | number | null;
       unit_b: bigint | number | null;
       xmin: number;
@@ -225,6 +238,7 @@ async function assembleIssues(
     kind: r.kind,
     areaM2: r.area_m2 ?? NaN,
     maxWidthM: r.max_width_m ?? NaN,
+    thinnessRatio: r.thinness_ratio,
     units: [r.unit_a, r.unit_b]
       .filter((u): u is bigint | number => u !== null)
       .map((u) => Number(u)),
@@ -261,10 +275,13 @@ async function assembleIssues(
   return { rows, geojson: JSON.stringify({ type: "FeatureCollection", features }), failedKinds };
 }
 
-// Check which issues are resolved in the current cleaned output (tc_clean).
-// Overlaps are always fixed by ST_CoverageClean. For gaps, we test whether a
-// representative interior point of the gap polygon is now covered by any
-// cleaned polygon — if so, the gap has been merged into a neighbour.
+// Check which issues are resolved in the current cleaned output (tc_clean),
+// persisting the result into tc_issues.fixed so it survives into any export
+// (see export.ts's topology_issues columns) rather than living only in this
+// function's return value. Overlaps are always fixed by ST_CoverageClean. For
+// gaps, we test whether a representative interior point of the gap polygon is
+// now covered by any cleaned polygon — if so, the gap has been merged into a
+// neighbour.
 export async function checkFixedIssues(
   conn: AsyncDuckDBConnection,
   rows: IssueRow[],
@@ -272,24 +289,46 @@ export async function checkFixedIssues(
   const fixed = new Set<string>();
   rows.filter((r) => r.kind === "overlap").forEach((r) => fixed.add(r.key));
 
+  try {
+    await conn.query(`UPDATE tc_issues SET fixed = (kind = 'overlap')`);
+  } catch (e) {
+    console.warn("checkFixedIssues: persisting overlap fixed status failed:", e);
+  }
+
   const hasGaps = rows.some((r) => r.kind === "gap");
   if (!hasGaps) return fixed;
 
   try {
-    const result = await conn.query(`--sql
-      SELECT i.key,
-        EXISTS(
-          SELECT 1 FROM tc_clean c
-          WHERE ST_Contains(c.geom, ST_PointOnSurface(i.geom))
-        ) AS is_fixed
-      FROM tc_issues i WHERE i.kind = 'gap'
+    await conn.query(`--sql
+      UPDATE tc_issues SET fixed = TRUE
+      WHERE kind = 'gap' AND EXISTS (
+        SELECT 1 FROM tc_clean c WHERE ST_Contains(c.geom, ST_PointOnSurface(tc_issues.geom))
+      )
     `);
-    for (const row of result.toArray() as Array<{ key: string; is_fixed: boolean }>) {
-      if (row.is_fixed) fixed.add(row.key);
+    const result = await conn.query(`SELECT key FROM tc_issues WHERE kind = 'gap' AND fixed`);
+    for (const row of result.toArray() as Array<{ key: string }>) {
+      fixed.add(row.key);
     }
   } catch (e) {
     console.warn("checkFixedIssues failed; fixed status unavailable:", e);
   }
 
   return fixed;
+}
+
+// Derive the two gap-fill widths the UI's Auto/All modes need, both as
+// "2x the widest qualifying gap width, rounded up to a nice number" so the
+// widest gap itself reliably clears ST_CoverageClean's <= width comparison.
+// All considers every detected gap; Auto only those shaped like a
+// digitization sliver (thinnessRatio <= DEFAULT_THINNESS_RATIO). Either can
+// be 0 (no qualifying gaps), meaning "fill nothing."
+export function resolveGapFillWidths(rows: IssueRow[]): { allFillM: number; autoFillM: number } {
+  const widthsOf = (predicate: (r: IssueRow) => boolean) =>
+    rows.filter((r) => r.kind === "gap" && r.maxWidthM > 0 && predicate(r)).map((r) => r.maxWidthM);
+  const allWidths = widthsOf(() => true);
+  const thinWidths = widthsOf((r) => (r.thinnessRatio ?? 1) <= DEFAULT_THINNESS_RATIO);
+  return {
+    allFillM: allWidths.length ? niceNum(Math.max(...allWidths) * 2) : 0,
+    autoFillM: thinWidths.length ? niceNum(Math.max(...thinWidths) * 2) : 0,
+  };
 }

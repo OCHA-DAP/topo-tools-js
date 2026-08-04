@@ -9,6 +9,7 @@
   import {
     PipelineError,
     recleanOnly,
+    resolveGapFillWidths,
     runFromLoaded,
     type ExportCheck,
     type IssueKind,
@@ -24,7 +25,11 @@
   let loading = $state(false);
   let loadError = $state<string | null>(null);
 
-  // Gap slider (meters). gapWidthM=0 → no gap filling.
+  // Gap-fill mode: auto (default, sliver-shaped gaps only), all (every
+  // detected gap), or manual (exact width via the slider below).
+  let mode = $state<"auto" | "all" | "manual">("auto");
+
+  // Manual-mode slider (meters). Only read when mode === "manual".
   let gapWidthM = $state(0);
 
   function fmtGap(m: number): string {
@@ -35,24 +40,34 @@
     return `${(m * 1000).toFixed(1)} mm`;
   }
 
-  // Auto-max: 2× the widest gap in the input, rounded to a nice number.
-  const autoMaxGapM = $derived.by(() => {
-    const widths = issues
-      .filter((r) => r.kind === "gap")
-      .map((r) => r.maxWidthM)
-      .filter((w) => w > 0);
-    if (widths.length === 0) return 100;
-    return niceNum(Math.max(...widths) * 2);
-  });
+  // allFillM: 2× the widest detected gap (All mode, and the Manual slider's
+  // ceiling). autoFillM: 2× the widest gap shaped like a digitization
+  // sliver (Auto mode) — 0 when no gap qualifies, meaning "fill nothing."
+  const { allFillM, autoFillM } = $derived(resolveGapFillWidths(issues));
 
-  const gapMaxM = $derived(autoMaxGapM);
+  const gapMaxM = $derived(allFillM || 100);
   const gapStepM = $derived(niceNum(gapMaxM / 100));
 
-  // Clamp gapWidthM if the max drops below it.
+  // The width actually fed to ST_CoverageClean, driven by the active mode.
+  const effectiveGapWidthM = $derived(
+    mode === "manual" ? gapWidthM : mode === "all" ? allFillM : autoFillM,
+  );
+
+  function setMode(next: "auto" | "all" | "manual"): void {
+    // Seed the slider from whatever's currently applied so switching into
+    // Manual never itself changes what gets filled — only future drags do.
+    if (next === "manual" && mode !== "manual") {
+      gapWidthM = effectiveGapWidthM;
+    }
+    mode = next;
+    scheduleReclean();
+  }
+
+  // Clamp the manual slider if the max drops below it.
   $effect(() => {
     const max = gapMaxM;
     untrack(() => {
-      if (gapWidthM > max) {
+      if (mode === "manual" && gapWidthM > max) {
         gapWidthM = max;
         scheduleReclean();
       }
@@ -142,6 +157,7 @@
     showSide = "b";
     selectedKey = null;
     focusBbox = null;
+    mode = "auto";
     gapWidthM = 0;
     recleanPending = false;
     if (recleanTimer) {
@@ -195,7 +211,6 @@
       bounds = result.bounds;
       totalCount = result.totalCount;
       collapsedCount = result.collapsedCount;
-      gapWidthM = gapMaxM; // default to max now that issues (and thus gapMaxM) are known
       currentStage = 5;
       stageLabel = "Done";
       showSide = "b";
@@ -222,7 +237,7 @@
     recleaning = true;
     recleanPending = false;
     try {
-      const result = await recleanOnly(duckdbState.conn!, { gapWidthM });
+      const result = await recleanOnly(duckdbState.conn!, { gapWidthM: effectiveGapWidthM });
       cleanedGeoJSON = result.cleanedGeoJSON;
       collapsedCount = result.collapsedCount;
       fixedKeys = result.fixedKeys;
@@ -284,8 +299,9 @@
       <a class="tc-back" href="/">← Topology Tools</a>
       <h1>Topology Cleaner</h1>
       <p class="tc-blurb">
-        Drop a polygon layer to detect and fix overlaps and gaps. Click any issue to zoom to it,
-        and adjust the gap width to control how much gets filled.
+        Drop a polygon layer to detect and fix overlaps and gaps. Click any issue to zoom to it.
+        By default only digitization-sliver-shaped gaps get filled — switch modes or use the
+        slider to control how much gets filled.
       </p>
     </header>
 
@@ -307,21 +323,55 @@
     {#if cleanedGeoJSON}
       <section class="tc-step">
         <h2 class="tc-step-heading">Gap width</h2>
-        <label class="tc-slider">
-          <span>Fill gaps up to — {fmtGap(gapWidthM)}</span>
-          <input
-            type="range"
-            min="0"
-            max={gapMaxM}
-            step={gapStepM}
-            bind:value={gapWidthM}
-            oninput={scheduleReclean}
+        <div class="tc-mode-btns" role="group" aria-label="Gap-fill mode">
+          <button
+            class="tc-mode-btn"
+            class:active={mode === "auto"}
             disabled={running}
-          />
+            onclick={() => setMode("auto")}>Auto</button
+          >
+          <button
+            class="tc-mode-btn"
+            class:active={mode === "all"}
+            disabled={running}
+            onclick={() => setMode("all")}>All</button
+          >
+          <button
+            class="tc-mode-btn"
+            class:active={mode === "manual"}
+            disabled={running}
+            onclick={() => setMode("manual")}>Manual</button
+          >
+        </div>
+        {#if mode === "manual"}
+          <label class="tc-slider">
+            <span>Fill gaps up to — {fmtGap(gapWidthM)}</span>
+            <input
+              type="range"
+              min="0"
+              max={gapMaxM}
+              step={gapStepM}
+              bind:value={gapWidthM}
+              oninput={scheduleReclean}
+              disabled={running}
+            />
+            <p class="tc-hint">Fill enclosed gaps up to this width. Raise to close larger gaps.</p>
+          </label>
+        {:else}
           <p class="tc-hint">
-            Fill enclosed gaps up to this width. Raise to close larger gaps.
+            {#if effectiveGapWidthM > 0}
+              Filling gaps up to {fmtGap(effectiveGapWidthM)}.
+            {:else}
+              No gaps will be filled.
+            {/if}
+            {#if mode === "auto"}
+              Only gaps shaped like digitization slivers are filled, regardless of width — real
+              enclosed features (a pond, a missing unit) are left alone.
+            {:else}
+              Every detected gap is filled.
+            {/if}
           </p>
-        </label>
+        {/if}
       </section>
     {/if}
 
@@ -339,7 +389,11 @@
         {#if recleaning}
           <li class="active" role="status" aria-live="polite">
             <span class="tc-spinner" aria-hidden="true"></span>
-            <span>{gapWidthM > 0 ? `Filling gaps up to ${fmtGap(gapWidthM)}…` : "Fixing overlaps…"}</span>
+            <span
+              >{effectiveGapWidthM > 0
+                ? `Filling gaps up to ${fmtGap(effectiveGapWidthM)}…`
+                : "Fixing overlaps…"}</span
+            >
           </li>
         {/if}
       </ol>
@@ -397,7 +451,7 @@
           filenameStem={fileStem(files)}
           cachedGeoJSON={issuesGeoJSON}
           exportSource="topology_issues"
-          excludeFormatIds={["gdal:ESRI Shapefile"]}
+          variant="secondary"
         />
       </section>
     {/if}
@@ -687,7 +741,11 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
   .tc-mode-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: 1 1 0;
     padding: 0.3rem 0.6rem;
+    font-family: inherit;
     font-size: 0.75rem;
     font-weight: 500;
     border: none;
@@ -695,17 +753,22 @@
     color: #6b7280;
     cursor: pointer;
     border-left: 1px solid #e5e7eb;
+    text-align: center;
   }
   .tc-mode-btn:first-child {
     border-left: none;
   }
-  .tc-mode-btn:hover {
+  .tc-mode-btn:hover:not(:disabled) {
     background: #f3f4f6;
-    color: #111;
+    color: #374151;
   }
   .tc-mode-btn.active {
-    background: #111;
+    background: #374151;
     color: #fff;
+  }
+  .tc-mode-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
   .tc-kbd-hint {
     margin: 0;

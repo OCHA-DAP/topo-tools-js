@@ -132,7 +132,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: null,
     suffix: "_issues",
     kind: "spatial",
-    columns: ["key", "kind", "area_m2", "max_width_m", "unit_a", "unit_b"],
+    columns: ["key", "kind", "area_m2", "max_width_m", "fixed", "unit_a", "unit_b"],
   },
   crosswalk_overlay: {
     table: "cw_overlay_render",
