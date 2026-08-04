@@ -15,41 +15,28 @@
     originalGeojson = null,
     cleanedGeojson = null,
     issuesGeojson = null,
-    sliverVerticesGeojson = null,
-    selectMode = false,
-    selectionBbox = null,
     bounds = null,
     focusBbox = null,
     selectedKey = null,
     showSide = "b" as "a" | "b",
     processing = false,
     onIssueClick,
-    onBoxSelect,
   }: {
     originalGeojson?: string | null;
     cleanedGeojson?: string | null;
     issuesGeojson?: string | null;
-    sliverVerticesGeojson?: string | null;
-    selectMode?: boolean;
-    selectionBbox?: [number, number, number, number] | null;
     bounds?: [number, number, number, number] | null;
     focusBbox?: [number, number, number, number] | null;
     selectedKey?: string | null;
     showSide?: "a" | "b";
     processing?: boolean;
     onIssueClick?: (key: string | null) => void;
-    onBoxSelect?: (bbox: [number, number, number, number]) => void;
   } = $props();
-
-  const EMPTY_FC = '{"type":"FeatureCollection","features":[]}';
-  const VERTEX = "#2563eb"; // selectable sliver-vertex dots (blue)
-  const VERTEX_SELECTED = "#dc2626"; // dots inside the current selection box (red)
 
   const ORIGINAL_FILL = "#8dc65a"; // green
   const CLEANED_FILL = "#aad4e0"; // blue
   const OVERLAP = "#e11d48"; // red
   const GAP = "#f59e0b"; // amber
-  const SLIVER = "#7c3aed"; // purple
 
   let container: HTMLDivElement | undefined;
   let map: MaplibreMap | undefined;
@@ -69,8 +56,6 @@
     OVERLAP,
     "gap",
     GAP,
-    "sliver",
-    SLIVER,
     "#888888",
   ] as unknown as ExpressionSpecification;
 
@@ -154,15 +139,6 @@
         layout: { visibility: "none" },
         paint: { "line-color": issueColor, "line-width": 1.5, "line-opacity": 0.6 },
       });
-      // Slivers are line geometries (the offending edges); render them as lines.
-      map!.addLayer({
-        id: "tc-issues-sliver",
-        type: "line",
-        source: "tc-issues",
-        filter: ["==", ["get", "kind"], "sliver"] as FilterSpecification,
-        layout: { visibility: "none", "line-cap": "round" },
-        paint: { "line-color": SLIVER, "line-width": 3, "line-opacity": 0.6 },
-      });
       map!.addLayer({
         id: "tc-issues-highlight",
         type: "line",
@@ -171,75 +147,15 @@
         layout: { visibility: "none" },
         paint: { "line-color": "#111111", "line-width": 3, "line-opacity": 0.6 },
       });
-      for (const layer of ["tc-issues-fill", "tc-issues-sliver"]) {
-        map!.on("click", layer, (e) => {
-          const key = e.features?.[0]?.properties?.key;
-          onIssueClick?.(key == null ? null : String(key));
-        });
-        map!.on("mouseenter", layer, () => {
-          if (map) map.getCanvas().style.cursor = "pointer";
-        });
-        map!.on("mouseleave", layer, () => {
-          if (map) map.getCanvas().style.cursor = "";
-        });
-      }
-      applySideVisibility(showSide);
-    }
-  });
-
-  // Selectable sliver-adjacent vertices, shown as dots while in select mode.
-  $effect(() => {
-    const data = sliverVerticesGeojson ?? EMPTY_FC;
-    if (upsertSource("tc-vertices", data)) {
-      map!.addLayer({
-        id: "tc-vertices",
-        type: "circle",
-        source: "tc-vertices",
-        layout: { visibility: "none" },
-        paint: {
-          "circle-radius": 4,
-          "circle-color": VERTEX,
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "#fff",
-        },
+      map!.on("click", "tc-issues-fill", (e) => {
+        const key = e.features?.[0]?.properties?.key;
+        onIssueClick?.(key == null ? null : String(key));
       });
-      applySideVisibility(showSide);
-    }
-  });
-
-  // Persistent outline of the current selection box (after a drag, before Snap).
-  $effect(() => {
-    const b = selectionBbox;
-    const fc = b
-      ? JSON.stringify({
-          type: "FeatureCollection",
-          features: [
-            {
-              type: "Feature",
-              properties: {},
-              geometry: {
-                type: "Polygon",
-                coordinates: [
-                  [
-                    [b[0], b[1]],
-                    [b[2], b[1]],
-                    [b[2], b[3]],
-                    [b[0], b[3]],
-                    [b[0], b[1]],
-                  ],
-                ],
-              },
-            },
-          ],
-        })
-      : EMPTY_FC;
-    if (upsertSource("tc-selbox", fc)) {
-      map!.addLayer({
-        id: "tc-selbox",
-        type: "line",
-        source: "tc-selbox",
-        layout: { visibility: "none" },
-        paint: { "line-color": VERTEX_SELECTED, "line-width": 1.5, "line-dasharray": [2, 1] },
+      map!.on("mouseenter", "tc-issues-fill", () => {
+        if (map) map.getCanvas().style.cursor = "pointer";
+      });
+      map!.on("mouseleave", "tc-issues-fill", () => {
+        if (map) map.getCanvas().style.cursor = "";
       });
       applySideVisibility(showSide);
     }
@@ -269,73 +185,17 @@
     vis("tc-original-line", isA);
     vis("tc-issues-fill", isA);
     vis("tc-issues-outline", isA);
-    vis("tc-issues-sliver", isA);
     vis("tc-issues-highlight", isA);
-    vis("tc-vertices", isA && selectMode);
-    vis("tc-selbox", isA && selectMode);
     vis("tc-cleaned-fill", !isA);
     vis("tc-cleaned-line", !isA);
   }
 
   $effect(() => {
     const side = showSide;
-    void selectMode; // re-apply visibility when select mode toggles
     if (!map || !styleReady) return;
     if (sidePending !== undefined) cancelAnimationFrame(sidePending);
     sidePending = requestAnimationFrame(() => applySideVisibility(side));
   });
-
-  // Rubber-band box select (select mode): drag a rectangle; on release, report its
-  // geographic bbox. Drag-pan is suspended while a box is being drawn.
-  let boxEl: HTMLDivElement | undefined;
-  let dragStart: { x: number; y: number } | undefined;
-
-  function onDown(e: MapMouseEvent): void {
-    if (!selectMode || !map || !container) return;
-    const oe = e.originalEvent as MouseEvent;
-    if (oe.button !== 0) return;
-    map.dragPan.disable();
-    dragStart = { x: oe.clientX, y: oe.clientY };
-    boxEl = document.createElement("div");
-    boxEl.className = "tc-selbox-live";
-    container.appendChild(boxEl);
-  }
-
-  function onMove(e: MapMouseEvent): void {
-    if (!dragStart || !boxEl) return;
-    const oe = e.originalEvent as MouseEvent;
-    const rect = container!.getBoundingClientRect();
-    const x = Math.min(dragStart.x, oe.clientX) - rect.left;
-    const y = Math.min(dragStart.y, oe.clientY) - rect.top;
-    boxEl.style.left = `${x}px`;
-    boxEl.style.top = `${y}px`;
-    boxEl.style.width = `${Math.abs(oe.clientX - dragStart.x)}px`;
-    boxEl.style.height = `${Math.abs(oe.clientY - dragStart.y)}px`;
-  }
-
-  function onUp(e: MapMouseEvent): void {
-    if (!dragStart || !map) return;
-    const oe = e.originalEvent as MouseEvent;
-    const start = dragStart;
-    dragStart = undefined;
-    if (boxEl) {
-      boxEl.remove();
-      boxEl = undefined;
-    }
-    map.dragPan.enable();
-    const rect = container!.getBoundingClientRect();
-    const p0 = { x: start.x - rect.left, y: start.y - rect.top };
-    const p1 = { x: oe.clientX - rect.left, y: oe.clientY - rect.top };
-    if (Math.abs(p1.x - p0.x) < 3 && Math.abs(p1.y - p0.y) < 3) return; // a click, not a drag
-    const a = map.unproject([p0.x, p0.y]);
-    const b = map.unproject([p1.x, p1.y]);
-    onBoxSelect?.([
-      Math.min(a.lng, b.lng),
-      Math.min(a.lat, b.lat),
-      Math.max(a.lng, b.lng),
-      Math.max(a.lat, b.lat),
-    ]);
-  }
 
   // Initial fit to the whole coverage. fitBounds is called directly (not gated on
   // isStyleLoaded) because adding GeoJSON sources flips isStyleLoaded() false and
@@ -366,17 +226,17 @@
         [b[0], b[1]],
         [b[2], b[3]],
       ],
-      // Zoom in as far as z25 for tiny slivers; larger issues cap out sooner on their own bbox.
+      // Larger issues cap out sooner on their own bbox; smaller ones benefit from
+      // zooming in further to be legible.
       { padding: 120, maxZoom: 25, animate: true },
     );
   });
 
   function handleMapClick(e: MapMouseEvent): void {
     if (!map || !onIssueClick) return;
-    const layers = ["tc-issues-fill", "tc-issues-sliver"].filter((l) => map!.getLayer(l));
-    if (layers.length === 0) return;
+    if (!map.getLayer("tc-issues-fill")) return;
     // Clicking empty space (not an issue) clears the selection.
-    const feats = map.queryRenderedFeatures(e.point, { layers });
+    const feats = map.queryRenderedFeatures(e.point, { layers: ["tc-issues-fill"] });
     if (feats.length === 0) onIssueClick(null);
   }
 
@@ -389,9 +249,9 @@
       style,
       center: [20, 5],
       zoom: Math.log2((Math.min(container.clientWidth, container.clientHeight) * Math.PI) / 512),
-      // Default maxZoom is 22; raise to MapLibre's hard max so the sub-metre
-      // sliver slits can be inspected manually. Basemap tiles overzoom (blur)
-      // past ~z14 but the vector issue overlay stays crisp at any zoom.
+      // Default maxZoom is 22; raise to MapLibre's hard max so small issues can
+      // be inspected closely. Basemap tiles overzoom (blur) past ~z14 but the
+      // vector issue overlay stays crisp at any zoom.
       maxZoom: 25,
       attributionControl: { compact: true },
     });
@@ -404,9 +264,6 @@
       map?.on("touchstart", stopSpin);
       map?.on("wheel", stopSpin);
       map?.on("click", handleMapClick);
-      map?.on("mousedown", onDown);
-      map?.on("mousemove", onMove);
-      map?.on("mouseup", onUp);
     });
   });
 
@@ -417,22 +274,12 @@
   });
 </script>
 
-<div bind:this={container} class="tc-map" class:tc-selecting={selectMode}></div>
+<div bind:this={container} class="tc-map"></div>
 
 <style>
   .tc-map {
     width: 100%;
     height: 100%;
     min-height: 400px;
-  }
-  .tc-map.tc-selecting :global(.maplibregl-canvas) {
-    cursor: crosshair;
-  }
-  .tc-map :global(.tc-selbox-live) {
-    position: absolute;
-    border: 1.5px dashed #dc2626;
-    background: rgba(220, 38, 38, 0.1);
-    pointer-events: none;
-    z-index: 5;
   }
 </style>

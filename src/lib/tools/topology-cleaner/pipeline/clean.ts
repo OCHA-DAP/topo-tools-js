@@ -28,7 +28,7 @@ export async function buildClean(
 // shared boundary was digitized/exported independently and differs by float
 // jitter (e.g. two vertices ~1e-13 deg apart that were meant to coincide) — GEOS's
 // overlay throws TopologyException on this, in both ST_CoverageClean (clean.ts)
-// and the gap/overlap/sliver detection queries (issues.ts), since none of them
+// and the gap/overlap detection queries (issues.ts), since none of them
 // tolerate near-but-not-exact coincidence.
 //
 // 1e-10 deg (~10 microns) is the smallest tolerance that reliably resolves this:
