@@ -6,10 +6,11 @@ interface Props {
 }
 
 const { tool } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 ---
 
-<a class="card" href={`/${tool.slug}`}>
-  <img class="icon" src={tool.iconHref} alt="" aria-hidden="true" width="64" height="64" />
+<a class="card" href={`${base}${tool.slug}`}>
+  <img class="icon" src={`${base}${tool.iconHref.slice(1)}`} alt="" aria-hidden="true" width="64" height="64" />
   <div class="text">
     <h3 class="name">{tool.name}</h3>
     <p class="tagline">{tool.tagline}</p>

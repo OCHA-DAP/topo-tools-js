@@ -17,6 +17,8 @@
   import { detectColumns, type ColumnGuess } from "$lib/db/columns";
   import { buildKeyed, loadSide } from "./pipeline/load";
 
+  const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+
   const STAGE_LABELS = [
     "Load sources",
     "Build keyed layers",
@@ -462,7 +464,7 @@
 <div class="cw-layout">
   <aside class="cw-sidebar">
     <header>
-      <a class="cw-back" href="/">← Topology Tools</a>
+      <a class="cw-back" href={base}>← Topology Tools</a>
       <h1>Changelog</h1>
       <p class="cw-blurb">
         Compare two versions of a polygon layer (e.g. ADM2 across census rounds) and classify each

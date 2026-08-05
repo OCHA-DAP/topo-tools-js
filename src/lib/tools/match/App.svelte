@@ -7,6 +7,8 @@
   import { runEdgeMatch, type EdgeMatchPhase } from "./pipeline/index";
   import type { GroupResult } from "./pipeline/groups";
 
+  const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+
   const STAGE_LABELS = [
     "Load file",
     "Extract boundary lines",
@@ -133,7 +135,7 @@
 <div class="layout">
   <aside class="sidebar">
     <header>
-      <a class="back" href="/">← Topology Tools</a>
+      <a class="back" href={base}>← Topology Tools</a>
       <h1>Edge Matcher</h1>
       <p class="blurb">
         Match a fine polygon layer to whichever coarse boundary polygon it overlaps the most, then
