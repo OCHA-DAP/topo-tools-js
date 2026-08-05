@@ -7,6 +7,8 @@
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
 
+  const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+
   const STAGE_LABELS = [
     "Load file",
     "Extract boundary lines",
@@ -116,7 +118,7 @@
 <div class="layout">
   <aside class="sidebar">
     <header>
-      <a class="back" href="/">← Topology Tools</a>
+      <a class="back" href={base}>← Topology Tools</a>
       <h1>Edge Extender</h1>
       <p class="blurb">
         Extend polygon boundaries outward to meet a parent boundary — for example ADM3 sub-national

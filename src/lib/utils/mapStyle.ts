@@ -25,7 +25,7 @@ export function loadMaplibre(): Promise<typeof import("maplibre-gl")> {
 
 const LAND_SOURCE_ID = "ne-land";
 const LAND_LAYER_ID = "ne-land-fill";
-const LAND_URL = "/data/ne_50m_land.geojson";
+const LAND_URL = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/ne_50m_land.geojson`;
 const WATER_COLOR = "#dde6ed";
 const LAND_COLOR = "#f5f5f3";
 

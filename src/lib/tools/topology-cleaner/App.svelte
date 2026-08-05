@@ -17,6 +17,8 @@
   } from "./pipeline";
   import { niceNum } from "./pipeline/units";
 
+  const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+
   const STAGE_LABELS = ["Load file", "Analyze coverage", "Find gaps & overlaps", "Fix topology"];
 
   // Input
@@ -296,7 +298,7 @@
 <div class="tc-layout">
   <aside class="tc-sidebar">
     <header>
-      <a class="tc-back" href="/">← Topology Tools</a>
+      <a class="tc-back" href={base}>← Topology Tools</a>
       <h1>Topology Cleaner</h1>
       <p class="tc-blurb">
         Drop a polygon layer to detect and fix overlaps and gaps. Click any issue to zoom to it.
