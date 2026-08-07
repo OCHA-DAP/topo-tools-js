@@ -71,6 +71,22 @@ export async function runCoverageClean(
   `);
 }
 
+// True if `table` (one row per feature, `geom` column) has any overlaps or
+// unmatched shared edges. Never flags gaps — a coverage with a fully-enclosed
+// hole and otherwise-matching edges reports clean here. Shared by
+// gatedCoverageClean below and Topology Cleaner's own pre-clean skip check
+// (pipeline/clean.ts).
+export async function hasCoverageViolations(
+  conn: AsyncDuckDBConnection,
+  table: string,
+): Promise<boolean> {
+  const r = await conn.query(`--sql
+    SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL AS bad
+    FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${table})
+  `);
+  return Boolean(r.toArray()[0].bad);
+}
+
 // Runs ST_CoverageClean on `table` in place, but only if
 // ST_CoverageInvalidEdges_Agg actually flags a defect on it first. Mirrors
 // Edge Extender's original input-side clean gate — forcing ST_CoverageClean
@@ -90,11 +106,7 @@ export async function gatedCoverageClean(
   table: string,
   opts: CoverageCleanOptions = {},
 ): Promise<void> {
-  const r = await conn.query(`--sql
-    SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL AS bad
-    FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${table})
-  `);
-  if (!r.toArray()[0].bad) return;
+  if (!(await hasCoverageViolations(conn, table))) return;
 
   const scratch = `${table}_cc_gated`;
   try {

@@ -1,5 +1,4 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { buildReducedLayer } from "./clean";
 import { degSqToM2, degToM, niceNum } from "./units";
 
 // Polsby-Popper compactness cutoff (4·π·Area / Perimeter², 1.0 = circle,
@@ -28,9 +27,9 @@ export type IssueKind = "gap" | "overlap";
 export interface IssuesResult {
   rows: IssueRow[];
   geojson: string; // FeatureCollection of issue polygons, props {key, kind}
-  // Kinds whose detection query threw (even after the reduced-precision retry)
-  // and was degraded to an empty table — a 0 count for these is NOT "clean",
-  // it's "couldn't check." Distinct from a kind that ran fine and found nothing.
+  // Kinds whose detection query threw and was degraded to an empty table — a
+  // 0 count for these is NOT "clean", it's "couldn't check." Distinct from a
+  // kind that ran fine and found nothing.
   failedKinds: Set<IssueKind>;
 }
 
@@ -71,25 +70,17 @@ export function gapRegionsQuery(targetTable: string, sourceTable: string): strin
   `;
 }
 
-// Retries against a precision-reduced copy of layer_01 on GEOS overlay failure
-// (see buildReducedLayer in clean.ts for why) before giving up and degrading to
-// an empty table. Returns false if even the retry failed — the caller surfaces
-// this so the UI can tell "detection failed" apart from "genuinely 0 gaps."
+// Degrades to an empty table on GEOS overlay failure. Returns false when that
+// happens — the caller surfaces this so the UI can tell "detection failed"
+// apart from "genuinely 0 gaps."
 export async function buildGapRegions(conn: AsyncDuckDBConnection): Promise<boolean> {
   try {
     await conn.query(gapRegionsQuery("tc_gap_regions", "layer_01"));
     return true;
   } catch (e) {
-    console.warn("gap-region detection failed; retrying with reduced precision:", e);
-    try {
-      await buildReducedLayer(conn);
-      await conn.query(gapRegionsQuery("tc_gap_regions", "layer_01_reduced"));
-      return true;
-    } catch (e2) {
-      console.warn("gap-region detection failed after retry; skipping gaps:", e2);
-      await emptyRegions(conn, "tc_gap_regions");
-      return false;
-    }
+    console.warn("gap-region detection failed; skipping gaps:", e);
+    await emptyRegions(conn, "tc_gap_regions");
+    return false;
   }
 }
 
@@ -135,24 +126,16 @@ export function overlapRegionsQuery(targetTable: string, sourceTable: string): s
   `;
 }
 
-// Retries against a precision-reduced copy of layer_01 on GEOS overlay failure
-// (see buildReducedLayer in clean.ts for why) before giving up and degrading to
-// an empty table. Returns false if even the retry failed.
+// Degrades to an empty table on GEOS overlay failure. Returns false when that
+// happens.
 export async function buildOverlapRegions(conn: AsyncDuckDBConnection): Promise<boolean> {
   try {
     await conn.query(overlapRegionsQuery("tc_overlap_regions", "layer_01"));
     return true;
   } catch (e) {
-    console.warn("overlap detection failed; retrying with reduced precision:", e);
-    try {
-      await buildReducedLayer(conn);
-      await conn.query(overlapRegionsQuery("tc_overlap_regions", "layer_01_reduced"));
-      return true;
-    } catch (e2) {
-      console.warn("overlap detection failed after retry; skipping overlaps:", e2);
-      await emptyRegions(conn, "tc_overlap_regions", ", NULL::BIGINT AS fa, NULL::BIGINT AS fb");
-      return false;
-    }
+    console.warn("overlap detection failed; skipping overlaps:", e);
+    await emptyRegions(conn, "tc_overlap_regions", ", NULL::BIGINT AS fa, NULL::BIGINT AS fb");
+    return false;
   }
 }
 
