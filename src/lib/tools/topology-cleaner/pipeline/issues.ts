@@ -1,17 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { buildReducedLayer } from "./clean";
-import { degSqToM2, degToM, m2ToDegSq, niceNum } from "./units";
-
-// Floor below which a "gap"/"overlap" region is discarded as noise rather than
-// surfaced as an issue. Real-world coverages can produce sub-cm² slivers purely
-// from floating-point residue — e.g. the precision-reduction retry (clean.ts)
-// snapping coordinates to a 1e-10deg grid can itself leave a few square-micron
-// artifact holes at feature junctions. Observed artifact areas on real failing
-// datasets topped out at 1.6e-7 m² (~0.4mm per side); 1cm² is ~60,000x that, with
-// zero risk of hiding a real defect (administrative-boundary slivers worth a
-// user's attention are orders of magnitude larger), while reliably excluding the
-// noise.
-const MIN_ISSUE_AREA_M2 = 1e-4; // 1 cm²
+import { degSqToM2, degToM, niceNum } from "./units";
 
 // Polsby-Popper compactness cutoff (4·π·Area / Perimeter², 1.0 = circle,
 // →0 = elongated crack) below which a gap is treated as a digitization
@@ -78,7 +67,7 @@ export function gapRegionsQuery(targetTable: string, sourceTable: string): strin
     )
     SELECT row_number() OVER () AS n, geom
     FROM holes
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom) AND ST_Area(geom) > ${m2ToDegSq(MIN_ISSUE_AREA_M2).toExponential()}
+    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `;
 }
 
@@ -142,7 +131,7 @@ export function overlapRegionsQuery(targetTable: string, sourceTable: string): s
     )
     SELECT row_number() OVER () AS n, fa, fb, geom
     FROM pairs
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom) AND ST_Area(geom) > ${m2ToDegSq(MIN_ISSUE_AREA_M2).toExponential()}
+    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `;
 }
 
