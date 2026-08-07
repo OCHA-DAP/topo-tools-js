@@ -37,8 +37,7 @@ contracts, no rationale), `docs/explanation/` (current-state rationale,
 squashed/rewritten as understanding evolves), `docs/how-to/` (task-oriented
 guides), `docs/tutorials/` (not yet written). `docs/adr/` holds immutable,
 one-decision-per-file Architecture Decision Records (Nygard format) — see
-`docs/adr/README.md`. `docs/stress-test-tracker.md` is a non-Diátaxis
-exception: a live bug-status board, not a tier document.
+`docs/adr/README.md`.
 
 ## Commands
 

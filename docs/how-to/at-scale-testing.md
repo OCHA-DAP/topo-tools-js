@@ -35,5 +35,7 @@ drop may load fine in a real browser. Treat local headless testing as capped
 at roughly 100-150 MB files; verify anything bigger in a real browser
 instead (e.g. the deployed GitHub Pages build).
 
-`docs/stress-test-tracker.md` records live results and open bugs found this
-way — check it before re-running a combination that's already been tried.
+See [`docs/explanation/performance.md`](../explanation/performance.md#known-good-baselines-at-real-scale)
+for confirmed clean runs at real scale, and
+[`docs/adr/0008`](../adr/0008-wasm-coverageclean-oom-ceiling-mitigated-not-fixed.md)
+for the known WASM OOM ceiling.
