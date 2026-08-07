@@ -14,11 +14,9 @@ export async function stageVoronoi(conn: AsyncDuckDBConnection): Promise<void> {
   `);
 
   // Assign source fid to each Voronoi cell via point-in-polygon. ST_Intersects
-  // (not ST_Within) handles generators that land exactly on a cell boundary.
-  // ST_Intersects in JOIN ON triggers SPATIAL_JOIN's ~1× memory_limit virtual
-  // reservation; in WASM that becomes real allocation, so we override to 999GB
-  // for the join only. SPATIAL_JOIN builds its own internal index — see
-  // docs/performance.md for why an explicit RTREE here was net-negative.
+  // (not ST_Within) handles generators that land exactly on a cell boundary,
+  // but triggers SPATIAL_JOIN's ~1x memory_limit reservation, so we override
+  // to 999GB for the join only.
   const origLimit = (await conn.query("SELECT current_setting('memory_limit') AS v")).toArray()[0]
     .v as string;
   await conn.query("SET memory_limit = '999GB'");

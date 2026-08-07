@@ -25,15 +25,8 @@ const num = (v: unknown): number | null => {
 
 const str = (v: unknown): string | null => (v == null ? null : String(v));
 
-// Produces long-format rows for the CrosswalkTable component. Each row is
-// either:
-//   - A passing pair (both a_fid and b_fid set, with coverage/iou populated)
-//   - A singleton (one side NULL — used for 'created', 'removed' cases)
-//
-// Sorted by (cluster_id, a_code, b_code) so rowspan grouping in the UI lines up
-// naturally. Singletons for a cluster have NULL on whichever side they lack;
-// the table renderer formats those as blank cells (with a small badge for the
-// relationship class to signal the asymmetry).
+// Long-format rows (pairs + singletons) for CrosswalkTable, sorted by
+// (cluster_id, a_code, b_code) so the UI's rowspan grouping lines up.
 
 export async function stageTable(conn: AsyncDuckDBConnection): Promise<TableRow[]> {
   // Pairs (matched edges): join codes/names from both keyed tables.
@@ -53,9 +46,8 @@ export async function stageTable(conn: AsyncDuckDBConnection): Promise<TableRow[
     `)
   ).toArray() as Array<Record<string, unknown>>;
 
-  // Singletons: polygons whose cluster has no member on the other side.
-  // 'a' singletons (removed): rows in cw_polygon_class with side='a' whose
-  // cluster has no 'b' entry. Symmetric for 'b' singletons.
+  // Singletons: polygons whose cluster has no member on the other side
+  // (symmetric for 'a' and 'b').
   const singletons = (
     await conn.query(`--sql
       WITH cnt AS (

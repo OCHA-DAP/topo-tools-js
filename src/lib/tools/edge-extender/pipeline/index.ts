@@ -67,10 +67,7 @@ export async function getOriginalGeojson(conn: AsyncDuckDBConnection): Promise<s
   return tableToGeoJSON(conn, "layer_01", null);
 }
 
-// Gap width for every gatedCoverageClean call in this pipeline: ~111mm, this
-// investigation's established ceiling for derived-geometry precision fixes
-// (docs/wasm-geos-noding-investigation.md) — small enough to never touch a
-// real, intentional cartographic gap.
+// ~111mm — small enough to never touch a real, intentional cartographic gap.
 export const OUTPUT_CLEAN_GAP = 1e-6;
 
 async function runValidation(

@@ -1,17 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { buildReducedLayer } from "./clean";
-import { degSqToM2, degToM, m2ToDegSq, niceNum } from "./units";
-
-// Floor below which a "gap"/"overlap" region is discarded as noise rather than
-// surfaced as an issue. Real-world coverages can produce sub-cm² slivers purely
-// from floating-point residue — e.g. the precision-reduction retry (clean.ts)
-// snapping coordinates to a 1e-10deg grid can itself leave a few square-micron
-// artifact holes at feature junctions. Observed artifact areas on real failing
-// datasets topped out at 1.6e-7 m² (~0.4mm per side); 1cm² is ~60,000x that, with
-// zero risk of hiding a real defect (administrative-boundary slivers worth a
-// user's attention are orders of magnitude larger), while reliably excluding the
-// noise.
-const MIN_ISSUE_AREA_M2 = 1e-4; // 1 cm²
+import { degSqToM2, degToM, niceNum } from "./units";
 
 // Polsby-Popper compactness cutoff (4·π·Area / Perimeter², 1.0 = circle,
 // →0 = elongated crack) below which a gap is treated as a digitization
@@ -39,9 +27,9 @@ export type IssueKind = "gap" | "overlap";
 export interface IssuesResult {
   rows: IssueRow[];
   geojson: string; // FeatureCollection of issue polygons, props {key, kind}
-  // Kinds whose detection query threw (even after the reduced-precision retry)
-  // and was degraded to an empty table — a 0 count for these is NOT "clean",
-  // it's "couldn't check." Distinct from a kind that ran fine and found nothing.
+  // Kinds whose detection query threw and was degraded to an empty table — a
+  // 0 count for these is NOT "clean", it's "couldn't check." Distinct from a
+  // kind that ran fine and found nothing.
   failedKinds: Set<IssueKind>;
 }
 
@@ -78,52 +66,29 @@ export function gapRegionsQuery(targetTable: string, sourceTable: string): strin
     )
     SELECT row_number() OVER () AS n, geom
     FROM holes
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom) AND ST_Area(geom) > ${m2ToDegSq(MIN_ISSUE_AREA_M2).toExponential()}
+    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `;
 }
 
-// Retries against a precision-reduced copy of layer_01 on GEOS overlay failure
-// (see buildReducedLayer in clean.ts for why) before giving up and degrading to
-// an empty table. Returns false if even the retry failed — the caller surfaces
-// this so the UI can tell "detection failed" apart from "genuinely 0 gaps."
+// Degrades to an empty table on GEOS overlay failure. Returns false when that
+// happens — the caller surfaces this so the UI can tell "detection failed"
+// apart from "genuinely 0 gaps."
 export async function buildGapRegions(conn: AsyncDuckDBConnection): Promise<boolean> {
   try {
     await conn.query(gapRegionsQuery("tc_gap_regions", "layer_01"));
     return true;
   } catch (e) {
-    console.warn("gap-region detection failed; retrying with reduced precision:", e);
-    try {
-      await buildReducedLayer(conn);
-      await conn.query(gapRegionsQuery("tc_gap_regions", "layer_01_reduced"));
-      return true;
-    } catch (e2) {
-      console.warn("gap-region detection failed after retry; skipping gaps:", e2);
-      await emptyRegions(conn, "tc_gap_regions");
-      return false;
-    }
+    console.warn("gap-region detection failed; skipping gaps:", e);
+    await emptyRegions(conn, "tc_gap_regions");
+    return false;
   }
 }
 
 // Overlap regions = polygonal pairwise intersections of polygons in the source
-// table (touching borders intersect as lines and are dropped by
-// CollectionExtract). Uses bbox predicates instead of a bare spatial predicate
-// in the JOIN so DuckDB plans this as PIECEWISE_MERGE_JOIN rather than
-// SPATIAL_JOIN (which OOMs in WASM). Exported: also reused by verify.ts to
-// sweep tc_clean.
-//
-// The join predicate is ST_Overlaps/ST_Contains, not ST_Intersects.
-// ST_Intersects is true for any pair of polygons that merely share a boundary
-// edge -- the normal case for every adjacent pair in a real coverage layer,
-// not a defect. At admin-boundary scale (thousands of fids, e.g. an
-// archipelago admin3 layer) that floods the join with candidates whose
-// ST_Intersection is a degenerate line/point, each still paying for
-// ST_Intersection + ST_MakeValid + ST_CollectionExtract before the area
-// filter below drops them -- confirmed on the Python port (topo-tools-py)
-// against Indonesia admin3 (7,069 fids): ST_Intersects matched 18,457 pairs
-// and the stage didn't finish in 6+ minutes natively, let alone in WASM.
-// ST_Overlaps alone would miss a fully-duplicated or nested polygon pair (its
-// intersection equals both/one input, so ST_Overlaps is false by OGC
-// definition) -- ST_Contains in both directions covers that case.
+// table, via a bbox-prefiltered join (PIECEWISE_MERGE_JOIN, not the
+// WASM-OOMing SPATIAL_JOIN). ST_Overlaps/ST_Contains, not ST_Intersects,
+// which would also match every ordinary touching-edge pair and flood the
+// join at admin-boundary scale. Exported: also reused by verify.ts.
 export function overlapRegionsQuery(targetTable: string, sourceTable: string): string {
   return `--sql
     CREATE OR REPLACE TABLE ${targetTable} AS
@@ -142,28 +107,20 @@ export function overlapRegionsQuery(targetTable: string, sourceTable: string): s
     )
     SELECT row_number() OVER () AS n, fa, fb, geom
     FROM pairs
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom) AND ST_Area(geom) > ${m2ToDegSq(MIN_ISSUE_AREA_M2).toExponential()}
+    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `;
 }
 
-// Retries against a precision-reduced copy of layer_01 on GEOS overlay failure
-// (see buildReducedLayer in clean.ts for why) before giving up and degrading to
-// an empty table. Returns false if even the retry failed.
+// Degrades to an empty table on GEOS overlay failure. Returns false when that
+// happens.
 export async function buildOverlapRegions(conn: AsyncDuckDBConnection): Promise<boolean> {
   try {
     await conn.query(overlapRegionsQuery("tc_overlap_regions", "layer_01"));
     return true;
   } catch (e) {
-    console.warn("overlap detection failed; retrying with reduced precision:", e);
-    try {
-      await buildReducedLayer(conn);
-      await conn.query(overlapRegionsQuery("tc_overlap_regions", "layer_01_reduced"));
-      return true;
-    } catch (e2) {
-      console.warn("overlap detection failed after retry; skipping overlaps:", e2);
-      await emptyRegions(conn, "tc_overlap_regions", ", NULL::BIGINT AS fa, NULL::BIGINT AS fb");
-      return false;
-    }
+    console.warn("overlap detection failed; skipping overlaps:", e);
+    await emptyRegions(conn, "tc_overlap_regions", ", NULL::BIGINT AS fa, NULL::BIGINT AS fb");
+    return false;
   }
 }
 

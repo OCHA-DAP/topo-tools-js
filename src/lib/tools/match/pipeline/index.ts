@@ -106,37 +106,22 @@ export async function runEdgeMatch(
       onProgress({ phase: "group-done", groupIndex, groupTotal, result }),
   );
 
-  // If a group above OOM'd, the connection stays poisoned for the rest of
-  // the session (confirmed: WASM linear memory can't recover mid-session) —
-  // runGroups' own finally-block fix already lets the loop finish and record
-  // partial results instead of aborting, but everything from here on
-  // (attribute join, scratch-table drops, export) can still throw on that
-  // same poisoned connection. Attribute enrichment is a nice-to-have; the
-  // groups that already succeeded are not — attempt it, but if it fails,
-  // fall back to a geometry-only export of `ge_results` rather than losing
+  // A group OOM above leaves the connection poisoned for the rest of the
+  // session, so attribute enrichment below may also throw. It's a
+  // nice-to-have — fall back to a geometry-only export rather than losing
   // every already-computed group to a downstream error.
   let hasAttrTable = false;
   try {
-    // The last group's own runPipeline call only cleans its scratch tables
-    // (layer_04, layer_05_tmp1/2, layer_03a, etc.) at the *start* of the next
-    // call — there is no next call after the loop ends, so they'd otherwise
-    // linger through the two heaviest remaining steps below (whole-batch
-    // CoverageClean and the final GeoJSON export), right when peak memory
-    // matters most. (Measured on a real 43-group/465-feature batch: this alone
-    // is not sufficient to avoid the OOM below — the scratch tables from just
-    // the last group are small — but it's free, correct, and still worth doing.)
+    // The last group's scratch tables are only cleaned at the *start* of the
+    // next runPipeline call, and there is no next call after the loop ends —
+    // free them now, before the two heaviest remaining steps.
     await dropInternalTables(conn);
 
     await buildResultsAttrTable(conn);
 
-    // child_layer_01/parent_layer_01/parent_layer_attr/ge_assignment were all
-    // needed throughout the per-group loop above (population, clip target,
-    // parent attribute join) and by buildResultsAttrTable just above (the last
-    // reader of parent_layer_attr and ge_assignment) — nothing downstream reads
-    // any of them again. child_layer_attr and ge_unassigned are deliberately
-    // NOT dropped here: DownloadMenu's "unassigned" export reads both live,
-    // on demand, whenever the user clicks it, which can happen well after this
-    // function returns.
+    // child_layer_attr/ge_unassigned are deliberately NOT dropped here:
+    // DownloadMenu's "unassigned" export reads both live, on demand, which
+    // can happen well after this function returns.
     await conn.query("DROP TABLE IF EXISTS child_layer_01");
     await conn.query("DROP TABLE IF EXISTS parent_layer_01");
     await conn.query("DROP TABLE IF EXISTS parent_layer_attr");
@@ -147,34 +132,17 @@ export async function runEdgeMatch(
   }
   const attrTable = hasAttrTable ? "ge_results_attr" : null;
 
-  // Export from the already-correct, already-verified geometry BEFORE
-  // attempting the memory-heavy whole-batch CoverageClean pass below.
-  // ST_CoverageClean's WASM-GEOS implementation has known robustness edges
-  // (docs/performance.md) and on a large assembled batch can exceed the
-  // WASM heap's ~3GiB ceiling. `gatedCoverageClean` itself catches that and
-  // leaves `ge_results` untouched, but WASM linear memory can't shrink back
-  // down once grown — confirmed empirically that once the clean OOMs, even a
-  // trivial subsequent query fails to commit for the rest of the session. If
-  // clean-then-export were the order, a clean failure would silently take
-  // the whole, already-correct 43-group result down with it. Exporting first
-  // means the worst case is "not perfectly seamless" instead of "nothing at
-  // all" — ge_results without this clean is still a fully valid result (every
-  // fid clipped to its own parent boundary), just with possible micro seams
-  // at group boundaries that a per-group clean couldn't see.
+  // Export from the already-correct geometry BEFORE attempting the
+  // memory-heavy whole-batch CoverageClean pass below — on a large batch it
+  // can OOM and poison the connection for the rest of the session, so a
+  // clean-then-export order would risk losing an already-correct result.
   let geojson = await tableToGeoJSON(conn, "ge_results", attrTable);
   const bounds = await computeBounds(conn);
 
-  // The one and only coverage-clean pass for the whole batch, run here on
-  // the fully assembled result rather than per-group inside runGroups —
-  // per-group cleaning would be redundant (this table gets reshaped again
-  // by each group's clip step before this point exists) and this single
-  // pass also catches cross-group seams that no per-group clean could see
-  // in the first place, since adjacent groups never share table state. Only
-  // replace the export above if both the clean and the re-export succeed.
-  // Skipped entirely when the attribute join above already failed — that's
-  // a cheap CREATE TABLE, so if even that couldn't commit, a much heavier
-  // CoverageClean pass on the same poisoned connection has no real chance
-  // either and would just cost more wall-clock time for no benefit.
+  // One whole-batch clean pass, catching cross-group seams no per-group
+  // clean could see. Only replaces the export above if it and the re-export
+  // both succeed; skipped if the attribute join already failed, since that's
+  // a sign the connection is already poisoned.
   if (hasAttrTable) {
     try {
       await gatedCoverageClean(conn, "ge_results", { gap: OUTPUT_CLEAN_GAP });

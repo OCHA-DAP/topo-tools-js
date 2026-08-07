@@ -71,30 +71,33 @@ export async function runCoverageClean(
   `);
 }
 
+// True if `table` (one row per feature, `geom` column) has any overlaps or
+// unmatched shared edges. Never flags gaps — a coverage with a fully-enclosed
+// hole and otherwise-matching edges reports clean here. Shared by
+// gatedCoverageClean below and Topology Cleaner's own pre-clean skip check
+// (pipeline/clean.ts).
+export async function hasCoverageViolations(
+  conn: AsyncDuckDBConnection,
+  table: string,
+): Promise<boolean> {
+  const r = await conn.query(`--sql
+    SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL AS bad
+    FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${table})
+  `);
+  return Boolean(r.toArray()[0].bad);
+}
+
 // Runs ST_CoverageClean on `table` in place, but only if
-// ST_CoverageInvalidEdges_Agg actually flags a defect on it first. Mirrors
-// Edge Extender's original input-side clean gate — forcing ST_CoverageClean
-// unconditionally onto data that doesn't need it was tried early in the WASM
-// noding investigation (docs/wasm-geos-noding-investigation.md, fix #1) and
-// made the crash rate *worse*, because ST_CoverageClean's own WASM-GEOS
-// implementation has its own robustness edges that get exercised more often
-// the more it's called. Every caller that wants a "clean this derived output"
-// pass should go through this gate rather than calling ST_CoverageClean
-// directly. A CoverageClean failure here is swallowed (warn + leave `table`
-// untouched) rather than propagated — a not-quite-seamless output is still a
-// valid, usable result; failing the whole run over a cosmetic cleanup step
-// isn't worth it. Always pass `preserveOriginal: true` semantics implicitly
-// (this always uses it) so `table`'s fid set never changes.
+// ST_CoverageInvalidEdges_Agg actually flags a defect first — cleaning
+// unconditionally was tried and made WASM crash rates worse. A failure here
+// is swallowed (warn + leave `table` untouched): a not-quite-seamless output
+// beats losing an already-valid result. Always preserves `table`'s fid set.
 export async function gatedCoverageClean(
   conn: AsyncDuckDBConnection,
   table: string,
   opts: CoverageCleanOptions = {},
 ): Promise<void> {
-  const r = await conn.query(`--sql
-    SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL AS bad
-    FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${table})
-  `);
-  if (!r.toArray()[0].bad) return;
+  if (!(await hasCoverageViolations(conn, table))) return;
 
   const scratch = `${table}_cc_gated`;
   try {

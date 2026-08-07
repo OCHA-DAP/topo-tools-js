@@ -40,28 +40,11 @@ interface DriverMeta {
 }
 
 // Curated set of GDAL output drivers under DuckDB-WASM's spatial extension.
-// All GDAL drivers route their output through OPFS via a registered
-// FileSystemFileHandle (see exportGdal). The alternative — letting COPY TO
-// write to a plain BUFFER path — appeared to "work" but actually produced
-// 1-byte placeholder files because GDAL's VSI write layer doesn't compose
-// with duckdb-wasm's BUFFER filesystem. The OPFS path needs a duckdb-wasm
-// session opened on an opfs:// DB (see duckdb.svelte.ts), which flips on
-// shouldOPFSFileHandling() so registerFileHandle wires the OPFS handle into
-// the runtime's filesystem layer with real seek-write semantics. Native
-// Parquet COPY (`FORMAT PARQUET`) is the only writer that works through
-// BUFFER; it has its own non-GDAL code path.
-// ESRI Shapefile is delivered as a .zip: each companion (.shp/.shx/
-// .dbf/.prj/.cpg) gets its own registered OPFS handle, then fflate
-// bundles the results client-side. /vsizip/ would be cleaner but
-// reports "Read-write random access not supported" — Shapefile's
-// header back-patching needs random-write semantics that the VSI
-// handler doesn't provide.
-// Excluded:
-//   - GeoJSON: covered by the primary download button which serves the
-//     already-cached string. Listing it here would duplicate that entry.
-//   - GPX: GDAL only writes waypoint/track/route schemas, not polygons.
-// KML and LIBKML both produce the same .kml output; we surface whichever
-// the loaded build provides.
+// All route through a registered OPFS FileSystemFileHandle (see exportGdal) —
+// duckdb-wasm's plain BUFFER filesystem silently produces 1-byte placeholder
+// files instead of erroring. GeoJSON and GPX are excluded (served from the
+// cached string, and polygon-incompatible, respectively); KML/LIBKML both
+// produce .kml, so we surface whichever the loaded build provides.
 const KNOWN_DRIVERS: Record<string, DriverMeta> = {
   GPKG: {
     label: "GeoPackage (.gpkg)",

@@ -1,6 +1,5 @@
-// Path-compressed disjoint-set union over string keys. Used to find
-// connected components of the bipartite match graph: nodes are
-// "a:<fid>" / "b:<fid>" and edges are pair rows that pass tauMatch.
+// Path-compressed disjoint-set union over string keys: nodes are "a:<fid>"/
+// "b:<fid>", edges are pair rows passing tauMatch (the bipartite match graph).
 
 export class UnionFind {
   private parent = new Map<string, string>();

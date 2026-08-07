@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { tableToGeoJSON } from "$lib/db/geojson";
-import { buildClean, buildInput, buildReducedInput, countRows } from "./clean";
+import { buildClean, buildInput, countRows, inputHasViolations } from "./clean";
 import {
   buildGapRegions,
   buildIssues,
@@ -68,23 +68,10 @@ let totalCount = 0;
 let cachedIssues: IssueRow[] = [];
 let cachedIssuesGeoJSON = "";
 let cachedFailedKinds = new Set<IssueKind>();
-
-// Run ST_CoverageClean, retrying once against a precision-reduced input if GEOS
-// still throws. Auto-snap handles float jitter and crossing-edge topology in the
-// vast majority of real datasets; precision reduction is a genuine last resort.
-async function cleanResilient(
-  conn: AsyncDuckDBConnection,
-  target: string,
-  gapDeg: number,
-): Promise<void> {
-  try {
-    await buildClean(conn, target, gapDeg, "tc_input");
-  } catch (e) {
-    console.warn(`${target}: clean failed, retrying with reduced precision:`, e);
-    await buildReducedInput(conn);
-    await buildClean(conn, target, gapDeg, "tc_input_reduced");
-  }
-}
+// layer_01 is static per load, so its violations check (see clean.ts's
+// buildClean skip-gate) is computed once in runFromLoaded and reused by every
+// reclean instead of re-running ST_CoverageInvalidEdges_Agg on every slider drag.
+let cachedHasViolations = true;
 
 async function computeBounds(
   conn: AsyncDuckDBConnection,
@@ -117,7 +104,7 @@ export async function recleanOnly(
 ): Promise<RecleanResult> {
   const gapDeg = metersToDegrees(opts.gapWidthM);
 
-  await cleanResilient(conn, "tc_clean", gapDeg);
+  await buildClean(conn, "tc_clean", gapDeg, cachedHasViolations);
   const kept = await countRows(conn, "tc_clean");
 
   const fixedKeys = await checkFixedIssues(conn, cachedIssues);
@@ -146,6 +133,7 @@ export async function runFromLoaded(
   if (totalCount === 0) {
     throw new PipelineError("No polygons found to clean.", 2);
   }
+  cachedHasViolations = await inputHasViolations(conn);
 
   const bounds = await computeBounds(conn);
   const originalGeoJSON = await tableToGeoJSON(conn, "layer_01", null);
@@ -176,7 +164,7 @@ export async function runFromLoaded(
 
     const { autoFillM } = resolveGapFillWidths(issuesRes.rows);
 
-    await cleanResilient(conn, "tc_clean", metersToDegrees(autoFillM));
+    await buildClean(conn, "tc_clean", metersToDegrees(autoFillM), cachedHasViolations);
 
     const kept = await countRows(conn, "tc_clean");
     fixedKeys = await checkFixedIssues(conn, cachedIssues);

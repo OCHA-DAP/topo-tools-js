@@ -30,6 +30,15 @@ When adding a feature that requires logic that already exists elsewhere in the c
 - When recommending an approach, name the endpoint you'd actually pick and
   why, before listing alternatives.
 
+## Documentation Structure
+
+`docs/` follows Diátaxis: `docs/reference/` (RFC-2119 MUST/SHOULD/MAY behavior
+contracts, no rationale), `docs/explanation/` (current-state rationale,
+squashed/rewritten as understanding evolves), `docs/how-to/` (task-oriented
+guides), `docs/tutorials/` (not yet written). `docs/adr/` holds immutable,
+one-decision-per-file Architecture Decision Records (Nygard format) — see
+`docs/adr/README.md`.
+
 ## Commands
 
 ```bash
@@ -65,41 +74,29 @@ Notes:
 
 ## Architecture
 
-**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly — no data leaves the browser. The root `/` is a landing page that lists tools. Today there are four: **Topology Cleaner** at `/clean` (detects overlaps/gaps and cleans a coverage with DuckDB's `ST_CoverageClean`), **Edge Extender** at `/extend` (extends polygon boundaries outward using Voronoi diagrams), **Changelog** at `/changelog` (compares two versions of a polygon layer and classifies each unit), and **Edge Matcher** at `/match` (assigns a fine polygon layer to its best-overlapping coarse boundary — any pair of levels, e.g. admin 4 into 3 or straight into 0 — then runs Edge Extender independently within each group so every group's result meets its own boundary exactly).
+**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly — no data leaves the browser. The root `/` is a landing page that lists tools. Four tools ship today: **Topology Cleaner** at `/clean`, **Edge Extender** at `/extend`, **Changelog** at `/changelog`, and **Edge Matcher** at `/match` — see `docs/explanation/{clean,extend,change,match}.md` for what each does and how, and `docs/reference/{clean,extend,change,match}.md` for their behavior contracts.
 
 **Stack:** Astro 6 (static site) + Svelte 5 (interactive islands) + DuckDB WASM (spatial SQL engine) + MapLibre GL (map rendering)
 
-### Data flow
-
-```
-File drop → format detection + ZIP extraction (DropZone)
-  → DuckDB registers file buffer (loader.ts)
-  → 5-stage SQL pipeline (src/lib/tools/edge-extender/pipeline/):
-      layer_01: load & normalize geometry (MakeValid, Transform to EPSG:4326, Force2D)
-      layer_02: extract boundaries (ST_Boundary, ST_LineMerge, minus neighbor overlap)
-      layer_03: interpolate points along boundaries (ST_LineInterpolatePoints, no endpoints)
-      layer_04: generate Voronoi diagram (ST_VoronoiDiagram, ST_Intersects point→cell assignment)
-      layer_05: merge cells (ST_Node all boundaries, ST_Polygonize, point-in-polygon reassignment)
-  → export GeoJSON → MapLibre renders result
-```
-
 ### Key design decisions
 
-- **All geospatial logic is SQL.** Complex operations (Voronoi, ST_Node, ST_Polygonize, RTREE index) run inside DuckDB's spatial extension, not JavaScript.
-- **DuckDB WASM constraints:** single-threaded (`SET threads = 1`), vite optimization excluded. The `duckdb.svelte.ts` singleton initializes the spatial extension and handles connection lifecycle.
-- **Retry on failure:** `src/lib/tools/edge-extender/pipeline/index.ts` automatically retries with doubled point-spacing distance when Voronoi generation fails (memory/precision issues).
-- **Tool layout convention:** Each tool lives at `src/lib/tools/<slug>/` (its `App.svelte` + a `pipeline/` directory if it has one) and has a route at `src/pages/<slug>.astro`. Shared infrastructure stays in `src/lib/db/` (DuckDB singleton + loader + export) and `src/lib/components/` (DropZone, MapView, DownloadMenu, OfflineToggle, ToolCard). Adding a tool = new folder under `tools/`, new entry in `src/lib/tools.ts`, new page, optionally an icon under `public/icons/tools/`. No infrastructure changes.
-- **No COEP/COOP.** The mvp/eh DuckDB variants are single-threaded and don't need SharedArrayBuffer (and we exclude the coi variant anyway — it breaks OPFS FSAH clones). Dropping COEP `require-corp` is what lets us fetch the spatial extension cross-origin from `extensions.duckdb.org` (which doesn't send CORP). Don't re-add COEP unless you've audited the cross-origin fetches it would block.
-- **Svelte 5 runes:** Uses `$state()`, `$effect()`, and `untrack()` — not legacy Svelte reactivity.
-- **Path alias:** `$lib` resolves to `src/lib/` (configured in both the Vite alias in `astro.config.mjs` and the `paths` map in `tsconfig.json` so Astro/TS check sees it too).
+- All geospatial logic is SQL, run inside DuckDB's spatial extension, not JavaScript. See `docs/explanation/extend.md` for the 5-stage Voronoi pipeline.
+- DuckDB WASM runs single-threaded with no COEP/COOP — see `docs/explanation/performance.md` for the memory model this implies and why COEP stays off.
+- **Tool layout convention:** each tool lives at `src/lib/tools/<slug>/` (its `App.svelte` + a `pipeline/` directory if it has one) and has a route at `src/pages/<slug>.astro`. Shared infrastructure stays in `src/lib/db/` (DuckDB singleton + loader + export) and `src/lib/components/` (DropZone, MapView, DownloadMenu, OfflineToggle, ToolCard). Adding a tool = new folder under `tools/`, new entry in `src/lib/tools.ts`, new page, optionally an icon under `public/icons/tools/`. No infrastructure changes.
+- Svelte 5 runes (`$state()`, `$effect()`, `untrack()`) — not legacy Svelte reactivity.
+- Path alias `$lib` resolves to `src/lib/` (Vite alias in `astro.config.mjs` and the `paths` map in `tsconfig.json`).
 
-### Reference Docs
+## Reference Docs
 
-- `docs/performance.md` — WASM memory model, SPATIAL_JOIN behaviour differences vs. Linux, lines stage evolution, connection settings, pipeline phase memory profile
-
-### Supported input formats
-
-GeoJSON, GeoParquet, GeoPackage, Shapefile (zip), KML, GML, GPX. Loader detects format, extracts from ZIPs via `fflate`, and registers buffers with DuckDB. GeoParquet is loaded without `ST_Read` (no geometry tag); all others use `ST_Read`.
+- `docs/reference/` — behavior contracts per tool (`shared.md` for common settings/formats/gates)
+- `docs/explanation/clean.md` — defect detection, `ST_CoverageClean` semantics, gap-fill modes
+- `docs/explanation/extend.md` — Voronoi-extension algorithm, stage-by-stage detail, point-spacing derivation
+- `docs/explanation/match.md` — assignment algorithm, per-group extension, cross-group seams
+- `docs/explanation/change.md` — overlap/classification algorithm, union-find, output schema
+- `docs/explanation/performance.md` — WASM memory model, SPATIAL_JOIN behaviour, connection settings, pipeline phase memory profile
+- `docs/how-to/at-scale-testing.md` — portolan catalog layout, picking a file or old/new pair for a real-scale test
+- `docs/adr/README.md` — how to decide whether a fact belongs in an ADR vs. `docs/explanation/` vs. this file
+- `docs/adr/` — immutable decision records behind the WASM-GEOS robustness workarounds referenced above
 
 ## Test Datasets
 
@@ -113,18 +110,12 @@ in via the tool's DropZone):
   STAC root catalog at `https://data.source.coop/hdx/cod-ab/catalog.json`
   (`id: portolan`; per-country `child` links, e.g. `./chl/catalog.json`)
 
-STAC-like layout: `{iso3}/{latest,vNN}/{adm0..adm3,lines,points}/{original,
-extended,matched}.parquet`. Distinct `vNN` directories are always genuinely
-different content (a new `vNN` is only cut when the boundaries actually
-change), and `latest` points to whichever `vNN` is newest — but not every
-country has more than one `vNN` yet, so there's no old/new pair to diff
-(e.g. Chile only has `v01` so far). Check for multiple `vNN` directories
-before picking a country for an old/new comparison; Philippines admin3
-`v02`→`v03` is a real diff, used for `change`'s first at-scale test.
-
 **HARD RULE — the portolan catalog is read-only.** Never write, modify,
 move, rename, or delete anything under
 `/Users/computer/GitHub/OCHA-DAP/hdx-scraper-cod-ab-global/portolan` (or its
 canonical source.coop source). Only ever read from it — drop copies of its
 files into tool DropZones, never point a write/export/cleanup operation at
 it, and never run shell commands there beyond read-only listing/inspection.
+
+See `docs/how-to/at-scale-testing.md` for the STAC layout and how to pick a
+file (or an old/new comparison pair, for `change`) from the catalog.

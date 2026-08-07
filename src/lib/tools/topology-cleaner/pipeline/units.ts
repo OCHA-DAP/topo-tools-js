@@ -34,14 +34,6 @@ export function degSqToM2(areaDegSq: number): number {
   return areaDegSq * METERS_PER_DEGREE * METERS_PER_DEGREE * cosLat;
 }
 
-// Inverse of degSqToM2 — convert a real-world area threshold (m²) into square
-// degrees at the dataset's centroid latitude. Used to filter sub-cm² gap/overlap
-// regions out of detection entirely (see MIN_ISSUE_AREA_M2 in issues.ts).
-export function m2ToDegSq(areaM2: number): number {
-  const cosLat = Math.max(Math.cos((centroidLat * Math.PI) / 180), 0.05);
-  return areaM2 / (METERS_PER_DEGREE * METERS_PER_DEGREE * cosLat);
-}
-
 // Convert a scalar degree distance (e.g. MIC radius) to metres.
 // Uses the latitude-scale constant (111 320 m/deg), which is exact for N-S
 // distances and approximate for E-W; adequate for display-only widths.

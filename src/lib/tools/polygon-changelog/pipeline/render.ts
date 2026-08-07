@@ -1,14 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
-// Builds cw_overlay_render — the polygons the map fills, each tagged with
-// cluster_id + relationship_class. Since the overlap is measured by sampling (no
-// exact intersection geometry exists), we render whole units coloured by class
-// rather than intersection slivers:
-//  - every B-side unit (covers unchanged / modified / renamed / split / merge /
-//    created — anything still present in the new version), and
-//  - A-side units classed 'removed' (gone in the new version, so no B polygon to
-//    stand in for them).
-// Together these tile the full area exactly once, coloured by what happened.
+// Whole units, not intersection slivers, since classification is per cluster
+// not per pair. Tiles the area once: every B-side unit, plus A-side 'removed' units.
 
 export async function stageRender(conn: AsyncDuckDBConnection): Promise<void> {
   await conn.query("DROP TABLE IF EXISTS cw_overlay_render");
@@ -73,9 +66,8 @@ export async function buildOverlayGeoJSON(conn: AsyncDuckDBConnection): Promise<
   );
 }
 
-// Serialize one side's keyed source layer (geometry + fid + cluster_id) for the
-// outline overlay on top of the choropleth. cluster_id is used downstream so a
-// click on the outline still resolves to the right cluster selection.
+// Serialize one side's keyed layer for the outline overlay; carries cluster_id
+// so clicking the outline still resolves to the right cluster selection.
 export async function buildOutlineGeoJSON(
   conn: AsyncDuckDBConnection,
   side: "a" | "b",

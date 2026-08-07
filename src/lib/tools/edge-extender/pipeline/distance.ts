@@ -1,21 +1,14 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
-// No longer user-configurable: computeEffectiveDistance derives a per-file distance from the
-// browser's memory budget and each file's own natural resolution, so this only serves as (a)
-// the floor for boundaries with no fine natural detail (min(DEFAULT_DISTANCE, naturalRes) —
-// naturalRes always wins when finer, so this can never coarsen an already-detailed file) and
-// (b) a fallback for edge cases (no real segments; memory floor already blown before any
-// resampling). Ported from edge-extender's config.py: a manual override never won over
-// natural-resolution auto-detection anywhere it mattered.
+// Floor for boundaries with no finer natural resolution, and the fallback
+// for edge cases (no real segments, or the memory floor already blown before
+// any resampling) — computeEffectiveDistance derives the real per-file value.
 export const DEFAULT_DISTANCE = 0.0002;
 
-// Memory model for computeEffectiveDistance's per-file distance budget: a distance-independent
-// segment decompose+remerge floor, a fixed startup overhead, and a distance-dependent final-
-// point cost. Ported verbatim from edge-extender's fitted constants (measured inside a real
-// --memory=4g --memory-swap=4g Docker container against native GEOS RSS) — these are NOT yet
-// calibrated for the WASM heap model (physical-page-only memory.grow(), no swap, different
-// per-allocation overhead than a native GEOS process) and should be treated as a provisional
-// safeguard pending real-device recalibration. See docs/performance.md.
+// Memory model for computeEffectiveDistance's per-file distance budget: a
+// segment decompose+remerge floor, a fixed startup overhead, and a
+// distance-dependent final-point cost. Fitted natively, not yet
+// WASM-calibrated — treat as a provisional safeguard, not a validated budget.
 const REMERGE_BYTES_PER_RAW_SEGMENT = 850;
 const BASELINE_OVERHEAD_MB = 500;
 const BYTES_PER_POINT = 1900;
