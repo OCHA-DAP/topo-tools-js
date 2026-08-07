@@ -1,10 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
-// A∖B / B∖A difference geometry, computed independently of the shared
-// overlap-pairs computation (src/lib/db/overlap.ts) — this is changelog-
-// specific rendering support, not needed by other overlap consumers. Only
-// meaningful on the exact path: the point-sampling fallback estimates ratios,
-// not precise difference geometry.
+// A∖B / B∖A difference geometry for rendering, separate from the shared
+// overlap-pairs computation; only meaningful on the exact path (sampling only estimates ratios, not real geometry).
 
 const SLIVER = 1e-12; // drop difference crumbs below ~1 cm² (in deg²)
 

@@ -12,9 +12,8 @@ export type RelClass =
   | "created"
   | "removed";
 
-// Canonical class order + color palette — single source of truth for the
-// table toolbar, map fill expression, and legend (all three previously kept
-// their own copy of this list).
+// Single source of truth for order/colors — shared by the table toolbar, map
+// fill expression, and legend.
 export const REL_ORDER: RelClass[] = [
   "unchanged",
   "renamed",
@@ -82,10 +81,8 @@ const num = (v: unknown): number => {
 
 const str = (v: unknown): string | null => (v == null ? null : String(v));
 
-// Builds the set of values that appear exactly once in a keyed table's column.
-// Non-unique values (shared by multiple polygons) are excluded because they
-// can't reliably identify a single unit — matching on them would union all
-// polygons sharing that value into one cluster.
+// Values that appear exactly once per side — a value shared by multiple
+// polygons can't identify one unit, and matching on it would falsely union them all.
 function uniqueValues(
   rows: Array<Record<string, unknown>>,
   col: string,
@@ -100,10 +97,8 @@ function uniqueValues(
   return out;
 }
 
-// True if a pair's code and/or name match across versions, per the user's
-// linkByCode/linkByName/linkMode settings. A value only qualifies when it is
-// unique on each side — duplicates (e.g. "No_Pcode") are excluded to prevent
-// spurious mass-linking. Called for any touching pair, regardless of coverage.
+// True if a pair's code/name match per the user's link settings; only unique
+// values qualify (duplicates like "No_Pcode" would cause spurious mass-linking).
 function identityMatch(
   p: PairRow,
   opts: ClassifyOptions,
@@ -175,29 +170,8 @@ export async function stageClassify(
   const uniqueNamesA = uniqueValues(aRows, "name");
   const uniqueNamesB = uniqueValues(bRows, "name");
 
-  // Union-find over "a:<fid>" / "b:<fid>". Unmatched fids get their own
-  // singleton component. Two-phase when identity linking is on:
-  //
-  // Phase 1 — Identity: pair A/B fids that share a unique code/name AND have no
-  //   other spatial tauMatch connections to third parties. "Claiming" both fids
-  //   prevents neighbours from absorbing them into larger clusters.
-  //
-  //   The "no other spatial connections" guard is critical: when A splits into
-  //   B1 (inheriting A's code) + B2 (new code), A connects spatially above
-  //   tauMatch to both B1 and B2. If we claimed A↔B1 as an identity pair, B2
-  //   would be left disconnected (showing as "created" instead of "split"). By
-  //   The "all neighbors covered" guard is critical: when A splits into B1
-  //   (inheriting A's code) + B2 (new code), B2 has no identity match. Since
-  //   not all of A's spatial neighbors are identity-covered, A is not claimed —
-  //   Phase 2 then handles A→B1+B2 correctly as a split.
-  //
-  //   Conversely, when a region of N shifted units all have 1:1 code matches
-  //   (like Arbin, Harasta, Jaramana…), every spatial neighbor of each unit IS
-  //   identity-covered, so all N pairs are claimed and the N:M complex cluster
-  //   decomposes into N separate 1:1 pairs.
-  //
-  // Phase 2 — Spatial: union unclaimed fids whose coverage passes tauMatch,
-  //   exactly as the original algorithm. Claimed fids are skipped here.
+  // Union-find over "a:<fid>"/"b:<fid>". Two-phase when identity linking is on:
+  // identity claims go first, guarded so a genuine split/merge isn't falsely absorbed; spatial tauMatch fills the rest.
   const uf = new UnionFind();
   for (const fid of allA) uf.add(`a:${fid}`);
   for (const fid of allB) uf.add(`b:${fid}`);
@@ -235,10 +209,8 @@ export async function stageClassify(
     for (const p of pairs) {
       if (!identityMatch(p, opts, uniqueCodesA, uniqueCodesB, uniqueNamesA, uniqueNamesB)) continue;
       if (claimedA.has(p.a_fid) || claimedB.has(p.b_fid)) continue;
-      // Safe to claim only if every other spatial tauMatch neighbor of A_fid is
-      // also identity-covered in B (and vice versa). If any spatial neighbor
-      // lacks an identity match, it signals a genuine split/merge — skip the
-      // claim and let Phase 2 handle the whole cluster via spatial overlap.
+      // Claim only if every other spatial-tauMatch neighbor on both sides is
+      // also identity-covered; otherwise this signals a real split/merge for Phase 2.
       const aSpatialBFids = spatialNeighborsA.get(p.a_fid) ?? new Set<number>();
       const bSpatialAFids = spatialNeighborsB.get(p.b_fid) ?? new Set<number>();
       const allANeighborsCovered = [...aSpatialBFids].every(
@@ -286,14 +258,11 @@ export async function stageClassify(
 
   // Best IoU per cluster for the 1:1 IoU check (worst-case: one pair).
   const clusterBestIou = new Map<number, number>();
-  // True only if every edge that connected this cluster was an identity
-  // rescue rather than a spatial tauMatch pass. For 1:1 clusters there is
-  // exactly one connecting edge, so this is unambiguous; it's irrelevant for
-  // larger clusters (merge/split/complex stay classified as today either way).
+  // True only if every connecting edge was an identity rescue, not a spatial
+  // tauMatch pass. Only meaningful for 1:1 clusters (the only case it's read for).
   const clusterRescuedOnly = new Map<number, boolean>();
-  // True if any pair in this cluster has a code or name difference across versions.
-  // Only consulted when linkByCode/linkByName are enabled (identity-first mode) —
-  // geometry-first mode ignores code/name entirely, so it never yields "renamed".
+  // True if any pair's code/name differs across versions; only consulted in
+  // identity-linking mode — geometry-first mode never yields "renamed".
   const clusterHasAttrChange = new Map<number, boolean>();
   for (const p of passingPairs) {
     const root = uf.find(`a:${p.a_fid}`);
@@ -426,9 +395,8 @@ async function writeBack(
     await conn.query(`INSERT INTO cw_pairs_classified VALUES ${values}`);
   }
 
-  // Polygon class: one row per a_fid + one per b_fid, regardless of singleton
-  // status — matched fids still need a row so render.ts can join cluster_id
-  // onto overlap pieces.
+  // One row per a_fid/b_fid regardless of singleton status — render.ts needs a
+  // row for matched fids too, to join cluster_id onto overlap pieces.
   const polyRows: Array<{ side: "a" | "b"; fid: number; cluster_id: number; cls: RelClass }> = [];
   for (const [id, { aFids, bFids }] of clusterMembers.entries()) {
     const cls = clusterClass.get(id)!;
@@ -443,9 +411,8 @@ async function writeBack(
     await conn.query(`INSERT INTO cw_polygon_class VALUES ${values}`);
   }
 
-  // singletons array not separately written — they're already in cw_polygon_class.
-  // Stage 6 (table.ts) reconstructs the singleton rows for the table from
-  // cw_polygon_class with NULL on the other side.
+  // singletons not separately written — already in cw_polygon_class; table.ts
+  // reconstructs singleton rows from there with NULL on the missing side.
   void singletons;
 }
 

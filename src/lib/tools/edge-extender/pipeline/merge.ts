@@ -59,15 +59,9 @@ async function attemptDissolve(
   `);
 
   // Dissolve original + extension pieces to one row per fid via a direct
-  // polygon union. A boundary+node+ST_BuildArea reconstruction was tried
-  // here instead (see docs/wasm-geos-noding-investigation.md, fix #5) to
-  // work around the noding crash, but ST_BuildArea infers solid-vs-hole
-  // from ring nesting, and on real data that classification can invert:
-  // confirmed on real input (Gobernadora/Montijo group) where the
-  // reconstruction turned ~99.6% of a real polygon's own area into a
-  // spurious interior hole. The precision retry above, not the dissolve
-  // algorithm, is what actually eliminates the noding crash, so there is
-  // no correctness/robustness tradeoff in reverting to direct union.
+  // polygon union — a boundary+node+ST_BuildArea reconstruction was tried
+  // instead but could invert a real polygon into a spurious interior hole;
+  // the precision retry above is what actually fixes noding, not the dissolve.
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_05 AS
     SELECT fid, ST_Union_Agg(

@@ -1,32 +1,14 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
-// Overlap measurement between two (fid, geom) polygon tables, robust to a
-// documented WASM-only GEOS OverlayNG floating-point bug (see project memory
-// reference-wasm-overlayng-fp-divergence): ST_Intersection/ST_Difference can
-// throw "found non-noded intersection" on near-coincident, independently
-// digitized boundaries — the same engine succeeds natively. Tries exact
-// intersection first; on any failure, falls back to a point-sampling estimate
-// that can't fail (ST_Within never noddes edges). Extracted from
-// polygon-changelog's original overlay.ts/areas.ts/sample.ts so other tools
-// (e.g. Edge Matcher's majority-overlap assignment) don't have to re-derive
-// this fallback dance.
-//
-// Writes pairsTable: (a_fid, b_fid, shared_area, coverage_a, coverage_b, iou)
-//   coverage_a = shared_area / area(A)   coverage_b = shared_area / area(B)
-//   iou        = shared_area / (area(A) + area(B) - shared_area)
-// Areas are in m² via EPSG:8857 (Equal Earth); the ratios are unit-free.
-//
-// Scratch tables are namespaced off pairsTable (e.g. "<pairsTable>_overlap")
-// and dropped again before returning — only pairsTable persists.
+// Overlap measurement robust to a WASM-only GEOS OverlayNG bug: exact
+// ST_Intersection/ST_Difference can throw on near-coincident boundaries, so this falls back to point sampling (which can't fail) when that happens.
 
 export type OverlapMethod = "exact" | "sampling";
 
 const SLIVER = 1e-12; // drop intersection crumbs below ~1 cm² (in deg²)
 
-// GRID×GRID lattice per polygon, clipped to the polygon, plus a guaranteed
-// ST_PointOnSurface so units too small/thin to catch a grid point are never
-// dropped. 32 was chosen by auditing sampled IoU against exact native overlay
-// (see reference-wasm-overlayng-fp-divergence for the full calibration note).
+// GRID×GRID lattice per polygon, plus a guaranteed ST_PointOnSurface so
+// small/thin units are never dropped; 32 was chosen by calibrating sampled IoU against exact overlay.
 const GRID = 32;
 
 const AREA = (g: string) => `ST_Area(ST_Transform(${g}, 'EPSG:4326', 'EPSG:8857'))`;

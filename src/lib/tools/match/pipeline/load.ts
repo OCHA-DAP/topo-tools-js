@@ -38,18 +38,11 @@ export async function loadLayers(
   await loadFile(db, conn, childFiles, { prefix: "child_" });
   await loadFile(db, conn, parentFiles, { prefix: "parent_" });
 
-  // Clean both input layers up front, at default (auto snap, no gap-fill)
-  // settings, gated so untouched inputs pay only the cheap invalid-edges
-  // check. The parent layer is never cleaned anywhere else in this pipeline
-  // — real source data commonly carries pre-existing seam imprecision (e.g.
-  // ~80m of it across 43 real-world commune polygons, see
-  // docs/wasm-geos-noding-investigation.md), and that imprecision is exactly
-  // what the per-group clip step (clipToBoundary.ts) has no way to fix
-  // later. The child layer already gets a gated clean per-group inside each
-  // group's own runPipeline (edge-extender/pipeline/clean.ts), but only
-  // within that group's subset — a defect between two child units assigned
-  // to different groups is invisible to that gate, so it needs its own
-  // whole-layer pass here too.
+  // Clean both input layers up front, gated so untouched inputs pay only the
+  // cheap invalid-edges check. The parent is never cleaned elsewhere in this
+  // pipeline, and the child's per-group clean (edge-extender's
+  // stageCleanInput) can't see defects between units assigned to different
+  // groups, so both need their own whole-layer pass here.
   await gatedCoverageClean(conn, "parent_layer_01");
   await gatedCoverageClean(conn, "child_layer_01");
 }

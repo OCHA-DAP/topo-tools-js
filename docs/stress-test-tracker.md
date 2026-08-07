@@ -1,10 +1,10 @@
 # Portolan-catalog stress test tracker
 
 Started 2026-07-08. Datasets are all from the local portolan catalog at
-`/Users/computer/GitHub/OCHA-DAP/hdx-scraper-cod-ab-global/portolan`. Full
-root-cause narrative for the Edge Matcher entries lives in
-[`wasm-geos-noding-investigation.md`](./wasm-geos-noding-investigation.md) —
-this file is just the status board.
+`/Users/computer/GitHub/OCHA-DAP/hdx-scraper-cod-ab-global/portolan` — see
+[`docs/how-to/at-scale-testing.md`](how-to/at-scale-testing.md) for how to
+pick a file or version pair. This file is the live bug-status board; it is
+not part of the `docs/` Diátaxis tiers.
 
 ## Problem combos
 

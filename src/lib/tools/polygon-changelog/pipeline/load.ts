@@ -1,12 +1,8 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { loadFile } from "$lib/db/loader";
 
-// Per-side prefix conventions: cw_a_* for "previous", cw_b_* for "new".
-// loadFile produces ${prefix}raw_layer, ${prefix}layer_01, ${prefix}layer_attr;
-// we then derive cw_a_keyed (fid, code, name, geom) / cw_b_keyed for the rest of
-// the pipeline. The intermediate cw_*_layer_01 / cw_*_layer_attr tables stay
-// around because the column-picker UI needs them to enumerate attribute columns,
-// and stage 6 (table.ts) joins back to the *_attr tables for any other props.
+// cw_a_/cw_b_ prefix = previous/new. Intermediate cw_*_layer_01/layer_attr
+// tables persist past this stage: the column-picker UI and table.ts both read them.
 
 export async function loadSide(
   db: AsyncDuckDB,

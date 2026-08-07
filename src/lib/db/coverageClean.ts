@@ -88,19 +88,10 @@ export async function hasCoverageViolations(
 }
 
 // Runs ST_CoverageClean on `table` in place, but only if
-// ST_CoverageInvalidEdges_Agg actually flags a defect on it first. Mirrors
-// Edge Extender's original input-side clean gate — forcing ST_CoverageClean
-// unconditionally onto data that doesn't need it was tried early in the WASM
-// noding investigation (docs/wasm-geos-noding-investigation.md, fix #1) and
-// made the crash rate *worse*, because ST_CoverageClean's own WASM-GEOS
-// implementation has its own robustness edges that get exercised more often
-// the more it's called. Every caller that wants a "clean this derived output"
-// pass should go through this gate rather than calling ST_CoverageClean
-// directly. A CoverageClean failure here is swallowed (warn + leave `table`
-// untouched) rather than propagated — a not-quite-seamless output is still a
-// valid, usable result; failing the whole run over a cosmetic cleanup step
-// isn't worth it. Always pass `preserveOriginal: true` semantics implicitly
-// (this always uses it) so `table`'s fid set never changes.
+// ST_CoverageInvalidEdges_Agg actually flags a defect first — cleaning
+// unconditionally was tried and made WASM crash rates worse. A failure here
+// is swallowed (warn + leave `table` untouched): a not-quite-seamless output
+// beats losing an already-valid result. Always preserves `table`'s fid set.
 export async function gatedCoverageClean(
   conn: AsyncDuckDBConnection,
   table: string,

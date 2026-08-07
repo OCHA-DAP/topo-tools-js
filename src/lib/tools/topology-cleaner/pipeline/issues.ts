@@ -85,25 +85,10 @@ export async function buildGapRegions(conn: AsyncDuckDBConnection): Promise<bool
 }
 
 // Overlap regions = polygonal pairwise intersections of polygons in the source
-// table (touching borders intersect as lines and are dropped by
-// CollectionExtract). Uses bbox predicates instead of a bare spatial predicate
-// in the JOIN so DuckDB plans this as PIECEWISE_MERGE_JOIN rather than
-// SPATIAL_JOIN (which OOMs in WASM). Exported: also reused by verify.ts to
-// sweep tc_clean.
-//
-// The join predicate is ST_Overlaps/ST_Contains, not ST_Intersects.
-// ST_Intersects is true for any pair of polygons that merely share a boundary
-// edge -- the normal case for every adjacent pair in a real coverage layer,
-// not a defect. At admin-boundary scale (thousands of fids, e.g. an
-// archipelago admin3 layer) that floods the join with candidates whose
-// ST_Intersection is a degenerate line/point, each still paying for
-// ST_Intersection + ST_MakeValid + ST_CollectionExtract before the area
-// filter below drops them -- confirmed on the Python port (topo-tools-py)
-// against Indonesia admin3 (7,069 fids): ST_Intersects matched 18,457 pairs
-// and the stage didn't finish in 6+ minutes natively, let alone in WASM.
-// ST_Overlaps alone would miss a fully-duplicated or nested polygon pair (its
-// intersection equals both/one input, so ST_Overlaps is false by OGC
-// definition) -- ST_Contains in both directions covers that case.
+// table, via a bbox-prefiltered join (PIECEWISE_MERGE_JOIN, not the
+// WASM-OOMing SPATIAL_JOIN). ST_Overlaps/ST_Contains, not ST_Intersects,
+// which would also match every ordinary touching-edge pair and flood the
+// join at admin-boundary scale. Exported: also reused by verify.ts.
 export function overlapRegionsQuery(targetTable: string, sourceTable: string): string {
   return `--sql
     CREATE OR REPLACE TABLE ${targetTable} AS
