@@ -143,7 +143,7 @@ export async function runFromLoaded(
   // Best-effort — failures degrade to an empty region table, never abort the
   // clean (their failure state is recorded instead).
   const gapOk = await buildGapRegions(conn);
-  const overlapOk = await buildOverlapRegions(conn);
+  const overlapOk = await buildOverlapRegions(conn, cachedHasViolations);
   const failedKinds = new Set<IssueKind>();
   if (!gapOk) failedKinds.add("gap");
   if (!overlapOk) failedKinds.add("overlap");

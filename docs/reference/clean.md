@@ -41,10 +41,14 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 - The default mode (`auto`) MUST fill a gap only when its compactness
   ratio is at or below `0.3` (a digitization-sliver shape), and MUST set
-  the fill width to twice the widest such gap's maximum width, rounded up
-  to a nice number (1/2/5 × 10^k).
-- The `all` mode MUST use the same width formula but MUST consider every
-  detected gap regardless of shape.
+  the fill width to the widest such gap's maximum width plus 1% headroom —
+  just enough to reliably clear `ST_CoverageClean`'s internal width
+  comparison, not enough to also sweep in a wider, non-thin gap.
+- The `all` mode MUST consider every detected gap regardless of shape, and
+  MUST set the fill width to twice the widest gap's maximum width, rounded
+  up to a nice number (1/2/5 × 10^k). Unlike `auto`, a looser bound changes
+  no outcome here since `all` already fills every detected gap; this width
+  also sizes the `manual` slider's ceiling.
 - The `manual` mode MUST use the width the user supplies directly, with no
   shape filtering.
 - Either `auto` or `all` MAY resolve to a width of `0` when no gap
@@ -63,11 +67,24 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 ## Outputs
 
+- Immediately after a real `ST_CoverageClean` call (not the skip-gate
+  copy-through), `clean` MUST reject the result — raising, leaving the
+  previous cleaned output untouched — if any of: the output still has
+  coverage violations; the output's total area falls below a floor set by
+  a small baseline tolerance plus headroom sized to the total area of the
+  overlaps actually detected; a feature with no connection to any detected
+  gap or overlap collapses to nothing; or any feature's fixed shape is not
+  a valid polygon. A feature that was itself party to a gap or overlap
+  being resolved MAY change area substantially, including losing all of
+  it, without triggering rejection. This validation gate is separate from,
+  and stricter than, the export check below.
 - `clean` MUST independently re-run gap/overlap detection, plus an
   `ST_IsValid` sweep, against the exported table itself (not just the
   pre-clean input) after every clean or reclean, and MUST report the
   result as a distinct "export check," separate from the original issues
-  list.
+  list and from the validation gate above. The export check MUST NOT raise
+  or abort — an unfilled gap or a residual defect it finds is surfaced for
+  display, not rejected.
 - `clean` MUST report, for every originally-detected issue, whether it
   ended up resolved in the current cleaned output: an overlap MUST always
   count as resolved; a gap MUST count as resolved only if a representative
@@ -75,10 +92,6 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   output.
 - `clean` MUST report a collapsed-feature count (input row count minus
   surviving cleaned row count) whenever a clean or reclean runs.
-- Neither an unfilled gap, nor the export check finding a residual defect,
-  MUST raise or abort — `clean` MUST always still produce a cleaned output
-  and an issues report, and MUST surface the export check's findings for
-  display instead.
 
 ## Configuration (UI)
 

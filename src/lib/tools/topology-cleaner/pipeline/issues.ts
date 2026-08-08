@@ -8,6 +8,15 @@ import { degSqToM2, degToM, niceNum } from "./units";
 // see resolveGapFillWidths.
 const DEFAULT_THINNESS_RATIO = 0.3;
 
+// Headroom over the widest qualifying gap's width in Auto mode, so that gap
+// reliably clears ST_CoverageClean's internal <= width comparison — just
+// enough, not "2x and round," to avoid also sweeping in a wider, non-thin
+// gap Auto wasn't meant to touch (ST_CoverageClean only understands width,
+// not thinness). Matches topo-tools-py's current tuning
+// (AUTO_GAP_WIDTH_EPSILON_FACTOR, widened from 1.001 to 1.01 after real-data
+// testing).
+const AUTO_GAP_WIDTH_EPSILON_FACTOR = 1.01;
+
 // A discrete topology problem in the *input* coverage, surfaced in the issues
 // table so the user can click to zoom to it. Gaps and overlaps are computed once
 // at load (a property of the input).
@@ -88,17 +97,27 @@ export async function buildGapRegions(conn: AsyncDuckDBConnection): Promise<bool
 // table, via a bbox-prefiltered join (PIECEWISE_MERGE_JOIN, not the
 // WASM-OOMing SPATIAL_JOIN). ST_Overlaps/ST_Contains, not ST_Intersects,
 // which would also match every ordinary touching-edge pair and flood the
-// join at admin-boundary scale. Exported: also reused by verify.ts.
+// join at admin-boundary scale. Bbox columns are precomputed in a CTE, not
+// called inline in the JOIN — DuckDB recomputes an inline ST_XMin/ST_XMax/etc.
+// per pairwise comparison, not once per row, which hangs indefinitely on a
+// table with even a few very-high-vertex-count polygons. Exported: also
+// reused by verify.ts.
 export function overlapRegionsQuery(targetTable: string, sourceTable: string): string {
   return `--sql
     CREATE OR REPLACE TABLE ${targetTable} AS
-    WITH pairs AS (
+    WITH bboxed AS (
+      SELECT fid, geom,
+        ST_XMin(geom) AS xmin, ST_XMax(geom) AS xmax,
+        ST_YMin(geom) AS ymin, ST_YMax(geom) AS ymax
+      FROM ${sourceTable}
+    ),
+    pairs AS (
       SELECT a.fid AS fa, b.fid AS fb,
              ST_MakeValid(ST_CollectionExtract(ST_Intersection(a.geom, b.geom), 3)) AS geom
-      FROM ${sourceTable} a JOIN ${sourceTable} b
+      FROM bboxed a JOIN bboxed b
         ON a.fid < b.fid
-        AND ST_XMax(b.geom) >= ST_XMin(a.geom) AND ST_XMin(b.geom) <= ST_XMax(a.geom)
-        AND ST_YMax(b.geom) >= ST_YMin(a.geom) AND ST_YMin(b.geom) <= ST_YMax(a.geom)
+        AND b.xmax >= a.xmin AND b.xmin <= a.xmax
+        AND b.ymax >= a.ymin AND b.ymin <= a.ymax
         AND (
           ST_Overlaps(a.geom, b.geom)
           OR ST_Contains(a.geom, b.geom)
@@ -112,8 +131,19 @@ export function overlapRegionsQuery(targetTable: string, sourceTable: string): s
 }
 
 // Degrades to an empty table on GEOS overlay failure. Returns false when that
-// happens.
-export async function buildOverlapRegions(conn: AsyncDuckDBConnection): Promise<boolean> {
+// happens. Skips the O(n²) self-join entirely when the input already has no
+// coverage violations — a coverage with no invalid edges cannot contain an
+// overlapping or nested pair either, matching topo-tools-py's
+// has_coverage_violations() pre-check (confirmed there to cut a ~20min run on
+// an already-clean 9,658-fid layer to ~23s, dominated by gap detection).
+export async function buildOverlapRegions(
+  conn: AsyncDuckDBConnection,
+  hasViolations = true,
+): Promise<boolean> {
+  if (!hasViolations) {
+    await emptyRegions(conn, "tc_overlap_regions", ", NULL::BIGINT AS fa, NULL::BIGINT AS fb");
+    return true;
+  }
   try {
     await conn.query(overlapRegionsQuery("tc_overlap_regions", "layer_01"));
     return true;
@@ -151,6 +181,9 @@ async function assembleIssues(
            mic_radius_deg * 2 * ${widthFactor} AS max_width_m,
            thinness_ratio,
            FALSE AS fixed,
+           NULL::DOUBLE AS filled_area_m2,
+           NULL::DOUBLE AS unit_a_area_change_m2,
+           NULL::DOUBLE AS unit_b_area_change_m2,
            unit_a, unit_b, geom, xmin, ymin, xmax, ymax
     FROM (
       SELECT 'gap-' || n AS key, 'gap' AS kind, ST_Area(geom) AS area_deg,
@@ -239,15 +272,33 @@ async function assembleIssues(
 // gaps, we test whether a representative interior point of the gap polygon is
 // now covered by any cleaned polygon — if so, the gap has been merged into a
 // neighbour.
+//
+// Also persists outcome columns (measured after the fix, not detection-time
+// values) matching topo-tools-py's issues-file schema: unit_a/b_area_change_m2
+// (an overlap-adjacent unit's own area delta) and filled_area_m2 (how much of
+// a gap the cleaned coverage now actually fills, 0 if unfilled).
 export async function checkFixedIssues(
   conn: AsyncDuckDBConnection,
   rows: IssueRow[],
 ): Promise<Set<string>> {
   const fixed = new Set<string>();
   rows.filter((r) => r.kind === "overlap").forEach((r) => fixed.add(r.key));
+  const areaFactor = degSqToM2(1).toExponential();
 
   try {
-    await conn.query(`UPDATE tc_issues SET fixed = (kind = 'overlap')`);
+    await conn.query(`--sql
+      UPDATE tc_issues SET
+        fixed = (kind = 'overlap'),
+        unit_a_area_change_m2 = (
+          COALESCE((SELECT ST_Area(geom) FROM tc_clean WHERE fid = tc_issues.unit_a), 0)
+          - COALESCE((SELECT ST_Area(geom) FROM layer_01 WHERE fid = tc_issues.unit_a), 0)
+        ) * ${areaFactor},
+        unit_b_area_change_m2 = (
+          COALESCE((SELECT ST_Area(geom) FROM tc_clean WHERE fid = tc_issues.unit_b), 0)
+          - COALESCE((SELECT ST_Area(geom) FROM layer_01 WHERE fid = tc_issues.unit_b), 0)
+        ) * ${areaFactor}
+      WHERE kind = 'overlap'
+    `);
   } catch (e) {
     console.warn("checkFixedIssues: persisting overlap fixed status failed:", e);
   }
@@ -262,6 +313,15 @@ export async function checkFixedIssues(
         SELECT 1 FROM tc_clean c WHERE ST_Contains(c.geom, ST_PointOnSurface(tc_issues.geom))
       )
     `);
+    await conn.query(`--sql
+      UPDATE tc_issues
+      SET filled_area_m2 = ST_Area(ST_Intersection(tc_issues.geom, u.geom)) * ${areaFactor}
+      FROM (
+        SELECT ST_Union_Agg(geom) AS geom FROM tc_clean
+        WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+      ) AS u
+      WHERE tc_issues.kind = 'gap'
+    `);
     const result = await conn.query(`SELECT key FROM tc_issues WHERE kind = 'gap' AND fixed`);
     for (const row of result.toArray() as Array<{ key: string }>) {
       fixed.add(row.key);
@@ -273,12 +333,22 @@ export async function checkFixedIssues(
   return fixed;
 }
 
-// Derive the two gap-fill widths the UI's Auto/All modes need, both as
-// "2x the widest qualifying gap width, rounded up to a nice number" so the
-// widest gap itself reliably clears ST_CoverageClean's <= width comparison.
-// All considers every detected gap; Auto only those shaped like a
-// digitization sliver (thinnessRatio <= DEFAULT_THINNESS_RATIO). Either can
-// be 0 (no qualifying gaps), meaning "fill nothing."
+// Derive the two gap-fill widths the UI's Auto/All modes need.
+//
+// Auto only considers gaps shaped like a digitization sliver
+// (thinnessRatio <= DEFAULT_THINNESS_RATIO), and uses just enough headroom
+// over the widest one (AUTO_GAP_WIDTH_EPSILON_FACTOR) to reliably clear it —
+// not "2x and round," which would risk also filling a wider, non-thin gap
+// Auto wasn't meant to touch.
+//
+// All considers every detected gap and keeps "2x the widest, rounded up to a
+// nice number": since All already means "fill everything regardless of
+// shape," a looser bound changes no outcome (every gap still gets filled
+// either way), and allFillM does double duty sizing the Manual slider's
+// max/step (see App.svelte) — a rounded, comfortably-above-widest number
+// makes a better slider ceiling than a tight epsilon would.
+//
+// Either can be 0 (no qualifying gaps), meaning "fill nothing."
 export function resolveGapFillWidths(rows: IssueRow[]): { allFillM: number; autoFillM: number } {
   const widthsOf = (predicate: (r: IssueRow) => boolean) =>
     rows.filter((r) => r.kind === "gap" && r.maxWidthM > 0 && predicate(r)).map((r) => r.maxWidthM);
@@ -286,6 +356,6 @@ export function resolveGapFillWidths(rows: IssueRow[]): { allFillM: number; auto
   const thinWidths = widthsOf((r) => (r.thinnessRatio ?? 1) <= DEFAULT_THINNESS_RATIO);
   return {
     allFillM: allWidths.length ? niceNum(Math.max(...allWidths) * 2) : 0,
-    autoFillM: thinWidths.length ? niceNum(Math.max(...thinWidths) * 2) : 0,
+    autoFillM: thinWidths.length ? Math.max(...thinWidths) * AUTO_GAP_WIDTH_EPSILON_FACTOR : 0,
   };
 }

@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { buildCoverageCleanInput, hasCoverageViolations, runCoverageClean } from "$lib/db/coverageClean";
+import { validateCleanOutput } from "./validate";
 
 // The topology-cleaner pipeline. Reads the loader-owned `layer_01` (fid, geom)
 // + `layer_attr` tables, then runs DuckDB spatial's ST_CoverageClean over the
@@ -27,6 +28,18 @@ export async function inputHasViolations(conn: AsyncDuckDBConnection): Promise<b
 // Matters beyond speed: ST_CoverageClean's WASM-GEOS path has its own
 // robustness edges (see gatedCoverageClean's comment in coverageClean.ts) that
 // get exercised more, the more it's called on data that didn't need it.
+//
+// After a real ST_CoverageClean run, validateCleanOutput (pipeline/validate.ts)
+// gates the result the same way topo-tools-py's _03_clean.py does — throwing
+// rather than accepting an output that's still invalid or has collapsed
+// beyond what the detected defects account for. The skip-gate branch above
+// never calls it: a straight copy-through can't fail those checks.
+//
+// ST_CoverageClean writes to a scratch table first, not targetTable directly:
+// on rejection, targetTable (tc_clean) must stay whatever it was before this
+// call — a reclean that fails validation must not leave the DB-backed export
+// sources (GeoParquet/GPKG/etc. dropdown, which query tc_clean directly)
+// pointing at rejected output while the UI still shows the last-good result.
 export async function buildClean(
   conn: AsyncDuckDBConnection,
   targetTable: string,
@@ -40,7 +53,16 @@ export async function buildClean(
     `);
     return;
   }
-  await runCoverageClean(conn, "tc_input", targetTable, { snap: -1, gap: gapDeg });
+  const scratch = `${targetTable}_scratch`;
+  await runCoverageClean(conn, "tc_input", scratch, { snap: -1, gap: gapDeg });
+  try {
+    await validateCleanOutput(conn, scratch, gapDeg);
+  } catch (e) {
+    await conn.query(`DROP TABLE IF EXISTS ${scratch}`);
+    throw e;
+  }
+  await conn.query(`CREATE OR REPLACE TABLE ${targetTable} AS SELECT * FROM ${scratch}`);
+  await conn.query(`DROP TABLE IF EXISTS ${scratch}`);
 }
 
 // Count rows in a cleaned table (post-explode) for the collapsed-feature warning.
