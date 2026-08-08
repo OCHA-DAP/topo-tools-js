@@ -1,8 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { computeOverlapPairs, type OverlapMethod } from "$lib/db/overlap";
+import { computeOverlapPairs } from "$lib/db/overlap";
 
 export interface AssignResult {
-  method: OverlapMethod;
   groupCount: number;
   assignedCount: number;
   unassignedCount: number;
@@ -14,7 +13,7 @@ export interface AssignResult {
 //   ge_unassigned(fid, geom)             — child units with zero parent overlap
 //   ge_groups(parent_fid, child_count)   — one row per non-empty group
 export async function computeAssignment(conn: AsyncDuckDBConnection): Promise<AssignResult> {
-  const method = await computeOverlapPairs(conn, "child_layer_01", "parent_layer_01", "ge_pairs");
+  await computeOverlapPairs(conn, "child_layer_01", "parent_layer_01", "ge_pairs");
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_assignment AS
@@ -54,7 +53,6 @@ export async function computeAssignment(conn: AsyncDuckDBConnection): Promise<As
   await conn.query("DROP TABLE IF EXISTS ge_pairs");
 
   return {
-    method,
     assignedCount: Number((assigned.toArray()[0] as { n: bigint | number }).n),
     unassignedCount: Number((unassigned.toArray()[0] as { n: bigint | number }).n),
     groupCount: Number((groups.toArray()[0] as { n: bigint | number }).n),

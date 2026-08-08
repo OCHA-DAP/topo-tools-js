@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
-const SNAP_TOLERANCE = 1e-8;
+export const SNAP_TOLERANCE = 1e-8;
 
 // Cap on points generated per real (untouched) boundary segment; bounds the size of the
 // largest exactly-collinear point cluster fed to ST_VoronoiDiagram, independent of that

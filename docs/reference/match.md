@@ -40,8 +40,8 @@ with other tools.
   parent polygon (an exact-boundary clip, not another extension pass).
 - A group whose extension or clip fails MUST be recorded as a failed group
   and skipped, without aborting the run. Every child belonging to a failed
-  group MUST be treated the same as an unassigned child for reporting
-  purposes.
+  group MUST be recorded with the parent fid and the failure reason, for
+  reporting and export purposes.
 
 ## Assembly
 
@@ -59,11 +59,12 @@ with other tools.
 ## Outputs
 
 - `match` MUST export the assembled, clipped result, plus a separate
-  export of every unassigned child, available independently of the main
-  result export.
+  combined export of every unassigned child and every child belonging to a
+  failed group, each tagged with which kind it is, available independently
+  of the main result export.
 - `match` MUST report, per group, whether it succeeded or failed, and MUST
-  report the overlap-measurement method (`exact` or `sampling`) used for
-  assignment.
+  report the total count of unassigned children and the total count of
+  children excluded via a failed group.
 - `match` MUST report the assembled result's bounding box for map fit,
   whenever the bounds are finite.
 

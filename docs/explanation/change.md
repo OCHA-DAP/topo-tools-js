@@ -23,16 +23,14 @@ Cross-walk".
 ## Overlap computation
 
 `$lib/db/overlap.ts` is shared with Edge Matcher's majority-overlap
-assignment, not owned by Changelog alone. It tries exact `ST_Intersection`
-first; DuckDB-WASM's GEOS OverlayNG build can throw "found non-noded
-intersection" on near-coincident, independently-digitized boundaries — a
-WASM-specific floating-point bug, since the same query succeeds natively
-(commit `0672282`). On that failure it falls back to a point-sampling
-estimate that can't fail: a 32×32 grid per polygon (clipped to the polygon),
-plus a guaranteed `ST_PointOnSurface` so units too small or thin to catch a
-grid point are never dropped, counted into the other version's polygons.
-`GRID=32` was chosen by auditing sampled IoU against exact native overlay on
-real data, not picked arbitrarily.
+assignment, not owned by Changelog alone. It computes overlap via exact
+`ST_Intersection`. DuckDB-WASM's GEOS OverlayNG build can throw "found
+non-noded intersection" on near-coincident, independently-digitized
+boundaries — a WASM-specific floating-point bug, since the same query
+succeeds natively (commit `0672282`) — and that failure now propagates to
+the caller rather than falling back to an approximation; see
+[`docs/adr/0022-noding-precision-retry-removed-for-python-parity.md`](../adr/0022-noding-precision-retry-removed-for-python-parity.md)
+for why the earlier sampling fallback was removed.
 
 Intersection/difference crumbs below `1e-12` deg² (~1cm²) are dropped before
 they contribute to shared area — a cheap pre-filter on raw degree² area,
@@ -40,10 +38,6 @@ applied only to already-computed intersection geometry (not the whole
 layer). Areas and ratios use an equal-area projection so the resulting
 `coverage_a`/`coverage_b`/`iou` ratios aren't biased toward
 higher-latitude units the way raw EPSG:4326 degree-area would be.
-
-Because sampling only estimates ratios, not real difference geometry, the
-changelog-specific `pipeline/overlay.ts` (A∖B / B∖A difference for map
-rendering) is only meaningful on the exact path.
 
 ## Classification: identity + spatial union-find
 
@@ -116,10 +110,7 @@ for a several-thousand-unit admin layer.
   a fragment fully contained in its parent (`coverage_b = 1.0`) clears the
   bar regardless of how small `coverage_a` is.
 - **`tauSame`** (default `0.98`) — minimum IoU for a 1:1 spatially-linked
-  pair to be `unchanged`/`renamed` rather than `modified`. Capped at `0.99`
-  when the last run used point sampling: the UI slider reflects that
-  sampling's ~1% estimation error can't reliably distinguish near-identical
-  geometry from bit-identical geometry above that point.
+  pair to be `unchanged`/`renamed` rather than `modified`.
 
 ## Output schema
 

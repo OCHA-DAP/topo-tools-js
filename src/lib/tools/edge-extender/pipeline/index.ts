@@ -5,7 +5,7 @@ import { stageCleanInput } from "./clean";
 import { computeEffectiveDistance } from "./distance";
 import { stageLines } from "./lines";
 import { stageMerge } from "./merge";
-import { buildSegments, stagePoints } from "./points";
+import { buildSegments, stagePoints, SNAP_TOLERANCE } from "./points";
 import { stageVoronoi } from "./voronoi";
 
 export type ProgressFn = (stage: number, label: string) => void;
@@ -40,7 +40,6 @@ const INTERNAL_TABLES = [
   "layer_04_tmp1",
   "layer_04_tmp2",
   "layer_04",
-  "layer_04_orig",
   "layer_05_tmp1",
   "layer_05_tmp2",
   "layer_05",
@@ -66,9 +65,6 @@ export interface PipelineResult {
 export async function getOriginalGeojson(conn: AsyncDuckDBConnection): Promise<string> {
   return tableToGeoJSON(conn, "layer_01", null);
 }
-
-// ~111mm — small enough to never touch a real, intentional cartographic gap.
-export const OUTPUT_CLEAN_GAP = 1e-6;
 
 async function runValidation(
   conn: AsyncDuckDBConnection,
@@ -217,7 +213,7 @@ export async function runPipeline(
 
   if (!skipOutputClean) {
     console.log("[EE-DEBUG] === stageOutputClean ===");
-    await gatedCoverageClean(conn, "layer_05", { gap: OUTPUT_CLEAN_GAP });
+    await gatedCoverageClean(conn, "layer_05", { gap: SNAP_TOLERANCE });
   }
 
   // Topology validation (warn-only)

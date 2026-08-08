@@ -2,8 +2,8 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns } from "$lib/db/columns";
-import type { OverlapMethod } from "$lib/db/overlap";
-import { dropInternalTables, OUTPUT_CLEAN_GAP } from "$lib/tools/edge-extender/pipeline/index";
+import { dropInternalTables } from "$lib/tools/edge-extender/pipeline/index";
+import { SNAP_TOLERANCE } from "$lib/tools/edge-extender/pipeline/points";
 import { loadLayers } from "./load";
 import { computeAssignment } from "./assign";
 import { listGroups, runGroups, type GroupInfo, type GroupResult } from "./groups";
@@ -27,12 +27,31 @@ export type EdgeMatchProgressFn = (event: EdgeMatchPhase) => void;
 export interface EdgeMatchResult {
   geojson: string;
   bounds: [number, number, number, number] | null;
-  method: OverlapMethod;
   groupResults: GroupResult[];
   unassignedCount: number;
+  droppedCount: number;
   // Geometry-only outline of the parent input, so the map can show it as a
   // static reference layer alongside the per-group colored result.
   parentOutlineGeojson: string;
+}
+
+// Combines unassigned children (no parent overlap) and dropped-group
+// children (their whole group's extension failed) into one exportable
+// geometry table, each tagged with a stable key/kind/reason — mirrors the
+// Python port's unified issues report.
+async function buildIssuesTable(conn: AsyncDuckDBConnection): Promise<number> {
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE ge_issues AS
+    SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
+           fid AS child_fid, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason, geom
+    FROM ge_unassigned
+    UNION ALL
+    SELECT 'dropped_group-' || child_fid AS key, 'dropped_group' AS kind,
+           child_fid, parent_fid, reason, geom
+    FROM ge_dropped
+  `);
+  const r = await conn.query("SELECT COUNT(*) AS n FROM ge_dropped");
+  return Number((r.toArray()[0] as { n: bigint | number }).n);
 }
 
 async function buildResultsAttrTable(conn: AsyncDuckDBConnection): Promise<void> {
@@ -106,6 +125,8 @@ export async function runEdgeMatch(
       onProgress({ phase: "group-done", groupIndex, groupTotal, result }),
   );
 
+  const droppedCount = await buildIssuesTable(conn);
+
   // A group OOM above leaves the connection poisoned for the rest of the
   // session, so attribute enrichment below may also throw. It's a
   // nice-to-have — fall back to a geometry-only export rather than losing
@@ -119,9 +140,10 @@ export async function runEdgeMatch(
 
     await buildResultsAttrTable(conn);
 
-    // child_layer_attr/ge_unassigned are deliberately NOT dropped here:
-    // DownloadMenu's "unassigned" export reads both live, on demand, which
-    // can happen well after this function returns.
+    // child_layer_attr/ge_unassigned/ge_dropped/ge_issues are deliberately
+    // NOT dropped here: DownloadMenu's "unassigned"/"issues" exports read
+    // them live, on demand, which can happen well after this function
+    // returns.
     await conn.query("DROP TABLE IF EXISTS child_layer_01");
     await conn.query("DROP TABLE IF EXISTS parent_layer_01");
     await conn.query("DROP TABLE IF EXISTS parent_layer_attr");
@@ -145,7 +167,7 @@ export async function runEdgeMatch(
   // a sign the connection is already poisoned.
   if (hasAttrTable) {
     try {
-      await gatedCoverageClean(conn, "ge_results", { gap: OUTPUT_CLEAN_GAP });
+      await gatedCoverageClean(conn, "ge_results", { gap: SNAP_TOLERANCE });
       geojson = await tableToGeoJSON(conn, "ge_results", attrTable);
     } catch (e) {
       console.warn("Output CoverageClean/re-export failed, keeping pre-clean export:", e);
@@ -155,9 +177,9 @@ export async function runEdgeMatch(
   return {
     geojson,
     bounds,
-    method: assignment.method,
     groupResults,
     unassignedCount: assignment.unassignedCount,
+    droppedCount,
     parentOutlineGeojson,
   };
 }

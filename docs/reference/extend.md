@@ -29,8 +29,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `extend` MUST generate points along each polygon's exterior boundary, as
   input to a Voronoi diagram, at a target spacing derived once per input
   (`computeEffectiveDistance`): the smaller of a fixed default and the
-  file's own median real-segment length, floored by whatever spacing keeps
-  the projected point count within the browser's memory budget.
+  file's own median real-segment length.
 - A single real segment MUST NOT contribute more than a fixed cap's worth
   of interpolated points, independent of the resolved spacing.
 - Generated points MUST exclude a buffered zone around every shared
@@ -52,12 +51,12 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - Each polygon's final geometry MUST be its original geometry combined
   with the portion of its own Voronoi extension not already covered by a
   bounding-box-nearby original polygon.
-- The dissolve of original + extension pieces MUST be retried at a
-  sequence of reduced precisions (`docs/reference/shared.md`) applied first
-  only to the derived extension geometry; only if every candidate in that
-  sweep fails MUST `extend` escalate to a second sweep that also reduces
-  the real input polygon's own geometry for that transient union, without
-  persisting the reduction back onto stored input.
+- Before differencing, a polygon's Voronoi extension MUST be snapped
+  (`ST_Snap`, a fixed small tolerance) to the union of its bounding-box-
+  nearby neighbors, so near-but-not-quite-coincident seams from Voronoi
+  cell generation don't cause a GEOS noding failure on the subsequent
+  difference. A noding failure that survives the snap MUST propagate as a
+  normal pipeline error, not be retried.
 - `extend` MUST run one whole-layer `gatedCoverageClean` pass over the
   merged result, using a fixed gap-closing width, unless the caller
   explicitly requests skipping it (see `match`'s per-group use).

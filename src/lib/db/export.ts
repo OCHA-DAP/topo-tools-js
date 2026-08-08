@@ -10,7 +10,7 @@ export type ExportSource =
   | "crosswalk_overlay"
   | "crosswalk_changelog"
   | "match"
-  | "match_unassigned";
+  | "match_issues";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -147,11 +147,12 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     suffix: "_matched",
     kind: "spatial",
   },
-  match_unassigned: {
-    table: "ge_unassigned",
-    attrTable: "child_layer_attr",
-    suffix: "_unassigned",
+  match_issues: {
+    table: "ge_issues",
+    attrTable: null,
+    suffix: "_issues",
     kind: "spatial",
+    columns: ["key", "kind", "child_fid", "parent_fid", "reason"],
   },
 };
 
