@@ -5,16 +5,14 @@
   let {
     rows = [],
     selectedKey = null,
-    fixedKeys = new Set<string>(),
     detectionFailed = new Set<IssueKind>(),
     onSelect,
     onHover,
   }: {
     rows?: IssueRow[];
     selectedKey?: string | null;
-    fixedKeys?: Set<string>;
     // Kinds whose detection query failed (even after retry) — a 0 count for
-    // these means "couldn't check," not "clean." See pipeline/issues.ts.
+    // these means "couldn't check," not "clean." See pipeline/index.ts.
     detectionFailed?: Set<IssueKind>;
     onSelect?: (key: string) => void;
     onHover?: (key: string | null) => void;
@@ -25,10 +23,6 @@
 
   const gapCount = $derived(rows.filter((r) => r.kind === "gap").length);
   const overlapCount = $derived(rows.filter((r) => r.kind === "overlap").length);
-  // Both overlaps and gaps are auto-fixed (overlaps always, gaps within the gap-width).
-  const isFixable = (r: IssueRow) => r.kind === "overlap" || r.kind === "gap";
-  const fixableCount = $derived(rows.filter(isFixable).length);
-  const fixedCount = $derived(rows.filter((r) => isFixable(r) && fixedKeys.has(r.key)).length);
   const visible = $derived(
     rows.filter((r) => {
       if (r.kind === "gap") return showGaps;
@@ -42,25 +36,19 @@
   }
 
   function kindClass(r: IssueRow): string {
-    return r.kind === "overlap" ? "tc-key--overlap" : "tc-key--gap";
-  }
-
-  function isFixed(r: IssueRow): boolean {
-    return isFixable(r) && fixedKeys.has(r.key);
+    return r.kind === "overlap" ? "dt-key--overlap" : "dt-key--gap";
   }
 </script>
 
-<div class="tc-table-wrap">
-  <div class="tc-toolbar">
-    <div class="tc-counts">
-      <span class="tc-fixed-count" class:all={fixedCount === fixableCount && fixableCount > 0}>
-        {fixedCount} of {fixableCount} fixed
-      </span>
+<div class="dt-table-wrap">
+  <div class="dt-toolbar">
+    <div class="dt-counts">
+      <span class="dt-total-count">{rows.length} {rows.length === 1 ? "issue" : "issues"} found</span>
     </div>
-    <div class="tc-filters">
+    <div class="dt-filters">
       <button
         type="button"
-        class="tc-chip tc-chip--overlap"
+        class="dt-chip dt-chip--overlap"
         class:off={!showOverlaps}
         class:failed={detectionFailed.has("overlap")}
         onclick={() => (showOverlaps = !showOverlaps)}
@@ -68,11 +56,13 @@
           ? "Overlap detection failed for this coverage (even after retrying) — this count may be incomplete, not necessarily 0"
           : "Toggle overlaps"}
       >
-        <span class="tc-key tc-key--overlap"></span> Overlaps {overlapCount}{#if detectionFailed.has("overlap")}<span class="tc-fail-mark">⚠</span>{/if}
+        <span class="dt-key dt-key--overlap"></span> Overlaps {overlapCount}{#if detectionFailed.has("overlap")}<span
+            class="dt-fail-mark">⚠</span
+          >{/if}
       </button>
       <button
         type="button"
-        class="tc-chip tc-chip--gap"
+        class="dt-chip dt-chip--gap"
         class:off={!showGaps}
         class:failed={detectionFailed.has("gap")}
         onclick={() => (showGaps = !showGaps)}
@@ -80,13 +70,15 @@
           ? "Gap detection failed for this coverage (even after retrying) — this count may be incomplete, not necessarily 0"
           : "Toggle gaps"}
       >
-        <span class="tc-key tc-key--gap"></span> Gaps {gapCount}{#if detectionFailed.has("gap")}<span class="tc-fail-mark">⚠</span>{/if}
+        <span class="dt-key dt-key--gap"></span> Gaps {gapCount}{#if detectionFailed.has("gap")}<span
+            class="dt-fail-mark">⚠</span
+          >{/if}
       </button>
     </div>
   </div>
 
   {#if detectionFailed.size > 0}
-    <p class="tc-detect-warn">
+    <p class="dt-detect-warn">
       ⚠ Detection failed for {[...detectionFailed].join(", ")} on this coverage, even after retrying —
       those counts may be incomplete. This isn't necessarily a clean coverage; GEOS couldn't fully check it.
     </p>
@@ -94,19 +86,18 @@
 
   {#if rows.length === 0}
     {#if detectionFailed.size > 0}
-      <p class="tc-empty tc-empty--warn">Nothing to show — detection failed (see warning above).</p>
+      <p class="dt-empty dt-empty--warn">Nothing to show — detection failed (see warning above).</p>
     {:else}
-      <p class="tc-empty">No issues found — the coverage is clean. 🎉</p>
+      <p class="dt-empty">No issues found — the coverage is clean. 🎉</p>
     {/if}
   {:else}
-    <div class="tc-scroll">
-      <table class="tc-table">
+    <div class="dt-scroll">
+      <table class="dt-table">
         <thead>
           <tr>
-            <th class="tc-check-cell" style="width:46px">Fixed</th>
             <th>Type</th>
-            <th class="tc-num" style="width:88px">Max width</th>
-            <th class="tc-num" style="width:80px">Area</th>
+            <th class="dt-num" style="width:88px">Max width</th>
+            <th class="dt-num" style="width:80px">Area</th>
           </tr>
         </thead>
         <tbody onmouseleave={() => onHover?.(null)}>
@@ -116,17 +107,12 @@
               onclick={() => onSelect?.(r.key)}
               onmouseenter={() => onHover?.(r.key)}
             >
-              <td class="tc-check-cell">
-                <span class="tc-checkbox" class:tc-checkbox--on={isFixed(r)}>
-                  {#if isFixed(r)}✓{/if}
-                </span>
-              </td>
               <td>
-                <span class="tc-key {kindClass(r)}"></span>
+                <span class="dt-key {kindClass(r)}"></span>
                 {kindLabel(r)}
               </td>
-              <td class="tc-num">{fmtLength(r.maxWidthM)}</td>
-              <td class="tc-num">{fmtArea(r.areaM2)}</td>
+              <td class="dt-num">{fmtLength(r.maxWidthM)}</td>
+              <td class="dt-num">{fmtArea(r.areaM2)}</td>
             </tr>
           {/each}
         </tbody>
@@ -136,14 +122,14 @@
 </div>
 
 <style>
-  .tc-table-wrap {
+  .dt-table-wrap {
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
     background: #fff;
   }
-  .tc-toolbar {
+  .dt-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -152,25 +138,22 @@
     border-bottom: 1px solid #e5e7eb;
     flex-wrap: wrap;
   }
-  .tc-counts {
+  .dt-counts {
     display: flex;
     align-items: center;
     gap: 0.4rem;
     flex-wrap: wrap;
   }
-  .tc-fixed-count {
+  .dt-total-count {
     font-size: 0.82rem;
     font-weight: 600;
-    color: #b45309;
+    color: #374151;
   }
-  .tc-fixed-count.all {
-    color: #15803d;
-  }
-  .tc-filters {
+  .dt-filters {
     display: flex;
     gap: 0.4rem;
   }
-  .tc-chip {
+  .dt-chip {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
@@ -182,19 +165,19 @@
     color: #374151;
     cursor: pointer;
   }
-  .tc-chip.off {
+  .dt-chip.off {
     opacity: 0.4;
   }
-  .tc-chip.failed {
+  .dt-chip.failed {
     border-color: #f59e0b;
     background: #fffbeb;
     color: #92400e;
   }
-  .tc-fail-mark {
+  .dt-fail-mark {
     margin-left: 0.25rem;
     color: #d97706;
   }
-  .tc-detect-warn {
+  .dt-detect-warn {
     margin: 0;
     padding: 0.5rem 0.75rem;
     font-size: 0.78rem;
@@ -202,27 +185,27 @@
     background: #fffbeb;
     border-bottom: 1px solid #fde68a;
   }
-  .tc-empty {
+  .dt-empty {
     padding: 1.25rem 0.9rem;
     font-size: 0.85rem;
     color: #047857;
     margin: 0;
   }
-  .tc-empty--warn {
+  .dt-empty--warn {
     color: #92400e;
   }
-  .tc-scroll {
+  .dt-scroll {
     overflow: auto;
     min-height: 0;
     flex: 1;
   }
-  .tc-table {
+  .dt-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.8rem;
     table-layout: fixed;
   }
-  .tc-table thead th {
+  .dt-table thead th {
     position: sticky;
     top: 0;
     background: #f9fafb;
@@ -233,7 +216,7 @@
     border-bottom: 1px solid #e5e7eb;
     z-index: 1;
   }
-  .tc-table td {
+  .dt-table td {
     padding: 0.35rem 0.5rem;
     border-bottom: 1px solid #f3f4f6;
     color: #374151;
@@ -241,20 +224,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .tc-num {
+  .dt-num {
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .tc-table tbody tr {
+  .dt-table tbody tr {
     cursor: pointer;
   }
-  .tc-table tbody tr:hover {
+  .dt-table tbody tr:hover {
     background: #f3f4f6;
   }
-  .tc-table tbody tr.selected {
+  .dt-table tbody tr.selected {
     background: #fef3c7;
   }
-  .tc-key {
+  .dt-key {
     display: inline-block;
     width: 10px;
     height: 10px;
@@ -262,30 +245,10 @@
     margin-right: 0.35rem;
     vertical-align: middle;
   }
-  .tc-key--overlap {
+  .dt-key--overlap {
     background: #e11d48;
   }
-  .tc-key--gap {
+  .dt-key--gap {
     background: #f59e0b;
-  }
-  .tc-check-cell {
-    text-align: center;
-  }
-  .tc-checkbox {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 15px;
-    height: 15px;
-    border: 1.5px solid #d1d5db;
-    border-radius: 3px;
-    background: #fff;
-    font-size: 10px;
-    color: transparent;
-  }
-  .tc-checkbox--on {
-    background: #16a34a;
-    border-color: #16a34a;
-    color: #fff;
   }
 </style>

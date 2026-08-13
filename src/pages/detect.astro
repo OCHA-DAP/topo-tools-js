@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/detect/App.svelte";
+---
+
+<Layout
+  title="Detect — find gaps and overlaps in a polygon layer in your browser"
+  description="Browser-only tool that scans a polygon layer for gap and overlap coverage defects and reports them, without fixing anything."
+>
+  <App client:load />
+</Layout>

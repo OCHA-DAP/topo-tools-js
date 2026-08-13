@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { tableToGeoJSON } from "$lib/db/geojson";
+import { setCentroidLat } from "$lib/db/units";
 import { buildClean, buildInput, countRows, inputHasViolations } from "./clean";
 import {
   buildGapRegions,
@@ -10,7 +11,7 @@ import {
   type IssueKind,
   type IssueRow,
 } from "./issues";
-import { GAP_MAXIMUM_WIDTH_ALL_DEG, metersToDegrees, setCentroidLat } from "./units";
+import { GAP_MAXIMUM_WIDTH_ALL_DEG, metersToDegrees } from "./units";
 import { verifyExport, type ExportCheck } from "./verify";
 
 export type { IssueKind, IssueRow } from "./issues";

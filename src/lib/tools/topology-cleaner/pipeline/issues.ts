@@ -1,7 +1,17 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
-import { emptyRegions, gapRegionsQuery, overlapRegionsQuery } from "$lib/db/coverage";
-import { degSqToM2, degToM, niceNum } from "./units";
+import {
+  assembleIssues,
+  buildGapRegions as sharedBuildGapRegions,
+  buildOverlapRegions as sharedBuildOverlapRegions,
+  type IssueKind,
+  type IssueRow,
+  type IssuesResult,
+} from "$lib/db/issues";
+import { degSqToM2, degToM } from "$lib/db/units";
+import { niceNum } from "./units";
+
+export type { IssueKind, IssueRow, IssuesResult } from "$lib/db/issues";
 
 // Polsby-Popper compactness cutoff (4·π·Area / Perimeter², 1.0 = circle,
 // →0 = elongated crack) below which a gap is treated as a digitization
@@ -21,65 +31,20 @@ const AUTO_GAP_WIDTH_EPSILON_FACTOR = 1.01;
 
 // A discrete topology problem in the *input* coverage, surfaced in the issues
 // table so the user can click to zoom to it. Gaps and overlaps are computed once
-// at load (a property of the input).
+// at load (a property of the input). Region detection + issue-row assembly are
+// shared with detect (see $lib/db/issues) — this file adds only what's
+// specific to a reclean loop: persisted fixed-status tracking and the
+// gap-fill-mode width resolution the Minimal/Thin/All UI needs.
 
-export interface IssueRow {
-  key: string; // "gap-3" / "overlap-7" — stable id, also the map feature id
-  kind: "gap" | "overlap";
-  areaM2: number; // approximate, for display/sorting
-  maxWidthM: number; // Maximum Inscribed Circle diameter, approximate
-  thinnessRatio: number | null; // Polsby-Popper compactness; gap rows only, null for overlaps
-  units: number[]; // fids involved (overlaps: two units; gaps: none)
-  bbox: [number, number, number, number];
-}
-
-export type IssueKind = "gap" | "overlap";
-
-export interface IssuesResult {
-  rows: IssueRow[];
-  geojson: string; // FeatureCollection of issue polygons, props {key, kind}
-  // Kinds whose detection query threw and was degraded to an empty table — a
-  // 0 count for these is NOT "clean", it's "couldn't check." Distinct from a
-  // kind that ran fine and found nothing.
-  failedKinds: Set<IssueKind>;
-}
-
-// Degrades to an empty table on GEOS overlay failure. Returns false when that
-// happens — the caller surfaces this so the UI can tell "detection failed"
-// apart from "genuinely 0 gaps."
 export async function buildGapRegions(conn: AsyncDuckDBConnection): Promise<boolean> {
-  try {
-    await conn.query(gapRegionsQuery("tc_gap_regions", "layer_01"));
-    return true;
-  } catch (e) {
-    console.warn("gap-region detection failed; skipping gaps:", e);
-    await emptyRegions(conn, "tc_gap_regions");
-    return false;
-  }
+  return sharedBuildGapRegions(conn, "tc_gap_regions", "layer_01");
 }
 
-// Degrades to an empty table on GEOS overlay failure. Returns false when that
-// happens. Skips the O(n²) self-join entirely when the input already has no
-// coverage violations — a coverage with no invalid edges cannot contain an
-// overlapping or nested pair either, matching topo-tools-py's
-// has_coverage_violations() pre-check (confirmed there to cut a ~20min run on
-// an already-clean 9,658-fid layer to ~23s, dominated by gap detection).
 export async function buildOverlapRegions(
   conn: AsyncDuckDBConnection,
   hasViolations = true,
 ): Promise<boolean> {
-  if (!hasViolations) {
-    await emptyRegions(conn, "tc_overlap_regions", ", NULL::BIGINT AS fa, NULL::BIGINT AS fb");
-    return true;
-  }
-  try {
-    await conn.query(overlapRegionsQuery("tc_overlap_regions", "layer_01"));
-    return true;
-  } catch (e) {
-    console.warn("overlap detection failed; skipping overlaps:", e);
-    await emptyRegions(conn, "tc_overlap_regions", ", NULL::BIGINT AS fa, NULL::BIGINT AS fb");
-    return false;
-  }
+  return sharedBuildOverlapRegions(conn, "tc_overlap_regions", "layer_01", hasViolations);
 }
 
 // Assemble the issues table/rows/geojson from the gap + overlap region tables,
@@ -88,109 +53,11 @@ export async function buildIssues(
   conn: AsyncDuckDBConnection,
   failedKinds: Set<IssueKind>,
 ): Promise<IssuesResult> {
-  return assembleIssues(conn, failedKinds);
-}
-
-// Union the two region tables into tc_issues and derive the table rows + map
-// GeoJSON. Assumes tc_gap_regions / tc_overlap_regions exist.
-async function assembleIssues(
-  conn: AsyncDuckDBConnection,
-  failedKinds: Set<IssueKind>,
-): Promise<IssuesResult> {
-  // Linear scalings (degSqToM2(x) = x * areaFactor, degToM(x) = x * widthFactor) —
-  // compute the factor once here so the conversion formula itself stays defined
-  // only in units.ts, with SQL just receiving the literal multiplier.
-  const areaFactor = degSqToM2(1).toExponential();
-  const widthFactor = degToM(1).toExponential();
-  await conn.query(`--sql
-    CREATE OR REPLACE TABLE tc_issues AS
-    SELECT key, kind, area_deg, mic_radius_deg,
-           area_deg * ${areaFactor} AS area_m2,
-           mic_radius_deg * 2 * ${widthFactor} AS max_width_m,
-           thinness_ratio,
-           FALSE AS fixed,
-           NULL::DOUBLE AS filled_area_m2,
-           NULL::DOUBLE AS unit_a_area_change_m2,
-           NULL::DOUBLE AS unit_b_area_change_m2,
-           unit_a, unit_b, geom, xmin, ymin, xmax, ymax
-    FROM (
-      SELECT 'gap-' || n AS key, 'gap' AS kind, ST_Area(geom) AS area_deg,
-             (ST_MaximumInscribedCircle(geom)).radius AS mic_radius_deg,
-             4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2) AS thinness_ratio,
-             NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b, geom,
-             ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
-      FROM tc_gap_regions WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-      UNION ALL
-      SELECT 'overlap-' || n, 'overlap', ST_Area(geom),
-             (ST_MaximumInscribedCircle(geom)).radius,
-             NULL::DOUBLE,
-             fa, fb, geom,
-             ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
-      FROM tc_overlap_regions WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-    ) t
-  `);
-
-  const meta = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, unit_b, xmin, ymin, xmax, ymax
-    FROM tc_issues
-    ORDER BY
-      CASE kind WHEN 'overlap' THEN 0 ELSE 1 END,
-      CASE kind WHEN 'overlap' THEN -max_width_m ELSE max_width_m END
-  `);
-  const rows: IssueRow[] = (
-    meta.toArray() as Array<{
-      key: string;
-      kind: "gap" | "overlap";
-      area_m2: number | null;
-      max_width_m: number | null;
-      thinness_ratio: number | null;
-      unit_a: bigint | number | null;
-      unit_b: bigint | number | null;
-      xmin: number;
-      ymin: number;
-      xmax: number;
-      ymax: number;
-    }>
-  ).map((r) => ({
-    key: r.key,
-    kind: r.kind,
-    areaM2: r.area_m2 ?? NaN,
-    maxWidthM: r.max_width_m ?? NaN,
-    thinnessRatio: r.thinness_ratio,
-    units: [r.unit_a, r.unit_b]
-      .filter((u): u is bigint | number => u !== null)
-      .map((u) => Number(u)),
-    bbox: [r.xmin, r.ymin, r.xmax, r.ymax],
-  }));
-
-  const gj = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, unit_a, unit_b, ST_AsGeoJSON(geom) AS _geom
-    FROM tc_issues WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-  `);
-  const features = (
-    gj.toArray() as Array<{
-      key: string;
-      kind: string;
-      area_m2: number | null;
-      max_width_m: number | null;
-      unit_a: bigint | number | null;
-      unit_b: bigint | number | null;
-      _geom: string;
-    }>
-  ).map((r) => ({
-    type: "Feature",
-    geometry: JSON.parse(r._geom),
-    properties: {
-      key: r.key,
-      kind: r.kind,
-      area_m2: r.area_m2,
-      max_width_m: r.max_width_m,
-      // BIGINT columns surface as JS `bigint`, which JSON.stringify can't serialize.
-      unit_a: r.unit_a === null ? null : Number(r.unit_a),
-      unit_b: r.unit_b === null ? null : Number(r.unit_b),
-    },
-  }));
-  return { rows, geojson: JSON.stringify({ type: "FeatureCollection", features }), failedKinds };
+  return assembleIssues(
+    conn,
+    { issuesTable: "tc_issues", gapRegionsTable: "tc_gap_regions", overlapRegionsTable: "tc_overlap_regions" },
+    failedKinds,
+  );
 }
 
 // Check which issues are resolved in the current cleaned output (tc_clean),
