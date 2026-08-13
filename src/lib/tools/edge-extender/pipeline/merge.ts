@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { SNAP_TOLERANCE } from "./points";
+import { bboxColumnsSql, bboxOverlapSql } from "$lib/db/bbox";
+import { SNAP_TOLERANCE } from "$lib/db/constants";
 
 export async function stageMerge(conn: AsyncDuckDBConnection): Promise<void> {
   // Per-part layer_01 with bbox columns. Parts (not whole multi-part fids) keep
@@ -10,9 +11,7 @@ export async function stageMerge(conn: AsyncDuckDBConnection): Promise<void> {
     WITH parts AS (
       SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM layer_01
     )
-    SELECT fid, part_geom,
-      ST_XMin(part_geom) AS xmin, ST_XMax(part_geom) AS xmax,
-      ST_YMin(part_geom) AS ymin, ST_YMax(part_geom) AS ymax
+    SELECT fid, part_geom, ${bboxColumnsSql("part_geom")}
     FROM parts
   `);
 
@@ -29,17 +28,14 @@ export async function stageMerge(conn: AsyncDuckDBConnection): Promise<void> {
     CREATE OR REPLACE TABLE layer_05_tmp2 AS
     WITH
     v AS (
-      SELECT fid, geom,
-        ST_XMin(geom) AS xmin, ST_XMax(geom) AS xmax,
-        ST_YMin(geom) AS ymin, ST_YMax(geom) AS ymax
+      SELECT fid, geom, ${bboxColumnsSql()}
       FROM layer_04
     ),
     neighbor_union AS (
       SELECT v.fid AS vfid, ST_Union_Agg(p.part_geom) AS geom
       FROM v
       JOIN layer_05_tmp1 p
-        ON p.xmax >= v.xmin AND p.xmin <= v.xmax
-       AND p.ymax >= v.ymin AND p.ymin <= v.ymax
+        ON ${bboxOverlapSql("v", "p")}
       GROUP BY v.fid
     ),
     snapped AS (

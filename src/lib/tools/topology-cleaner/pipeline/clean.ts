@@ -54,7 +54,7 @@ export async function buildClean(
     return;
   }
   const scratch = `${targetTable}_scratch`;
-  await runCoverageClean(conn, "tc_input", scratch, { snap: -1, gap: gapDeg });
+  await runCoverageClean(conn, "tc_input", scratch, { gap: gapDeg });
   try {
     await validateCleanOutput(conn, scratch, gapDeg);
   } catch (e) {

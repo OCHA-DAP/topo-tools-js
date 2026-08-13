@@ -39,29 +39,36 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 ## Gap-fill modes
 
-- The default mode (`auto`) MUST fill a gap only when its compactness
-  ratio is at or below `0.3` (a digitization-sliver shape), and MUST set
-  the fill width to the widest such gap's maximum width plus 1% headroom —
-  just enough to reliably clear `ST_CoverageClean`'s internal width
-  comparison, not enough to also sweep in a wider, non-thin gap.
-- The `all` mode MUST consider every detected gap regardless of shape, and
-  MUST set the fill width to twice the widest gap's maximum width, rounded
-  up to a nice number (1/2/5 × 10^k). Unlike `auto`, a looser bound changes
-  no outcome here since `all` already fills every detected gap; this width
-  also sizes the `manual` slider's ceiling.
+- The default mode (`minimal`) MUST fill a gap only when its maximum width
+  is at or below `SNAP_TOLERANCE` (floating-point-noise scale), and MUST
+  set the fill width to exactly `SNAP_TOLERANCE` — no shape heuristic.
+- The `thin` mode MUST fill a gap only when its compactness ratio is at or
+  below `0.3` (a digitization-sliver shape), and MUST set the fill width to
+  the widest such gap's maximum width plus 1% headroom — just enough to
+  reliably clear `ST_CoverageClean`'s internal width comparison, not enough
+  to also sweep in a wider, non-thin gap.
+- The `all` mode MUST consider every detected gap regardless of shape or
+  width, and MUST set the fill width to a fixed sentinel
+  (`GAP_MAXIMUM_WIDTH_ALL_DEG`, `360°`) guaranteed to exceed any real gap by
+  construction, rather than a width derived from the widest detected gap.
 - The `manual` mode MUST use the width the user supplies directly, with no
   shape filtering.
-- Either `auto` or `all` MAY resolve to a width of `0` when no gap
-  qualifies, meaning no gap is filled.
+- The `manual` slider's ceiling, and `all` mode's display estimate, MAY use
+  a separate UI-only value (twice the widest detected gap's maximum width,
+  rounded up to a nice number, 1/2/5 × 10^k) — this value MUST NOT be used
+  as the actual fill width for any mode.
+- `minimal` or `thin` MAY resolve to a width of `0` when no gap qualifies,
+  meaning no gap is filled.
 
 ## Fixing topology
 
 - `clean` MUST skip `ST_CoverageClean` entirely and copy the input straight
   through when the cached violations check is false and the resolved
   gap-fill width is `0`.
-- Otherwise, `clean` MUST run `ST_CoverageClean` exactly once, with
-  automatic snapping (`snap = -1`) and the resolved gap-fill width, over
-  the frozen input array.
+- Otherwise, `clean` MUST run `ST_CoverageClean` exactly once, with a fixed
+  snapping tolerance (`SNAP_TOLERANCE`, not GEOS's own extent-relative
+  auto-default) and the resolved gap-fill width, over the frozen input
+  array.
 - `clean` MUST NOT apply a precision-reduction retry to a `ST_CoverageClean`
   failure on real input geometry.
 

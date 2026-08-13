@@ -10,7 +10,7 @@ with other tools.
   independently via the shared loader (see `docs/reference/shared.md`).
 - `match` MUST run a gated whole-layer `gatedCoverageClean` pass over both
   the parent layer and the child layer immediately after loading, at
-  default settings (auto snap, no gap-fill), before assignment — a defect
+  default settings (`SNAP_TOLERANCE` snap, no gap-fill), before assignment — a defect
   between two child units later assigned to different groups would
   otherwise be invisible to any later per-group check.
 

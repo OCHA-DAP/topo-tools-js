@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { SNAP_TOLERANCE } from "./constants";
 
 // Shared ST_CoverageClean plumbing used by both the Topology Cleaner tool
 // (topology-cleaner/pipeline/clean.ts) and Edge Extender's input-clean gate and
@@ -14,8 +15,11 @@ function fmt(n: number): string {
 }
 
 export interface CoverageCleanOptions {
-  // GEOS snapping tolerance; -1 = auto (GEOS computes dataset_diameter / 1e8,
-  // which absorbs float jitter without needing an explicit value).
+  // GEOS snapping tolerance, in degrees. Defaults to SNAP_TOLERANCE (matches
+  // topo-tools-py ADR-0040): GEOS's own auto-default (-1, dataset_diameter /
+  // 1e8) swings from too tight on small territories to too loose on a global
+  // mosaic, so it's no longer the default; -1 remains available as an
+  // explicit override.
   snap?: number;
   // gap_max_width, in the same units as geom (degrees, post-normalization);
   // 0 = no gap filling.
@@ -54,7 +58,7 @@ export async function runCoverageClean(
   conn: AsyncDuckDBConnection,
   inputTable: string,
   targetTable: string,
-  { snap = -1, gap = 0 }: CoverageCleanOptions = {},
+  { snap = SNAP_TOLERANCE, gap = 0 }: CoverageCleanOptions = {},
 ): Promise<void> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ${targetTable} AS

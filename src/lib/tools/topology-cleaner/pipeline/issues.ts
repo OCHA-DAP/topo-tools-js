@@ -1,4 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { SNAP_TOLERANCE } from "$lib/db/constants";
+import { emptyRegions, gapRegionsQuery, overlapRegionsQuery } from "$lib/db/coverage";
 import { degSqToM2, degToM, niceNum } from "./units";
 
 // Polsby-Popper compactness cutoff (4·π·Area / Perimeter², 1.0 = circle,
@@ -8,10 +10,10 @@ import { degSqToM2, degToM, niceNum } from "./units";
 // see resolveGapFillWidths.
 const DEFAULT_THINNESS_RATIO = 0.3;
 
-// Headroom over the widest qualifying gap's width in Auto mode, so that gap
+// Headroom over the widest qualifying gap's width in Thin mode, so that gap
 // reliably clears ST_CoverageClean's internal <= width comparison — just
 // enough, not "2x and round," to avoid also sweeping in a wider, non-thin
-// gap Auto wasn't meant to touch (ST_CoverageClean only understands width,
+// gap Thin wasn't meant to touch (ST_CoverageClean only understands width,
 // not thinness). Matches topo-tools-py's current tuning
 // (AUTO_GAP_WIDTH_EPSILON_FACTOR, widened from 1.001 to 1.01 after real-data
 // testing).
@@ -42,43 +44,6 @@ export interface IssuesResult {
   failedKinds: Set<IssueKind>;
 }
 
-async function emptyRegions(conn: AsyncDuckDBConnection, table: string, extra = ""): Promise<void> {
-  await conn.query(
-    `CREATE OR REPLACE TABLE ${table} AS SELECT NULL::BIGINT AS n${extra}, NULL::GEOMETRY AS geom WHERE FALSE`,
-  );
-}
-
-// Gap regions = enclosed areas not covered by any polygon in the source table.
-// Computed directly: union all polygons → interior rings of the union ARE the
-// gaps → convert each ring back to a polygon via difference against the filled
-// exterior. Independent of ST_CoverageClean, so works even when the coverage
-// has overlaps or degenerate edges that would trip the cleaner.
-// Exported: also reused by verify.ts to sweep tc_clean (the export output)
-// for the same defect, not just layer_01 (the input).
-export function gapRegionsQuery(targetTable: string, sourceTable: string): string {
-  return `--sql
-    CREATE OR REPLACE TABLE ${targetTable} AS
-    WITH
-    union_cte AS (
-      SELECT ST_Union_Agg(geom) AS u
-      FROM ${sourceTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-    ),
-    parts AS (
-      SELECT (UNNEST(ST_Dump(u))).geom AS poly
-      FROM union_cte WHERE u IS NOT NULL
-    ),
-    holes AS (
-      SELECT UNNEST(ST_Dump(
-        ST_Difference(ST_MakePolygon(ST_ExteriorRing(poly)), poly)
-      )).geom AS geom
-      FROM parts WHERE ST_NumInteriorRings(poly) > 0
-    )
-    SELECT row_number() OVER () AS n, geom
-    FROM holes
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-  `;
-}
-
 // Degrades to an empty table on GEOS overlay failure. Returns false when that
 // happens — the caller surfaces this so the UI can tell "detection failed"
 // apart from "genuinely 0 gaps."
@@ -91,43 +56,6 @@ export async function buildGapRegions(conn: AsyncDuckDBConnection): Promise<bool
     await emptyRegions(conn, "tc_gap_regions");
     return false;
   }
-}
-
-// Overlap regions = polygonal pairwise intersections of polygons in the source
-// table, via a bbox-prefiltered join (PIECEWISE_MERGE_JOIN, not the
-// WASM-OOMing SPATIAL_JOIN). ST_Overlaps/ST_Contains, not ST_Intersects,
-// which would also match every ordinary touching-edge pair and flood the
-// join at admin-boundary scale. Bbox columns are precomputed in a CTE, not
-// called inline in the JOIN — DuckDB recomputes an inline ST_XMin/ST_XMax/etc.
-// per pairwise comparison, not once per row, which hangs indefinitely on a
-// table with even a few very-high-vertex-count polygons. Exported: also
-// reused by verify.ts.
-export function overlapRegionsQuery(targetTable: string, sourceTable: string): string {
-  return `--sql
-    CREATE OR REPLACE TABLE ${targetTable} AS
-    WITH bboxed AS (
-      SELECT fid, geom,
-        ST_XMin(geom) AS xmin, ST_XMax(geom) AS xmax,
-        ST_YMin(geom) AS ymin, ST_YMax(geom) AS ymax
-      FROM ${sourceTable}
-    ),
-    pairs AS (
-      SELECT a.fid AS fa, b.fid AS fb,
-             ST_MakeValid(ST_CollectionExtract(ST_Intersection(a.geom, b.geom), 3)) AS geom
-      FROM bboxed a JOIN bboxed b
-        ON a.fid < b.fid
-        AND b.xmax >= a.xmin AND b.xmin <= a.xmax
-        AND b.ymax >= a.ymin AND b.ymin <= a.ymax
-        AND (
-          ST_Overlaps(a.geom, b.geom)
-          OR ST_Contains(a.geom, b.geom)
-          OR ST_Contains(b.geom, a.geom)
-        )
-    )
-    SELECT row_number() OVER () AS n, fa, fb, geom
-    FROM pairs
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-  `;
 }
 
 // Degrades to an empty table on GEOS overlay failure. Returns false when that
@@ -308,10 +236,10 @@ export async function checkFixedIssues(
 
   try {
     await conn.query(`--sql
-      UPDATE tc_issues SET fixed = TRUE
-      WHERE kind = 'gap' AND EXISTS (
+      UPDATE tc_issues SET fixed = EXISTS (
         SELECT 1 FROM tc_clean c WHERE ST_Contains(c.geom, ST_PointOnSurface(tc_issues.geom))
       )
+      WHERE kind = 'gap'
     `);
     await conn.query(`--sql
       UPDATE tc_issues
@@ -333,29 +261,42 @@ export async function checkFixedIssues(
   return fixed;
 }
 
-// Derive the two gap-fill widths the UI's Auto/All modes need.
+// Derive the gap-fill widths the UI's Minimal/Thin/All modes need.
 //
-// Auto only considers gaps shaped like a digitization sliver
+// Minimal (the default) only considers gaps at or below SNAP_TOLERANCE —
+// floating-point-noise scale, never a real feature — and fills them at
+// exactly that width. Matches topo-tools-py's own default (no shape
+// heuristic; ADR-0033/0034).
+//
+// Thin (topo-tools-py's "thin", formerly this UI's default "Auto") only
+// considers gaps shaped like a digitization sliver
 // (thinnessRatio <= DEFAULT_THINNESS_RATIO), and uses just enough headroom
 // over the widest one (AUTO_GAP_WIDTH_EPSILON_FACTOR) to reliably clear it —
 // not "2x and round," which would risk also filling a wider, non-thin gap
-// Auto wasn't meant to touch.
+// Thin wasn't meant to touch.
 //
-// All considers every detected gap and keeps "2x the widest, rounded up to a
-// nice number": since All already means "fill everything regardless of
-// shape," a looser bound changes no outcome (every gap still gets filled
-// either way), and allFillM does double duty sizing the Manual slider's
-// max/step (see App.svelte) — a rounded, comfortably-above-widest number
-// makes a better slider ceiling than a tight epsilon would.
+// sliderCeilingM ("2x the widest detected gap, rounded up to a nice number")
+// is UI-only: it sizes the Manual slider's max/step and All mode's display
+// text. All mode's actual fill width is topo-tools-py's fixed
+// GAP_MAXIMUM_WIDTH_ALL_DEG sentinel (applied directly in pipeline/index.ts),
+// not derived from this number — a looser bound changes no outcome for All
+// regardless, since it already fills every detected gap.
 //
-// Either can be 0 (no qualifying gaps), meaning "fill nothing."
-export function resolveGapFillWidths(rows: IssueRow[]): { allFillM: number; autoFillM: number } {
+// Any of these can be 0 (no qualifying gaps), meaning "fill nothing."
+export function resolveGapFillWidths(rows: IssueRow[]): {
+  sliderCeilingM: number;
+  thinFillM: number;
+  minimalFillM: number;
+} {
   const widthsOf = (predicate: (r: IssueRow) => boolean) =>
     rows.filter((r) => r.kind === "gap" && r.maxWidthM > 0 && predicate(r)).map((r) => r.maxWidthM);
   const allWidths = widthsOf(() => true);
   const thinWidths = widthsOf((r) => (r.thinnessRatio ?? 1) <= DEFAULT_THINNESS_RATIO);
+  const snapToleranceM = degToM(SNAP_TOLERANCE);
+  const hasNoiseScaleGap = widthsOf((r) => r.maxWidthM <= snapToleranceM).length > 0;
   return {
-    allFillM: allWidths.length ? niceNum(Math.max(...allWidths) * 2) : 0,
-    autoFillM: thinWidths.length ? Math.max(...thinWidths) * AUTO_GAP_WIDTH_EPSILON_FACTOR : 0,
+    sliderCeilingM: allWidths.length ? niceNum(Math.max(...allWidths) * 2) : 0,
+    thinFillM: thinWidths.length ? Math.max(...thinWidths) * AUTO_GAP_WIDTH_EPSILON_FACTOR : 0,
+    minimalFillM: hasNoiseScaleGap ? snapToleranceM : 0,
   };
 }

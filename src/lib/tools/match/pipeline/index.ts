@@ -1,9 +1,9 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
+import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns } from "$lib/db/columns";
 import { dropInternalTables } from "$lib/tools/edge-extender/pipeline/index";
-import { SNAP_TOLERANCE } from "$lib/tools/edge-extender/pipeline/points";
 import { loadLayers } from "./load";
 import { computeAssignment } from "./assign";
 import { listGroups, runGroups, type GroupInfo, type GroupResult } from "./groups";

@@ -2,7 +2,7 @@
 
 Detects overlaps and gaps in a polygon coverage and cleans them via DuckDB
 spatial's `ST_CoverageClean`, with an adjustable gap-width threshold exposed
-as Auto / All / Manual modes.
+as Minimal / Thin / All / Manual modes.
 
 ## Pipeline
 
@@ -29,8 +29,8 @@ as Auto / All / Manual modes.
    copies `layer_01` straight through when the input already has no
    violations and no gap-fill was requested (see
    [`0013`](../adr/0013-clean-skips-coverageclean-when-no-defects.md));
-   otherwise it runs `ST_CoverageClean(geoms, snap=-1, gap)` at the
-   requested gap width.
+   otherwise it runs `ST_CoverageClean(geoms, snap=SNAP_TOLERANCE, gap)` at
+   the requested gap width.
 4. **Verify export** (`pipeline/verify.ts`) — independently re-runs the same
    gap/overlap detection and an `ST_IsValid` sweep against the *exported*
    table (`tc_clean`), not just the pre-clean input, catching anything the
@@ -40,18 +40,24 @@ as Auto / All / Manual modes.
 ## Gap-fill modes
 
 The gap-width slider (meters, converted to degrees via a latitude-aware
-factor in `pipeline/units.ts`) has three UI modes:
-- **Auto** (default) — fills gaps shaped like a digitization sliver: a
-  Polsby-Popper compactness ratio (`4·π·Area / Perimeter²`) at or below
-  0.3, the same formula and cutoff guidance ArcGIS Pro's "Polygon Sliver"
-  check uses. The fill width is twice the widest qualifying gap's
-  Maximum-Inscribed-Circle diameter, rounded up to a nice number.
-- **All** — same formula, but considers every detected gap regardless of
-  shape.
+factor in `pipeline/units.ts`) has four UI modes:
+- **Minimal** (default) — fills only gaps at or below `SNAP_TOLERANCE`
+  (floating-point-noise scale), at exactly that width. No shape heuristic.
+  Matches topo-tools-py's own default (ADR-0033/0034 there).
+- **Thin** — fills gaps shaped like a digitization sliver: a Polsby-Popper
+  compactness ratio (`4·π·Area / Perimeter²`) at or below 0.3, the same
+  formula and cutoff guidance ArcGIS Pro's "Polygon Sliver" check uses. The
+  fill width is the widest qualifying gap's Maximum-Inscribed-Circle
+  diameter plus 1% headroom.
+- **All** — fills every detected gap regardless of shape or width, via a
+  fixed sentinel width (`GAP_MAXIMUM_WIDTH_ALL_DEG`, 360°) rather than one
+  derived from the widest detected gap.
 - **Manual** — the user sets the width directly.
 
-Either Auto or All can resolve to a width of 0 (no qualifying gaps),
-meaning "fill nothing."
+Minimal or Thin can resolve to a width of 0 (no qualifying gaps), meaning
+"fill nothing." A separate UI-only value (twice the widest detected gap,
+rounded to a nice number) sizes the Manual slider's ceiling and All mode's
+display estimate — it is never the actual fill width.
 
 ## Gap/overlap detection at scale
 

@@ -1,11 +1,13 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
+import { gapRegionsQuery } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { stageCleanInput } from "./clean";
 import { computeEffectiveDistance } from "./distance";
 import { stageLines } from "./lines";
 import { stageMerge } from "./merge";
-import { buildSegments, stagePoints, SNAP_TOLERANCE } from "./points";
+import { buildSegments, stagePoints } from "./points";
 import { stageVoronoi } from "./voronoi";
 
 export type ProgressFn = (stage: number, label: string) => void;
@@ -84,17 +86,14 @@ async function runValidation(
   }
 
   try {
-    const r = await conn.query(`--sql
-      WITH u AS (
-        SELECT ST_Union_Agg(geom) AS g
-        FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${finalTable})
-      )
-      SELECT ST_NumInteriorRings(g) AS n FROM u
-    `);
-    const n = Number(r.toArray()[0].n ?? 0);
-    if (n > 0) console.warn(`GAPS in ${finalTable}: ${n} interior rings`);
+    await conn.query(gapRegionsQuery("ee_validate_gaps", finalTable));
+    const r = await conn.query("SELECT COUNT(*) AS n FROM ee_validate_gaps");
+    const n = Number((r.toArray()[0] as { n: bigint | number }).n ?? 0);
+    if (n > 0) console.warn(`GAPS in ${finalTable}: ${n} regions`);
   } catch (e) {
     console.warn("gap check failed:", e);
+  } finally {
+    await conn.query("DROP TABLE IF EXISTS ee_validate_gaps");
   }
 
   try {

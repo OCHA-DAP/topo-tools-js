@@ -1,6 +1,8 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { SNAP_TOLERANCE } from "./constants";
 
-const SLIVER = 1e-12; // drop intersection crumbs below ~1 cm² (in deg²)
+// Drop intersection crumbs below SNAP_TOLERANCE², in deg² (matches topo-tools-py ADR-0030).
+const SLIVER = SNAP_TOLERANCE ** 2;
 
 const AREA = (g: string) => `ST_Area(ST_Transform(${g}, 'EPSG:4326', 'EPSG:8857'))`;
 

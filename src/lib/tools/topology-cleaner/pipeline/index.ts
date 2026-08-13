@@ -10,7 +10,7 @@ import {
   type IssueKind,
   type IssueRow,
 } from "./issues";
-import { metersToDegrees, setCentroidLat } from "./units";
+import { GAP_MAXIMUM_WIDTH_ALL_DEG, metersToDegrees, setCentroidLat } from "./units";
 import { verifyExport, type ExportCheck } from "./verify";
 
 export type { IssueKind, IssueRow } from "./issues";
@@ -31,6 +31,9 @@ export class PipelineError extends Error {
 
 export interface CleanOptions {
   gapWidthM: number; // primary slider, meters (0 = no gap filling)
+  // True when the UI's All mode is active: fills every detected gap via the
+  // fixed GAP_MAXIMUM_WIDTH_ALL_DEG sentinel instead of gapWidthM's meters value.
+  allGaps?: boolean;
 }
 
 export interface CleanResult {
@@ -93,16 +96,15 @@ async function computeBounds(
   return null;
 }
 
-// Re-clean at the current gap-width slider value. snap=-1 (auto): GEOS computes
-// the snap tolerance as dataset_diameter/1e8, which absorbs float jitter and
-// resolves crossing-edge topology without a manually tuned value.
-// Gap + overlap regions and the issues table are static (built once per load)
-// and are NOT recomputed here.
+// Re-clean at the current gap-fill mode (gapWidthM for Minimal/Thin/Manual,
+// allGaps for All — see CleanOptions). Snapping tolerance is runCoverageClean's
+// own SNAP_TOLERANCE default. Gap + overlap regions and the issues table are
+// static (built once per load) and are NOT recomputed here.
 export async function recleanOnly(
   conn: AsyncDuckDBConnection,
   opts: CleanOptions,
 ): Promise<RecleanResult> {
-  const gapDeg = metersToDegrees(opts.gapWidthM);
+  const gapDeg = opts.allGaps ? GAP_MAXIMUM_WIDTH_ALL_DEG : metersToDegrees(opts.gapWidthM);
 
   await buildClean(conn, "tc_clean", gapDeg, cachedHasViolations);
   const kept = await countRows(conn, "tc_clean");
@@ -150,7 +152,7 @@ export async function runFromLoaded(
 
   onProgress(4, "Fixing topology");
   // Assemble issues (gap widths via ST_MaximumInscribedCircle), then run a
-  // single ST_CoverageClean at the Auto-mode gap width (sliver-shaped gaps
+  // single ST_CoverageClean at the Minimal-mode gap width (noise-scale gaps
   // only) — the UI's default mode, so the first clean a user sees matches it.
   let cleanedGeoJSON: string;
   let collapsedCount: number;
@@ -162,9 +164,9 @@ export async function runFromLoaded(
     cachedIssuesGeoJSON = issuesRes.geojson;
     cachedFailedKinds = issuesRes.failedKinds;
 
-    const { autoFillM } = resolveGapFillWidths(issuesRes.rows);
+    const { minimalFillM } = resolveGapFillWidths(issuesRes.rows);
 
-    await buildClean(conn, "tc_clean", metersToDegrees(autoFillM), cachedHasViolations);
+    await buildClean(conn, "tc_clean", metersToDegrees(minimalFillM), cachedHasViolations);
 
     const kept = await countRows(conn, "tc_clean");
     fixedKeys = await checkFixedIssues(conn, cachedIssues);
