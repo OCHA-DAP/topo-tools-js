@@ -32,8 +32,8 @@
   let resultGeoJSON = $state<string | null>(null);
   let parentOutlineGeoJSON = $state<string | null>(null);
   let resultBounds = $state<[number, number, number, number] | null>(null);
-  let method = $state<"exact" | "sampling" | null>(null);
   let unassignedCount = $state<number | null>(null);
+  let droppedCount = $state<number | null>(null);
 
   onMount(() => {
     initDuckDB();
@@ -90,8 +90,8 @@
     resultGeoJSON = null;
     parentOutlineGeoJSON = null;
     resultBounds = null;
-    method = null;
     unassignedCount = null;
+    droppedCount = null;
     groupRows = [];
     activeGroupIndex = -1;
     activeStage = 0;
@@ -108,8 +108,8 @@
       resultGeoJSON = result.geojson;
       parentOutlineGeoJSON = result.parentOutlineGeojson;
       resultBounds = result.bounds;
-      method = result.method;
       unassignedCount = result.unassignedCount;
+      droppedCount = result.droppedCount;
       phaseLabel = "Done";
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -219,23 +219,30 @@
       <div class="error-panel">{error}</div>
     {/if}
 
-    {#if unassignedCount !== null && unassignedCount > 0}
+    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0)}
       <div class="warn-panel">
-        {unassignedCount} fine unit{unassignedCount === 1 ? "" : "s"} had no overlap with any
-        coarse polygon and {unassignedCount === 1 ? "was" : "were"} excluded from the result.
+        {#if unassignedCount !== null && unassignedCount > 0}
+          <p>
+            {unassignedCount} fine unit{unassignedCount === 1 ? "" : "s"} had no overlap with any
+            coarse polygon and {unassignedCount === 1 ? "was" : "were"} excluded from the result.
+          </p>
+        {/if}
+        {#if droppedCount !== null && droppedCount > 0}
+          <p>
+            {droppedCount} fine unit{droppedCount === 1 ? "" : "s"} belonged to a group whose
+            extension failed and {droppedCount === 1 ? "was" : "were"} excluded from the result.
+          </p>
+        {/if}
         <DownloadMenu
-          primaryLabel="Download unassigned"
+          primaryLabel="Download issues"
           filenameStem={fileStem(childFiles[0])}
-          exportSource="match_unassigned"
+          exportSource="match_issues"
         />
       </div>
     {/if}
 
     {#if resultGeoJSON}
       <section class="step">
-        {#if method === "sampling"}
-          <p class="method-note">Overlap measured by point sampling (fallback).</p>
-        {/if}
         <DownloadMenu
           primaryLabel="Download GeoJSON"
           filenameStem={fileStem(childFiles[0])}
@@ -453,9 +460,7 @@
     gap: 0.5rem;
   }
 
-  .method-note {
-    font-size: 0.75rem;
-    color: #9ca3af;
+  .warn-panel p {
     margin: 0;
   }
 

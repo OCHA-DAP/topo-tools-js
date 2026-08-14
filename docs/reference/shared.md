@@ -74,23 +74,10 @@ name instead of repeating them.
 Shared by `match` (parent/child assignment) and `change` (version-to-version
 comparison).
 
-- Overlap measurement MUST attempt exact geometric intersection
-  (`ST_Intersection`) first.
-- If exact intersection throws, overlap measurement MUST fall back to a
-  point-sampling estimate (a fixed-size grid per polygon, plus a
-  guaranteed interior point so a polygon too small or thin to catch a grid
-  point is never dropped) and MUST report which method produced the
-  result.
+- Overlap measurement MUST compute exact geometric intersection
+  (`ST_Intersection`); a failure MUST propagate to the caller rather than
+  falling back to an approximation.
 - An intersection piece with area below the sliver threshold (~1cm²) MUST
   be discarded before it contributes to any pair's shared area.
 - Area and ratio calculations (`coverage_a`, `coverage_b`, `iou`) MUST use
   an equal-area projection, not raw EPSG:4326 degree-area.
-
-## Precision retry (`$lib/db/precisionRetry.ts`)
-
-- A WASM GEOS noding failure on algorithmically-derived geometry MUST be
-  retried at a sequence of reduced precisions, stopping at the first that
-  succeeds, before the operation is treated as failed.
-- A precision-reduction retry MUST only ever be applied to derived
-  geometry produced by the pipeline itself (e.g. Voronoi cells, a merge
-  remainder). It MUST NOT be applied to real, unmodified input geometry.

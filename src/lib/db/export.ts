@@ -10,7 +10,13 @@ export type ExportSource =
   | "crosswalk_overlay"
   | "crosswalk_changelog"
   | "match"
-  | "match_unassigned";
+  | "match_issues"
+  | "stitch"
+  | "stitch_issues"
+  | "detect_issues"
+  | "clip"
+  | "mosaic"
+  | "mosaic_issues";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -115,7 +121,19 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: null,
     suffix: "_issues",
     kind: "spatial",
-    columns: ["key", "kind", "area_m2", "max_width_m", "fixed", "unit_a", "unit_b"],
+    columns: [
+      "key",
+      "kind",
+      "area_m2",
+      "max_width_m",
+      "thinness_ratio",
+      "fixed",
+      "unit_a",
+      "unit_b",
+      "unit_a_area_change_m2",
+      "unit_b_area_change_m2",
+      "filled_area_m2",
+    ],
   },
   crosswalk_overlay: {
     table: "cw_overlay_render",
@@ -135,11 +153,36 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     suffix: "_matched",
     kind: "spatial",
   },
-  match_unassigned: {
-    table: "ge_unassigned",
-    attrTable: "child_layer_attr",
-    suffix: "_unassigned",
+  match_issues: {
+    table: "ge_issues",
+    attrTable: null,
+    suffix: "_issues",
     kind: "spatial",
+    columns: ["key", "kind", "unit_a", "parent_fid", "reason"],
+  },
+  stitch: { table: "st_clean", attrTable: "layer_attr", suffix: "_stitched", kind: "spatial" },
+  stitch_issues: {
+    table: "st_issues",
+    attrTable: null,
+    suffix: "_issues",
+    kind: "spatial",
+    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "fixed", "unit_a", "unit_b"],
+  },
+  detect_issues: {
+    table: "dt_issues",
+    attrTable: null,
+    suffix: "_issues",
+    kind: "spatial",
+    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a", "unit_b"],
+  },
+  clip: { table: "cl_clip", attrTable: "child_layer_attr", suffix: "_clipped", kind: "spatial" },
+  mosaic: { table: "st_clean", attrTable: "child_layer_attr", suffix: "_mosaicked", kind: "spatial" },
+  mosaic_issues: {
+    table: "ms_issues",
+    attrTable: null,
+    suffix: "_issues",
+    kind: "spatial",
+    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a"],
   },
 };
 

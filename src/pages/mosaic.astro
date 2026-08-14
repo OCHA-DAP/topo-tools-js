@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/mosaic/App.svelte";
+---
+
+<Layout
+  title="Mosaic — fit an extended polygon layer into a new parent boundary in your browser"
+  description="Browser-only tool that assigns an already-extended children layer to its one best-overlapping parent unit, clips to it, and closes seams, without re-running Voronoi extension."
+>
+  <App client:load />
+</Layout>

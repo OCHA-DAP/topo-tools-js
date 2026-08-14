@@ -1,5 +1,5 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { computeOverlapPairs, type OverlapMethod } from "$lib/db/overlap";
+import { computeOverlapPairs } from "$lib/db/overlap";
 import { buildKeyed, dropPriorRun, loadSide } from "./load";
 import { stageOverlayDifferences } from "./overlay";
 import { stageClassify, REL_ORDER, REL_COLORS, type RelClass } from "./classify";
@@ -7,10 +7,6 @@ import { stageRender, buildOverlayGeoJSON, buildOutlineGeoJSON, computeBounds } 
 import { stageTable, type TableRow } from "./table";
 
 export type ProgressFn = (stage: number, label: string) => void;
-
-// Which overlap method produced the result: exact geometric intersection, or the
-// point-sampling fallback used when exact throws under the WASM OverlayNG bug.
-export type ComparisonMethod = OverlapMethod;
 
 export class PipelineError extends Error {
   constructor(
@@ -40,8 +36,6 @@ export interface PipelineResult {
   outlineBGeoJSON: string;
   tableRows: TableRow[];
   bounds: [number, number, number, number] | null;
-  // Set on a full run; undefined for reclassify-only (overlap unchanged).
-  method?: ComparisonMethod;
 }
 
 const STAGE_LABELS = [
@@ -69,14 +63,9 @@ export async function runFromLoaded(
     await buildKeyed(conn, "b", opts.bCodeCol, opts.bNameCol);
 
     stage = 3;
-    // Prefer exact geometric overlap; fall back to point sampling only if GEOS
-    // OverlayNG throws under the WASM floating-point bug (near-coincident edges).
-    const method = await computeOverlapPairs(conn, "cw_a_keyed", "cw_b_keyed", "cw_pairs", (m) =>
-      onProgress(3, m === "exact" ? "Measuring overlap (exact)" : "Measuring overlap (sampling)"),
-    );
-    if (method === "exact") {
-      await stageOverlayDifferences(conn);
-    }
+    onProgress(3, "Measuring overlap");
+    await computeOverlapPairs(conn, "cw_a_keyed", "cw_b_keyed", "cw_pairs");
+    await stageOverlayDifferences(conn);
 
     stage = 4;
     onProgress(4, "Classifying clusters");
@@ -101,7 +90,7 @@ export async function runFromLoaded(
       ],
     );
 
-    return { overlayGeoJSON, outlineAGeoJSON, outlineBGeoJSON, tableRows, bounds, method };
+    return { overlayGeoJSON, outlineAGeoJSON, outlineBGeoJSON, tableRows, bounds };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new PipelineError(msg, stage);

@@ -3,13 +3,15 @@ import type { Tool } from "$lib/tools";
 
 interface Props {
   tool: Tool;
+  variant?: "primary" | "secondary" | "tertiary";
+  header?: boolean;
 }
 
-const { tool } = Astro.props;
+const { tool, variant = "primary", header = false } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 ---
 
-<a class="card" href={`${base}${tool.slug}`}>
+<a class={`card ${variant} ${header ? "header" : ""}`} href={`${base}${tool.slug}`}>
   <img class="icon" src={`${base}${tool.iconHref.slice(1)}`} alt="" aria-hidden="true" width="64" height="64" />
   <div class="text">
     <h3 class="name">{tool.name}</h3>
@@ -28,6 +30,7 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
     background: #fff;
     text-decoration: none;
     color: inherit;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 2px 6px rgba(0, 0, 0, 0.03);
     transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
   }
   .card:hover {
@@ -45,6 +48,7 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
+    min-width: 0;
   }
   .name {
     font-size: 1.05rem;
@@ -57,5 +61,53 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
     color: #4b5563;
     margin: 0;
     line-height: 1.45;
+  }
+
+  .card.secondary,
+  .card.tertiary {
+    gap: 0.75rem;
+  }
+  .card.secondary .text,
+  .card.tertiary .text {
+    gap: 0.2rem;
+  }
+  .card.secondary {
+    padding: 0.875rem;
+  }
+  .card.secondary .icon {
+    width: 36px;
+    height: 36px;
+  }
+  .card.secondary .name {
+    font-size: 0.925rem;
+  }
+  .card.secondary .tagline {
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+  .card.tertiary {
+    padding: 0.625rem;
+  }
+  .card.tertiary .icon {
+    width: 26px;
+    height: 26px;
+  }
+  .card.tertiary .name {
+    font-size: 0.825rem;
+  }
+  .card.tertiary .tagline {
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .card.header {
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+  }
+  .card.header:hover {
+    box-shadow: none;
+    transform: none;
   }
 </style>

@@ -27,9 +27,10 @@
   let loading = $state(false);
   let loadError = $state<string | null>(null);
 
-  // Gap-fill mode: auto (default, sliver-shaped gaps only), all (every
-  // detected gap), or manual (exact width via the slider below).
-  let mode = $state<"auto" | "all" | "manual">("auto");
+  // Gap-fill mode: minimal (default, noise-scale gaps only), thin
+  // (sliver-shaped gaps only), all (every detected gap), or manual (exact
+  // width via the slider below).
+  let mode = $state<"minimal" | "thin" | "all" | "manual">("minimal");
 
   // Manual-mode slider (meters). Only read when mode === "manual".
   let gapWidthM = $state(0);
@@ -42,20 +43,30 @@
     return `${(m * 1000).toFixed(1)} mm`;
   }
 
-  // allFillM: 2× the widest detected gap (All mode, and the Manual slider's
-  // ceiling). autoFillM: 2× the widest gap shaped like a digitization
-  // sliver (Auto mode) — 0 when no gap qualifies, meaning "fill nothing."
-  const { allFillM, autoFillM } = $derived(resolveGapFillWidths(issues));
+  // sliderCeilingM: 2× the widest detected gap (Manual slider's ceiling, and
+  // All mode's display estimate — its actual fill width is a fixed sentinel,
+  // see pipeline/index.ts). thinFillM: 2× the widest gap shaped like a
+  // digitization sliver (Thin mode). minimalFillM: SNAP_TOLERANCE, only when
+  // a noise-scale gap exists (Minimal mode, the default). Any can be 0,
+  // meaning "fill nothing."
+  const { sliderCeilingM, thinFillM, minimalFillM } = $derived(resolveGapFillWidths(issues));
 
-  const gapMaxM = $derived(allFillM || 100);
+  const gapMaxM = $derived(sliderCeilingM || 100);
   const gapStepM = $derived(niceNum(gapMaxM / 100));
 
-  // The width actually fed to ST_CoverageClean, driven by the active mode.
+  // The width displayed to the user and (for every mode but All) actually fed
+  // to ST_CoverageClean — All instead uses a fixed sentinel, see doReclean.
   const effectiveGapWidthM = $derived(
-    mode === "manual" ? gapWidthM : mode === "all" ? allFillM : autoFillM,
+    mode === "manual"
+      ? gapWidthM
+      : mode === "all"
+        ? sliderCeilingM
+        : mode === "thin"
+          ? thinFillM
+          : minimalFillM,
   );
 
-  function setMode(next: "auto" | "all" | "manual"): void {
+  function setMode(next: "minimal" | "thin" | "all" | "manual"): void {
     // Seed the slider from whatever's currently applied so switching into
     // Manual never itself changes what gets filled — only future drags do.
     if (next === "manual" && mode !== "manual") {
@@ -159,7 +170,7 @@
     showSide = "b";
     selectedKey = null;
     focusBbox = null;
-    mode = "auto";
+    mode = "minimal";
     gapWidthM = 0;
     recleanPending = false;
     if (recleanTimer) {
@@ -239,7 +250,10 @@
     recleaning = true;
     recleanPending = false;
     try {
-      const result = await recleanOnly(duckdbState.conn!, { gapWidthM: effectiveGapWidthM });
+      const result = await recleanOnly(duckdbState.conn!, {
+        gapWidthM: effectiveGapWidthM,
+        allGaps: mode === "all",
+      });
       cleanedGeoJSON = result.cleanedGeoJSON;
       collapsedCount = result.collapsedCount;
       fixedKeys = result.fixedKeys;
@@ -302,8 +316,8 @@
       <h1>Topology Cleaner</h1>
       <p class="tc-blurb">
         Drop a polygon layer to detect and fix overlaps and gaps. Click any issue to zoom to it.
-        By default only digitization-sliver-shaped gaps get filled — switch modes or use the
-        slider to control how much gets filled.
+        By default only noise-scale gaps get filled — switch modes or use the slider to control
+        how much gets filled.
       </p>
     </header>
 
@@ -328,9 +342,15 @@
         <div class="tc-mode-btns" role="group" aria-label="Gap-fill mode">
           <button
             class="tc-mode-btn"
-            class:active={mode === "auto"}
+            class:active={mode === "minimal"}
             disabled={running}
-            onclick={() => setMode("auto")}>Auto</button
+            onclick={() => setMode("minimal")}>Minimal</button
+          >
+          <button
+            class="tc-mode-btn"
+            class:active={mode === "thin"}
+            disabled={running}
+            onclick={() => setMode("thin")}>Thin</button
           >
           <button
             class="tc-mode-btn"
@@ -366,7 +386,10 @@
             {:else}
               No gaps will be filled.
             {/if}
-            {#if mode === "auto"}
+            {#if mode === "minimal"}
+              Only gaps at the scale of floating-point noise are filled — real enclosed features
+              (a pond, a missing unit) are left alone.
+            {:else if mode === "thin"}
               Only gaps shaped like digitization slivers are filled, regardless of width — real
               enclosed features (a pond, a missing unit) are left alone.
             {:else}

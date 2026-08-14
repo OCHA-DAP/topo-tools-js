@@ -41,9 +41,9 @@ prefixed `cw_`) compares two versions of a polygon layer ("Version A" = old,
   `coverage_b` (`shared_area / area(B)`), and `iou`
   (`shared_area / (area(A) + area(B) - shared_area)`), using areas in an
   equal-area projection.
-- `change` MUST attempt exact geometric intersection first. If exact
-  intersection fails, it MUST fall back to a point-sampling estimate and MUST
-  report which method produced the result.
+- `change` MUST compute overlap via exact geometric intersection; a failure
+  MUST propagate to the caller rather than falling back to an
+  approximation.
 - An intersection or difference piece with area below the sliver threshold
   (~1cm²) MUST be discarded before it contributes to any pair's shared area.
 - `change` MUST NOT re-run overlap measurement when only classification
@@ -117,8 +117,7 @@ prefixed `cw_`) compares two versions of a polygon layer ("Version A" = old,
   `[0, 1]`.
 - `tauSame` (default `0.98`) MUST set the minimum IoU for a spatially-linked
   1:1 pair to be `unchanged`/`renamed` rather than `modified`. Range
-  `[0, 1]`, capped at `0.99` whenever the last full run used the
-  point-sampling overlap method.
+  `[0, 1]`.
 - Identity linking MUST be enabled only when the user selects "Code or
   name" or "Code and name" as the matching mode, and MUST use whichever
   code/name columns are currently selected on both sides. Selecting "Code

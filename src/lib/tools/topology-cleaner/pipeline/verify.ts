@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { gapRegionsQuery, overlapRegionsQuery } from "./issues";
+import { gapRegionsQuery, overlapRegionsQuery } from "$lib/db/coverage";
 
 export interface ExportCheck {
   rowCount: number;
@@ -31,8 +31,8 @@ async function countRegions(
 // Validates the EXACT table that gets exported (tc_clean) — independent of
 // which original-input issues it was meant to fix. Catches anything the clean
 // itself might have introduced. Reuses the same gap/overlap query builders as
-// the input-side detection (issues.ts), just pointed at tc_clean instead of
-// layer_01.
+// the input-side detection ($lib/db/coverage), just pointed at tc_clean
+// instead of layer_01.
 export async function verifyExport(conn: AsyncDuckDBConnection): Promise<ExportCheck> {
   const rowRes = await conn.query(
     "SELECT COUNT(*) AS n FROM tc_clean WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)",

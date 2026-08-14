@@ -24,8 +24,9 @@ user-configurable parameters.
    since cleaning per-group here would be redundant — see
    [`0004`](../adr/0004-consolidate-coverageclean-to-single-final-call.md)),
    then clip the result against the known parent geometry
-   (`src/lib/db/clipToBoundary.ts`). A failing group is recorded and skipped
-   rather than aborting the whole batch.
+   (`src/lib/db/clipToBoundary.ts`). A failing group's children are recorded
+   in `ge_dropped` (with the parent fid and error message) rather than
+   aborting the whole batch.
 4. **Assemble** (`pipeline/index.ts`) — join clipped group results into
    `ge_results`, export it, then attempt a single gated
    `ST_CoverageClean` over the whole assembled batch (catches cross-group
@@ -34,17 +35,23 @@ user-configurable parameters.
    failure can never lose an already-correct result — see
    [`0008`](../adr/0008-wasm-coverageclean-oom-ceiling-mitigated-not-fixed.md).
 
-## Overlap computation and its WASM fallback
+## Issues export
 
-`src/lib/db/overlap.ts`'s `computeOverlapPairs` tries an exact
-`ST_Intersection`-based overlap computation first. On failure (the same
-WASM-only GEOS robustness class documented in
-[`docs/explanation/performance.md`](performance.md#wasm-geos-overlayng-floating-point-divergence)),
-it falls back to a point-sampling estimate (a 32×32 grid per polygon plus a
-guaranteed `ST_PointOnSurface`, so units too small/thin to catch a grid
-point are never dropped) that computes coverage/IoU from point-in-polygon
-counts instead of exact geometry — this fallback can't throw the same way
-exact intersection can.
+`ge_unassigned` (children with no parent overlap) and `ge_dropped` (children
+whose whole group's extension failed) are combined into one `ge_issues`
+table, each row tagged with a `kind` (`unassigned` or `dropped_group`) and,
+for dropped groups, the parent fid and the error that caused the drop. This
+is exportable on demand as `match_issues` and is the only way to recover the
+geometry of either kind of exclusion — the UI's group list only shows
+dropped groups as status text.
+
+## Overlap computation
+
+`src/lib/db/overlap.ts`'s `computeOverlapPairs` (shared with the Changelog
+tool) computes overlap via exact `ST_Intersection`. A failure (the WASM-only
+GEOS robustness class documented in
+[`docs/explanation/performance.md`](performance.md#wasm-geos-overlayng-floating-point-divergence))
+propagates to the caller rather than falling back to an approximation.
 
 ## Cross-group boundary seams
 

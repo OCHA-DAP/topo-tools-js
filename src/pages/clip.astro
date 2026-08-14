@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/clip/App.svelte";
+---
+
+<Layout
+  title="Clip — assign and clip a polygon layer to one parent boundary in your browser"
+  description="Browser-only tool that assigns a children layer to its one best-overlapping parent unit by majority vote, then clips every child to that parent's boundary."
+>
+  <App client:load />
+</Layout>

@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
+import { gapRegionsQuery } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { stageCleanInput } from "./clean";
 import { computeEffectiveDistance } from "./distance";
@@ -40,7 +41,6 @@ const INTERNAL_TABLES = [
   "layer_04_tmp1",
   "layer_04_tmp2",
   "layer_04",
-  "layer_04_orig",
   "layer_05_tmp1",
   "layer_05_tmp2",
   "layer_05",
@@ -67,9 +67,6 @@ export async function getOriginalGeojson(conn: AsyncDuckDBConnection): Promise<s
   return tableToGeoJSON(conn, "layer_01", null);
 }
 
-// ~111mm — small enough to never touch a real, intentional cartographic gap.
-export const OUTPUT_CLEAN_GAP = 1e-6;
-
 async function runValidation(
   conn: AsyncDuckDBConnection,
   finalTable: string,
@@ -88,17 +85,14 @@ async function runValidation(
   }
 
   try {
-    const r = await conn.query(`--sql
-      WITH u AS (
-        SELECT ST_Union_Agg(geom) AS g
-        FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${finalTable})
-      )
-      SELECT ST_NumInteriorRings(g) AS n FROM u
-    `);
-    const n = Number(r.toArray()[0].n ?? 0);
-    if (n > 0) console.warn(`GAPS in ${finalTable}: ${n} interior rings`);
+    await conn.query(gapRegionsQuery("ee_validate_gaps", finalTable));
+    const r = await conn.query("SELECT COUNT(*) AS n FROM ee_validate_gaps");
+    const n = Number((r.toArray()[0] as { n: bigint | number }).n ?? 0);
+    if (n > 0) console.warn(`GAPS in ${finalTable}: ${n} regions`);
   } catch (e) {
     console.warn("gap check failed:", e);
+  } finally {
+    await conn.query("DROP TABLE IF EXISTS ee_validate_gaps");
   }
 
   try {
@@ -217,7 +211,7 @@ export async function runPipeline(
 
   if (!skipOutputClean) {
     console.log("[EE-DEBUG] === stageOutputClean ===");
-    await gatedCoverageClean(conn, "layer_05", { gap: OUTPUT_CLEAN_GAP });
+    await gatedCoverageClean(conn, "layer_05");
   }
 
   // Topology validation (warn-only)

@@ -71,6 +71,9 @@ export async function runGroups(
   onDone: GroupDoneFn,
 ): Promise<GroupResult[]> {
   await conn.query("CREATE OR REPLACE TABLE ge_results (fid BIGINT, geom GEOMETRY)");
+  await conn.query(
+    "CREATE OR REPLACE TABLE ge_dropped (unit_a BIGINT, parent_fid BIGINT, reason VARCHAR, geom GEOMETRY)",
+  );
   const results: GroupResult[] = [];
 
   for (let i = 0; i < groups.length; i++) {
@@ -117,6 +120,23 @@ export async function runGroups(
       const msg = e instanceof Error ? e.message : String(e);
       const failedStage = e instanceof PipelineError ? e.failedStage : undefined;
       result = { ...group, status: "error", error: msg, failedStage };
+      // Record this group's children as dropped, for the downstream issues
+      // export. Reads from child_layer_01 filtered by ge_assignment (not the
+      // group's own scratch layer_01) so it works even if the group failed
+      // before layer_01 was fully built. Best-effort: a failure here
+      // shouldn't abort the batch over a nice-to-have.
+      try {
+        const escapedMsg = msg.replace(/'/g, "''");
+        await conn.query(`--sql
+          INSERT INTO ge_dropped
+          SELECT fid AS unit_a, ${group.parentFid} AS parent_fid,
+                 '${escapedMsg}' AS reason, geom
+          FROM child_layer_01
+          WHERE fid IN (SELECT child_fid FROM ge_assignment WHERE parent_fid = ${group.parentFid})
+        `);
+      } catch (recordError) {
+        console.warn(`Failed to record dropped group ${group.label}:`, recordError);
+      }
     } finally {
       // If the group above failed because the connection is OOM-poisoned,
       // these cleanup queries fail too — and since that throw would otherwise

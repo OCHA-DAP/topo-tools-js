@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [0022](0022-noding-precision-retry-removed-for-python-parity.md)
 
 ## Context
 

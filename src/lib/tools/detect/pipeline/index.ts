@@ -1,0 +1,88 @@
+import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { hasCoverageViolations } from "$lib/db/coverageClean";
+import { tableToGeoJSON } from "$lib/db/geojson";
+import {
+  assembleIssues,
+  buildGapRegions,
+  buildOverlapRegions,
+  type IssueKind,
+  type IssueRow,
+} from "$lib/db/issues";
+import { setCentroidLat } from "$lib/db/units";
+
+export type { IssueKind, IssueRow } from "$lib/db/issues";
+
+export type ProgressFn = (stage: number, label: string) => void;
+
+export class PipelineError extends Error {
+  constructor(
+    message: string,
+    public readonly failedStage: number,
+  ) {
+    super(message);
+    this.name = "PipelineError";
+  }
+}
+
+export interface DetectResult {
+  originalGeoJSON: string;
+  bounds: [number, number, number, number] | null;
+  issues: IssueRow[];
+  issuesGeoJSON: string;
+  // Kinds whose detection query failed (even after retry) and was degraded to
+  // an empty table — a 0 count for these means "couldn't check," not "clean."
+  failedKinds: Set<IssueKind>;
+}
+
+async function computeBounds(
+  conn: AsyncDuckDBConnection,
+): Promise<[number, number, number, number] | null> {
+  try {
+    const r = await conn.query(`--sql
+      SELECT MIN(ST_XMin(geom)) AS xmin, MIN(ST_YMin(geom)) AS ymin,
+             MAX(ST_XMax(geom)) AS xmax, MAX(ST_YMax(geom)) AS ymax
+      FROM layer_01 WHERE geom IS NOT NULL
+    `);
+    const { xmin, ymin, xmax, ymax } = r.toArray()[0] as Record<string, number>;
+    if ([xmin, ymin, xmax, ymax].every((v) => Number.isFinite(v))) {
+      setCentroidLat((ymin + ymax) / 2);
+      return [xmin, ymin, xmax, ymax];
+    }
+  } catch {
+    // fall through to null
+  }
+  return null;
+}
+
+// Read-only scan of layer_01 for gap/overlap defects — detect never modifies
+// geometry, it only reports (see docs/reference/detect.md). Overlap detection
+// is skipped (reported as zero) whenever the input already has no coverage
+// violations, matching topology-cleaner's own has-violations pre-check.
+export async function runDetect(
+  conn: AsyncDuckDBConnection,
+  onProgress: ProgressFn,
+): Promise<DetectResult> {
+  onProgress(2, "Loading input");
+  const bounds = await computeBounds(conn);
+  const originalGeoJSON = await tableToGeoJSON(conn, "layer_01", null);
+
+  onProgress(3, "Finding gaps & overlaps");
+  const hasViolations = await hasCoverageViolations(conn, "layer_01");
+  const gapOk = await buildGapRegions(conn, "dt_gap_regions", "layer_01");
+  const overlapOk = await buildOverlapRegions(conn, "dt_overlap_regions", "layer_01", hasViolations);
+  const failedKinds = new Set<IssueKind>();
+  if (!gapOk) failedKinds.add("gap");
+  if (!overlapOk) failedKinds.add("overlap");
+
+  onProgress(4, "Assembling issues report");
+  try {
+    const { rows, geojson, failedKinds: finalFailedKinds } = await assembleIssues(
+      conn,
+      { issuesTable: "dt_issues", gapRegionsTable: "dt_gap_regions", overlapRegionsTable: "dt_overlap_regions" },
+      failedKinds,
+    );
+    return { originalGeoJSON, bounds, issues: rows, issuesGeoJSON: geojson, failedKinds: finalFailedKinds };
+  } catch (e) {
+    throw new PipelineError(e instanceof Error ? e.message : String(e), 4);
+  }
+}

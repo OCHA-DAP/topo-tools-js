@@ -2,8 +2,8 @@
 
 Extends every polygon in a layer outward to close gaps with its neighbors,
 using a Voronoi diagram of points sampled along each polygon's boundary.
-Fully automatic — no user-configurable parameters; point spacing and retry
-behavior are derived from the input and the browser's memory budget.
+Fully automatic — no user-configurable parameters; point spacing is derived
+from the input.
 
 ## Pipeline
 
@@ -37,14 +37,10 @@ behavior are derived from the input and the browser's memory budget.
 
 Point spacing is not user-supplied. `distance.ts`'s
 `computeEffectiveDistance` derives it per file as
-`max(min(DEFAULT_DISTANCE, naturalRes), totalLength / targetPointBudget)`:
-`naturalRes` (median real segment length) lets boundaries with genuinely
-finer detail than the default start there instead of losing it to a coarser
-default; the budget term protects files whose boundary would otherwise
-generate more points than the browser's `memory_limit` can hold. A file
-whose raw (pre-resampling) segment count alone already exceeds the budget
-falls back to the default distance with a console warning — the budget is a
-soft target, not a hard gate.
+`min(DEFAULT_DISTANCE, naturalRes)`, where `naturalRes` is the median real
+segment length — boundaries with genuinely finer detail than the default
+start there instead of losing it to a coarser default. Falls back to
+`DEFAULT_DISTANCE` when the input has no real segments.
 
 If a spacing attempt still fails (too many points, or a Voronoi/points-stage
 error), `pipeline/index.ts`'s outer retry loop doubles the distance and
@@ -52,17 +48,16 @@ tries again, up to 10 attempts.
 
 ## WASM-only GEOS noding failures
 
-Running this pipeline in the browser (DuckDB WASM) surfaces a class of GEOS
-robustness failure — `TopologyException: found non-noded intersection` —
-that does not reproduce natively. The failures come from a Voronoi cell
+Running this pipeline in the browser (DuckDB WASM) can surface a class of
+GEOS robustness failure — `TopologyException: found non-noded intersection`
+— that does not reproduce natively. The failures come from a Voronoi cell
 drifting by single-digit millimeters to a few meters from the boundary it's
 supposed to exactly coincide with, and GEOS's noding step throwing on the
 resulting near-but-not-quite-coincident seam. See
 [`docs/explanation/performance.md`](performance.md#wasm-geos-overlayng-floating-point-divergence)
-for the general pattern and
-[`docs/adr/0001-precision-retry-mitigates-wasm-noding-failures.md`](../adr/0001-precision-retry-mitigates-wasm-noding-failures.md)
-onward for the full decision history: a shared precision-reduction retry
-helper (`src/lib/db/precisionRetry.ts`) is applied wherever this pipeline
-combines derived (algorithmically-generated) geometry with real input —
-never to real input directly — and a tiered fallback escalates to reducing
-both sides only when the derived-only sweep is exhausted.
+for the general pattern. `merge.ts` snaps each polygon to its neighbors'
+union (`ST_Snap`, tolerance from `SNAP_TOLERANCE`) before differencing, which
+resolves most near-coincident seams; a noding failure that survives the snap
+propagates as a normal pipeline error rather than being retried — see
+[`docs/adr/0022-noding-precision-retry-removed-for-python-parity.md`](../adr/0022-noding-precision-retry-removed-for-python-parity.md)
+for why the earlier precision-reduction retry was removed.
