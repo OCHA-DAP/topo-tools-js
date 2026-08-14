@@ -21,8 +21,9 @@ export interface CoverageCleanOptions {
   // mosaic, so it's no longer the default; -1 remains available as an
   // explicit override.
   snap?: number;
-  // gap_max_width, in the same units as geom (degrees, post-normalization);
-  // 0 = no gap filling.
+  // gap_max_width, in the same units as geom (degrees, post-normalization).
+  // Defaults to SNAP_TOLERANCE (ADR-0040, same rationale as snap above); 0
+  // remains available as an explicit "no gap filling" override.
   gap?: number;
 }
 
@@ -58,7 +59,7 @@ export async function runCoverageClean(
   conn: AsyncDuckDBConnection,
   inputTable: string,
   targetTable: string,
-  { snap = SNAP_TOLERANCE, gap = 0 }: CoverageCleanOptions = {},
+  { snap = SNAP_TOLERANCE, gap = SNAP_TOLERANCE }: CoverageCleanOptions = {},
 ): Promise<void> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ${targetTable} AS

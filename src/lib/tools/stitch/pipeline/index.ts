@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { buildCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
+import { hasNoiseFloorGap } from "$lib/db/coverage";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
@@ -85,6 +86,14 @@ export async function runStitch(
   const hadResidualOverlaps = await hasCoverageViolations(conn, "st_clean");
   if (hadResidualOverlaps) {
     console.warn("stitch: overlaps remain in st_clean after ST_CoverageClean");
+  }
+
+  // A gap at or below the noise floor surviving the clean pass above (which
+  // was itself run with gap=SNAP_TOLERANCE) means the fill silently failed —
+  // an unambiguous bug signal, distinct from buildStitchIssues' report of
+  // wider (possibly legitimate) gaps below.
+  if (await hasNoiseFloorGap(conn, "st_clean")) {
+    console.warn("stitch: a noise-floor gap remains in st_clean after ST_CoverageClean");
   }
 
   const { rows, geojson } = await buildStitchIssues(conn, "st_clean");

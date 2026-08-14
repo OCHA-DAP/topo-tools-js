@@ -155,7 +155,7 @@ export async function assembleIssues(
   }));
 
   const gj = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, unit_a, unit_b, ST_AsGeoJSON(geom) AS _geom
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, unit_b, ST_AsGeoJSON(geom) AS _geom
     FROM ${issuesTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `);
   const features = (
@@ -164,6 +164,7 @@ export async function assembleIssues(
       kind: string;
       area_m2: number | null;
       max_width_m: number | null;
+      thinness_ratio: number | null;
       unit_a: bigint | number | null;
       unit_b: bigint | number | null;
       _geom: string;
@@ -176,6 +177,7 @@ export async function assembleIssues(
       kind: r.kind,
       area_m2: r.area_m2,
       max_width_m: r.max_width_m,
+      thinness_ratio: r.thinness_ratio,
       // BIGINT columns surface as JS `bigint`, which JSON.stringify can't serialize.
       unit_a: r.unit_a === null ? null : Number(r.unit_a),
       unit_b: r.unit_b === null ? null : Number(r.unit_b),

@@ -158,7 +158,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: null,
     suffix: "_issues",
     kind: "spatial",
-    columns: ["key", "kind", "child_fid", "parent_fid", "reason"],
+    columns: ["key", "kind", "unit_a", "parent_fid", "reason"],
   },
   stitch: { table: "st_clean", attrTable: "layer_attr", suffix: "_stitched", kind: "spatial" },
   stitch_issues: {

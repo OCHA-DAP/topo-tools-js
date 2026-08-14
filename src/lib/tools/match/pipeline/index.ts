@@ -1,6 +1,6 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { gatedCoverageClean } from "$lib/db/coverageClean";
-import { SNAP_TOLERANCE } from "$lib/db/constants";
+import { gatedCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
+import { hasNoiseFloorGap } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns } from "$lib/db/columns";
 import { dropInternalTables } from "$lib/tools/edge-extender/pipeline/index";
@@ -37,17 +37,19 @@ export interface EdgeMatchResult {
 
 // Combines unassigned children (no parent overlap) and dropped-group
 // children (their whole group's extension failed) into one exportable
-// geometry table, each tagged with a stable key/kind/reason — mirrors the
-// Python port's unified issues report.
+// geometry table, each tagged with a stable key/kind/reason. unit_a holds
+// the child's own fid in both branches, matching the unit_a/unit_b naming
+// clean/detect/stitch's own issues tables already use (topo-tools-py's
+// ADR-0036 unifies on the same column name for this role).
 async function buildIssuesTable(conn: AsyncDuckDBConnection): Promise<number> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_issues AS
     SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
-           fid AS child_fid, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason, geom
+           fid AS unit_a, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason, geom
     FROM ge_unassigned
     UNION ALL
-    SELECT 'dropped_group-' || child_fid AS key, 'dropped_group' AS kind,
-           child_fid, parent_fid, reason, geom
+    SELECT 'dropped_group-' || unit_a AS key, 'dropped_group' AS kind,
+           unit_a, parent_fid, reason, geom
     FROM ge_dropped
   `);
   const r = await conn.query("SELECT COUNT(*) AS n FROM ge_dropped");
@@ -73,6 +75,30 @@ async function buildResultsAttrTable(conn: AsyncDuckDBConnection): Promise<void>
     JOIN ge_assignment ga ON ga.child_fid = fa.fid
     LEFT JOIN parent_layer_attr ca ON ca.fid = ga.parent_fid
   `);
+}
+
+// Warn-only topology check on the final assembled output, matching
+// edge-extender's own runValidation pattern — but tolerant at SNAP_TOLERANCE
+// (hasNoiseFloorGap), not zero-tolerance: unlike extend, match clips against
+// a parent/clip layer whose own shape can have a real, legitimate interior
+// hole (see docs/adr/0028), so only a noise-floor-scale leftover gap is an
+// unambiguous bug signal here.
+async function runValidation(conn: AsyncDuckDBConnection, table: string): Promise<void> {
+  try {
+    if (await hasCoverageViolations(conn, table)) {
+      console.warn(`OVERLAPS in ${table}`);
+    }
+  } catch (e) {
+    console.warn("overlap check failed:", e);
+  }
+
+  try {
+    if (await hasNoiseFloorGap(conn, table)) {
+      console.warn(`match: a noise-floor gap remains in ${table} after CoverageClean`);
+    }
+  } catch (e) {
+    console.warn("gap check failed:", e);
+  }
 }
 
 async function computeBounds(
@@ -167,12 +193,14 @@ export async function runEdgeMatch(
   // a sign the connection is already poisoned.
   if (hasAttrTable) {
     try {
-      await gatedCoverageClean(conn, "ge_results", { gap: SNAP_TOLERANCE });
+      await gatedCoverageClean(conn, "ge_results");
       geojson = await tableToGeoJSON(conn, "ge_results", attrTable);
     } catch (e) {
       console.warn("Output CoverageClean/re-export failed, keeping pre-clean export:", e);
     }
   }
+
+  await runValidation(conn, "ge_results");
 
   return {
     geojson,

@@ -2,7 +2,8 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { SNAP_TOLERANCE } from "./constants";
 
 // Drop intersection crumbs below SNAP_TOLERANCE², in deg² (matches topo-tools-py ADR-0030).
-const SLIVER = SNAP_TOLERANCE ** 2;
+// Shared with polygon-changelog/pipeline/overlay.ts's own difference-crumb filter.
+export const SLIVER = SNAP_TOLERANCE ** 2;
 
 const AREA = (g: string) => `ST_Area(ST_Transform(${g}, 'EPSG:4326', 'EPSG:8857'))`;
 

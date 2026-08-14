@@ -72,7 +72,7 @@ export async function runGroups(
 ): Promise<GroupResult[]> {
   await conn.query("CREATE OR REPLACE TABLE ge_results (fid BIGINT, geom GEOMETRY)");
   await conn.query(
-    "CREATE OR REPLACE TABLE ge_dropped (child_fid BIGINT, parent_fid BIGINT, reason VARCHAR, geom GEOMETRY)",
+    "CREATE OR REPLACE TABLE ge_dropped (unit_a BIGINT, parent_fid BIGINT, reason VARCHAR, geom GEOMETRY)",
   );
   const results: GroupResult[] = [];
 
@@ -129,7 +129,7 @@ export async function runGroups(
         const escapedMsg = msg.replace(/'/g, "''");
         await conn.query(`--sql
           INSERT INTO ge_dropped
-          SELECT fid AS child_fid, ${group.parentFid} AS parent_fid,
+          SELECT fid AS unit_a, ${group.parentFid} AS parent_fid,
                  '${escapedMsg}' AS reason, geom
           FROM child_layer_01
           WHERE fid IN (SELECT child_fid FROM ge_assignment WHERE parent_fid = ${group.parentFid})

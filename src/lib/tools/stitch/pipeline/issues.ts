@@ -71,19 +71,27 @@ export async function buildStitchIssues(
   }));
 
   const gj = await conn.query(`--sql
-    SELECT key, area_m2, max_width_m, ST_AsGeoJSON(geom) AS _geom FROM st_issues
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, ST_AsGeoJSON(geom) AS _geom FROM st_issues
   `);
   const features = (
     gj.toArray() as Array<{
       key: string;
+      kind: string;
       area_m2: number | null;
       max_width_m: number | null;
+      thinness_ratio: number | null;
       _geom: string;
     }>
   ).map((r) => ({
     type: "Feature",
     geometry: JSON.parse(r._geom),
-    properties: { key: r.key, area_m2: r.area_m2, max_width_m: r.max_width_m },
+    properties: {
+      key: r.key,
+      kind: r.kind,
+      area_m2: r.area_m2,
+      max_width_m: r.max_width_m,
+      thinness_ratio: r.thinness_ratio,
+    },
   }));
 
   return { rows, geojson: JSON.stringify({ type: "FeatureCollection", features }) };

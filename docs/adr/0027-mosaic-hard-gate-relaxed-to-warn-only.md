@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [0028](0028-mosaic-warn-only-gate-covers-both-overlaps-and-gaps.md)
 
 ## Context
 

@@ -1,5 +1,4 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
 import { gapRegionsQuery } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
@@ -212,7 +211,7 @@ export async function runPipeline(
 
   if (!skipOutputClean) {
     console.log("[EE-DEBUG] === stageOutputClean ===");
-    await gatedCoverageClean(conn, "layer_05", { gap: SNAP_TOLERANCE });
+    await gatedCoverageClean(conn, "layer_05");
   }
 
   // Topology validation (warn-only)

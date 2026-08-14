@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
+import { SNAP_TOLERANCE } from "./constants";
 
 export async function emptyRegions(
   conn: AsyncDuckDBConnection,
@@ -38,6 +39,32 @@ export function gapRegionsQuery(targetTable: string, sourceTable: string): strin
     FROM holes
     WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `;
+}
+
+// True if sourceTable's coverage has an interior hole at or below maxWidth
+// (degrees) — mirrors topo-tools-py's has_gaps(gap_maximum_width=...).
+// sourceTable is expected to already have been cleaned with a matching
+// gap-fill width, so a hole this small surviving means the fill silently
+// failed; a wider hole may be a legitimate feature (see docs/adr/0028) and
+// isn't flagged by this check.
+export async function hasNoiseFloorGap(
+  conn: AsyncDuckDBConnection,
+  sourceTable: string,
+  maxWidth: number = SNAP_TOLERANCE,
+): Promise<boolean> {
+  const scratch = `${sourceTable}_noise_gap_check`;
+  try {
+    await conn.query(gapRegionsQuery(scratch, sourceTable));
+    const r = await conn.query(`--sql
+      SELECT EXISTS (
+        SELECT 1 FROM ${scratch}
+        WHERE (ST_MaximumInscribedCircle(geom)).radius * 2 <= ${maxWidth}
+      ) AS bad
+    `);
+    return Boolean(r.toArray()[0].bad);
+  } finally {
+    await conn.query(`DROP TABLE IF EXISTS ${scratch}`);
+  }
 }
 
 // Overlap regions = polygonal pairwise intersections of polygons in the source

@@ -1,9 +1,8 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { SLIVER } from "$lib/db/overlap";
 
 // A∖B / B∖A difference geometry for rendering, separate from the shared
 // overlap-pairs computation; only meaningful on the exact path (sampling only estimates ratios, not real geometry).
-
-const SLIVER = 1e-12; // drop difference crumbs below ~1 cm² (in deg²)
 
 export async function stageOverlayDifferences(conn: AsyncDuckDBConnection): Promise<void> {
   await conn.query(`DROP TABLE IF EXISTS cw_a_only`);
