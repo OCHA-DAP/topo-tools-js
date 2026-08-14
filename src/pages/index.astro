@@ -1,8 +1,8 @@
 ---
-import Layout from "../layouts/Layout.astro";
-import ToolCard from "$lib/components/ToolCard.astro";
 import OfflineToggle from "$lib/components/OfflineToggle.svelte";
+import ToolCard from "$lib/components/ToolCard.astro";
 import { tools } from "$lib/tools";
+import Layout from "../layouts/Layout.astro";
 ---
 
 <Layout
@@ -13,8 +13,8 @@ import { tools } from "$lib/tools";
     <header class="hero">
       <h1>Topology Tools</h1>
       <p class="tagline">
-        Browser-only geospatial topology utilities. All processing runs client-side via
-        WebAssembly — your files never leave your device.
+        Browser-only geospatial topology utilities. All processing runs client-side via WebAssembly
+        — your files never leave your device.
       </p>
     </header>
 
@@ -33,7 +33,7 @@ import { tools } from "$lib/tools";
     </section>
 
     <footer class="footer">
-      <p>Made by <a href="https://fieldmaps.io">fieldmaps</a>.</p>
+      <p>Made by <a href="https://github.com/OCHA-DAP">OCHA</a>.</p>
     </footer>
   </main>
 </Layout>
