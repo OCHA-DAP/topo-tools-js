@@ -1,8 +1,19 @@
 ---
 import OfflineToggle from "$lib/components/OfflineToggle.svelte";
 import ToolCard from "$lib/components/ToolCard.astro";
+import GroupBox from "$lib/components/GroupBox.astro";
 import { tools } from "$lib/tools";
 import Layout from "../layouts/Layout.astro";
+
+const bySlug = (slug: string) => tools.find((t) => t.slug === slug)!;
+const clean = bySlug("clean");
+const detect = bySlug("detect");
+const match = bySlug("match");
+const extend = bySlug("extend");
+const mosaic = bySlug("mosaic");
+const clip = bySlug("clip");
+const stitch = bySlug("stitch");
+const change = bySlug("change");
 ---
 
 <Layout
@@ -20,8 +31,29 @@ import Layout from "../layouts/Layout.astro";
 
     <section class="tools">
       <h2 class="section-heading">Tools</h2>
-      <div class="grid">
-        {tools.map((tool) => <ToolCard tool={tool} />)}
+      <div class="groups">
+        <GroupBox>
+          <ToolCard tool={clean} header />
+          <div class="below">
+            <ToolCard tool={detect} variant="secondary" />
+          </div>
+        </GroupBox>
+
+        <GroupBox>
+          <ToolCard tool={match} header />
+          <div class="below">
+            <ToolCard tool={extend} variant="secondary" />
+            <GroupBox nested>
+              <ToolCard tool={mosaic} variant="secondary" header />
+              <div class="below">
+                <ToolCard tool={clip} variant="tertiary" />
+                <ToolCard tool={stitch} variant="tertiary" />
+              </div>
+            </GroupBox>
+          </div>
+        </GroupBox>
+
+        <ToolCard tool={change} />
       </div>
     </section>
 
@@ -33,7 +65,7 @@ import Layout from "../layouts/Layout.astro";
     </section>
 
     <footer class="footer">
-      <p>Made by <a href="https://github.com/OCHA-DAP">OCHA</a>.</p>
+      <p>Made by <a href="https://github.com/OCHA-DAP/topo-tools-js">OCHA</a>.</p>
     </footer>
   </main>
 </Layout>
@@ -69,15 +101,15 @@ import Layout from "../layouts/Layout.astro";
     letter-spacing: 0.06em;
     margin: 0 0 0.75rem;
   }
-  .grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.75rem;
+  .groups {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
-  @media (min-width: 640px) {
-    .grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
+  .below {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
   }
   .settings-card {
     padding: 1rem 1.25rem;
