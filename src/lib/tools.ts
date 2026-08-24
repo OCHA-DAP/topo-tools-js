@@ -70,6 +70,13 @@ export const tools: Tool[] = [
     iconHref: "/icons/tools/dissolve.svg",
   },
   {
+    slug: "schema-crosswalk",
+    name: "Schema Crosswalk",
+    tagline:
+      "Infer a polygon layer's admin hierarchy crosswalk and immediately apply it, producing both the crosswalk CSV and the renamed layer in one call.",
+    iconHref: "/icons/tools/schema-crosswalk.svg",
+  },
+  {
     slug: "schema-map",
     name: "Schema Map",
     tagline:

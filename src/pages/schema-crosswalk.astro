@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/schema-crosswalk/App.svelte";
+---
+
+<Layout
+  title="Schema Crosswalk: map and apply an admin hierarchy crosswalk in your browser"
+  description="Browser-only tool that infers a polygon layer's admin hierarchy crosswalk and immediately applies it, producing both the crosswalk CSV and the renamed layer in one call."
+>
+  <App client:load />
+</Layout>

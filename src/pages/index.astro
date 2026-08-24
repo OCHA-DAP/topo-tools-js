@@ -15,6 +15,7 @@ const clip = bySlug("clip");
 const stitch = bySlug("stitch");
 const change = bySlug("change");
 const dissolve = bySlug("dissolve");
+const schemaCrosswalk = bySlug("schema-crosswalk");
 const schemaMap = bySlug("schema-map");
 const schemaRefactor = bySlug("schema-refactor");
 ---
@@ -60,9 +61,13 @@ const schemaRefactor = bySlug("schema-refactor");
 
         <ToolCard tool={dissolve} />
 
-        <ToolCard tool={schemaMap} />
-
-        <ToolCard tool={schemaRefactor} />
+        <GroupBox>
+          <ToolCard tool={schemaCrosswalk} header />
+          <div class="below">
+            <ToolCard tool={schemaMap} variant="secondary" />
+            <ToolCard tool={schemaRefactor} variant="secondary" />
+          </div>
+        </GroupBox>
       </div>
     </section>
 
