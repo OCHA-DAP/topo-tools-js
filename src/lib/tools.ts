@@ -76,4 +76,11 @@ export const tools: Tool[] = [
       "Infer a polygon layer's admin hierarchy structurally, from cardinality and containment alone, and propose a crosswalk to a target schema for review.",
     iconHref: "/icons/tools/schema-map.svg",
   },
+  {
+    slug: "schema-refactor",
+    name: "Schema Refactor",
+    tagline:
+      "Apply a crosswalk CSV, from Schema Map or hand-edited, to rename or drop a polygon layer's columns. Geometry passes through unchanged.",
+    iconHref: "/icons/tools/schema-refactor.svg",
+  },
 ];

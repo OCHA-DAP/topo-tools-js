@@ -20,7 +20,8 @@ export type ExportSource =
   | "mosaic_issues"
   | "dissolve"
   | "dissolve_issues"
-  | "schema_map";
+  | "schema_map"
+  | "schema_refactor";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -219,6 +220,12 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     kind: "tabular",
     tabularColumns: ["source_column", "target_column", "unique_count", "note"],
     orderBy: "column_order",
+  },
+  schema_refactor: {
+    table: "layer_01",
+    attrTable: "sr_result_attr",
+    suffix: "_mapped",
+    kind: "spatial",
   },
 };
 
