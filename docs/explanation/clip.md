@@ -42,6 +42,23 @@ against that single-winner shape — there is no per-source grouping and no
 per-parent-fid loop to isolate, so there's also no cached-tiles reuse
 concern Python's multi-parent design needs.
 
+## Code-based assignment override (optional)
+
+Given a `matchColumn` (same column name on both layers) or a
+`parentMatchColumn`/`childMatchColumn` pair, `assignOne` also computes an
+exact code join, restricted to `(child, parent)` pairs that already
+spatially overlap, alongside the majority vote above (per file, since
+assign-one has no per-child granularity: every child in the run shares one
+`assignment_method`). The code result wins whenever one exists, even on
+disagreement; a file whose code has no overlapping-parent match falls back
+to the spatial result. This gives `clip` its first issues report
+(`pipeline/issues.ts`, `buildClipIssues`), produced only when the override
+is supplied and yields at least one `code-mismatch`/`code-fallback` row.
+Ported from topo-tools-py's `core/assign`; see `docs/adr/0029` and
+`docs/reference/shared.md` for the full contract, and
+`src/lib/db/codeJoin.ts` for the shared implementation `match` and `mosaic`
+also use.
+
 ## No process isolation needed
 
 Python isolates each parent's `ST_Intersection` call in a fresh OS

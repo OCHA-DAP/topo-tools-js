@@ -26,6 +26,11 @@ with other tools.
   the lower parent fid.
 - A child with zero overlap with any parent MUST be recorded as
   unassigned, not silently dropped and not treated as fatal to the run.
+- `match` MAY accept a code-based assignment override, evaluated per child;
+  see `docs/reference/shared.md`'s "Code-based assignment override" section
+  and `docs/adr/0029`. `code-mismatch`/`code-fallback` issues rows join
+  `match`'s existing failed-group/unassigned issues rows in the same
+  report.
 
 ## Per-group extension
 
@@ -71,6 +76,7 @@ with other tools.
 ## Configuration
 
 - `match` MUST process exactly one child file and one parent file per run.
-- `match` has no user-configurable parameters — assignment, per-group
-  extension, and final cleanup all run automatically once both files are
-  loaded.
+- `match` MAY accept a `matchColumn` name or a
+  `parentMatchColumn`/`childMatchColumn` pair for the code-based
+  assignment override; both are optional, and omitting them runs
+  assignment, per-group extension, and final cleanup exactly as before.

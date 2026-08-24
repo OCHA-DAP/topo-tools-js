@@ -3,8 +3,8 @@
 Assigns every polygon in a fine ("child") layer to the coarse ("parent")
 polygon it overlaps most, groups children by their assigned parent, then
 runs Edge Extender's pipeline independently within each group so the
-group's result meets its own parent boundary exactly. Fully automatic — no
-user-configurable parameters.
+group's result meets its own parent boundary exactly. Automatic by default;
+an optional code-based assignment override is available (see below).
 
 ## Pipeline
 
@@ -44,6 +44,22 @@ for dropped groups, the parent fid and the error that caused the drop. This
 is exportable on demand as `match_issues` and is the only way to recover the
 geometry of either kind of exclusion — the UI's group list only shows
 dropped groups as status text.
+
+## Code-based assignment override (optional)
+
+Given a `matchColumn` (same column name on both layers) or a
+`parentMatchColumn`/`childMatchColumn` pair, `pipeline/assign.ts`'s
+`computeAssignment` also computes an exact code join, restricted to
+`(child, parent)` pairs that already spatially overlap, alongside the
+plurality vote above. The code result wins whenever one exists, even on
+disagreement; a child whose code has no overlapping-parent match falls back
+to the spatial result. Both outcomes are recorded on `ge_assignment`
+(`assignment_method`, `spatial_agrees`) and surfaced as `ge_issues` rows
+(`kind='code-mismatch'`/`'code-fallback'`), alongside the existing
+`unassigned`/`dropped_group` kinds. Ported from topo-tools-py's
+`core/assign`; see `docs/adr/0029` and `docs/reference/shared.md` for the
+full contract, and `src/lib/db/codeJoin.ts` for the shared implementation
+`mosaic` and `clip` also use.
 
 ## Overlap computation
 

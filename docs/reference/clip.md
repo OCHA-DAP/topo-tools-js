@@ -23,6 +23,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   from the run, not clipped against a different parent.
 - If no child overlaps any parent unit at all, `clip` MUST fail the run
   rather than produce an empty result.
+- `clip` MAY accept a code-based assignment override, evaluated per file
+  (assign-one); see `docs/reference/shared.md`'s "Code-based assignment
+  override" section and `docs/adr/0029`.
 
 ## Clipping
 
@@ -44,10 +47,16 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `clip` MUST report the winning parent's fid, the count of children
   assigned to it, the count dropped for not overlapping it, and the count
   dropped for clipping empty.
+- `clip` MAY produce an issues report, its only one, when a code-based
+  assignment override is supplied and yields at least one
+  `code-mismatch`/`code-fallback` row (see `docs/reference/shared.md`).
 
 ## Configuration
 
 - `clip` MUST process exactly one children file and one parent file per
   run (see `docs/adr/0026` for why: this app's upload model has no concept
   of multiple independently-voted children files in one run).
-- `clip` has no user-configurable parameters.
+- `clip` MAY accept a `matchColumn` name or a
+  `parentMatchColumn`/`childMatchColumn` pair for the code-based
+  assignment override (see `docs/adr/0029`); it has no other
+  user-configurable parameters.

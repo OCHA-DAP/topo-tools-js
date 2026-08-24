@@ -24,11 +24,13 @@ usual `layer_01`). Ported from topo-tools-py's `mosaic`.
    whole-table `ST_CoverageClean` pass over the clipped result, closing
    seams between the (already-extended, but freshly-clipped-to-a-new-
    boundary) child pieces.
-5. **Assemble issues** (`pipeline/issues.ts`) — combines every child that
+5. **Assemble issues** (`pipeline/issues.ts`), combines every child that
    never reached the final output (kind `unassigned`, whichever stage
    dropped it: not overlapping the winner parent, or clipping to empty)
    with every leftover gap `runStitch`'s own issues check finds (kind
-   `gap`), into one report.
+   `gap`) and any `code-mismatch`/`code-fallback` rows from an optional
+   code-based assignment override (same override Clip's assign-one
+   accepts, see `docs/explanation/clip.md`), into one report.
 
 ## Why assign-one, not assign-many
 

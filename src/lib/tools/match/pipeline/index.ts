@@ -2,7 +2,8 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
 import { hasNoiseFloorGap } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
-import { detectColumns } from "$lib/db/columns";
+import { detectColumns, type ColumnGuess } from "$lib/db/columns";
+import type { MatchColumnOptions } from "$lib/db/codeJoin";
 import { dropInternalTables } from "$lib/tools/edge-extender/pipeline/index";
 import { loadLayers } from "./load";
 import { computeAssignment } from "./assign";
@@ -30,17 +31,17 @@ export interface EdgeMatchResult {
   groupResults: GroupResult[];
   unassignedCount: number;
   droppedCount: number;
+  codeMismatchCount: number;
+  codeFallbackCount: number;
+  childColumns: ColumnGuess;
+  parentColumns: ColumnGuess;
   // Geometry-only outline of the parent input, so the map can show it as a
   // static reference layer alongside the per-group colored result.
   parentOutlineGeojson: string;
 }
 
-// Combines unassigned children (no parent overlap) and dropped-group
-// children (their whole group's extension failed) into one exportable
-// geometry table, each tagged with a stable key/kind/reason. unit_a holds
-// the child's own fid in both branches, matching the unit_a/unit_b naming
-// clean/detect/stitch's own issues tables already use (topo-tools-py's
-// ADR-0036 unifies on the same column name for this role).
+// Combines every excluded/flagged child (unassigned, dropped-group, and
+// code-mismatch/code-fallback per docs/adr/0045) into one exportable table.
 async function buildIssuesTable(conn: AsyncDuckDBConnection): Promise<number> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_issues AS
@@ -51,6 +52,16 @@ async function buildIssuesTable(conn: AsyncDuckDBConnection): Promise<number> {
     SELECT 'dropped_group-' || unit_a AS key, 'dropped_group' AS kind,
            unit_a, parent_fid, reason, geom
     FROM ge_dropped
+    UNION ALL
+    SELECT 'code_mismatch-' || a.child_fid AS key, 'code-mismatch' AS kind,
+           a.child_fid AS unit_a, a.parent_fid, NULL::VARCHAR AS reason, c.geom
+    FROM ge_assignment a JOIN child_layer_01 c ON c.fid = a.child_fid
+    WHERE a.assignment_method = 'code' AND a.spatial_agrees = FALSE
+    UNION ALL
+    SELECT 'code_fallback-' || a.child_fid AS key, 'code-fallback' AS kind,
+           a.child_fid AS unit_a, a.parent_fid, NULL::VARCHAR AS reason, c.geom
+    FROM ge_assignment a JOIN child_layer_01 c ON c.fid = a.child_fid
+    WHERE a.assignment_method = 'spatial_fallback'
   `);
   const r = await conn.query("SELECT COUNT(*) AS n FROM ge_dropped");
   return Number((r.toArray()[0] as { n: bigint | number }).n);
@@ -127,15 +138,18 @@ export async function runEdgeMatch(
   childFiles: File[],
   parentFiles: File[],
   onProgress: EdgeMatchProgressFn,
+  matchColumns: MatchColumnOptions = {},
 ): Promise<EdgeMatchResult> {
   onProgress({ phase: "loading" });
   await loadLayers(db, conn, childFiles, parentFiles);
   const parentOutlineGeojson = await tableToGeoJSON(conn, "parent_layer_01", null);
 
   onProgress({ phase: "assigning" });
-  const assignment = await computeAssignment(conn);
+  const assignment = await computeAssignment(conn, matchColumns);
 
   const nameGuess = await detectColumns(conn, "parent_layer_attr");
+  const childColumns = await detectColumns(conn, "child_layer_attr");
+  const parentColumns = nameGuess;
   const groups = await listGroups(conn, nameGuess.name);
   onProgress({ phase: "groups-listed", groups });
   // ge_groups only exists to build the groups list above — nothing later
@@ -208,6 +222,10 @@ export async function runEdgeMatch(
     groupResults,
     unassignedCount: assignment.unassignedCount,
     droppedCount,
+    codeMismatchCount: assignment.codeMismatchCount,
+    codeFallbackCount: assignment.codeFallbackCount,
+    childColumns,
+    parentColumns,
     parentOutlineGeojson,
   };
 }

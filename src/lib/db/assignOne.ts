@@ -2,11 +2,21 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
 import { CLIP_TILE_MIN_VERTICES } from "./constants";
 import { subdivideBoundary } from "./clipTiling";
+import {
+  type AssignmentMethod,
+  type MatchColumnOptions,
+  pickFileCodeWinner,
+  resolveAssignment,
+  resolveMatchColumns,
+} from "./codeJoin";
 
 export interface AssignOneResult {
   parentFid: number;
   assignedCount: number;
   droppedCount: number;
+  // Set only when a match column was supplied; see docs/adr/0045.
+  assignmentMethod?: AssignmentMethod;
+  spatialAgrees?: boolean | null;
 }
 
 // Ported from topo-tools-py's core/assign/_one.py assign_one, scoped to this
@@ -19,7 +29,10 @@ export interface AssignOneResult {
 // mosaic, both of which need this same per-file majority-vote assignment
 // (mosaic's assign stage is this function called directly, per
 // topo-tools-py's own mosaic explanation doc).
-export async function assignOne(conn: AsyncDuckDBConnection): Promise<AssignOneResult> {
+export async function assignOne(
+  conn: AsyncDuckDBConnection,
+  matchColumns: MatchColumnOptions = {},
+): Promise<AssignOneResult> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_child_parts AS
     SELECT fid, part_geom, ${bboxColumnsSql("part_geom")}
@@ -115,7 +128,26 @@ export async function assignOne(conn: AsyncDuckDBConnection): Promise<AssignOneR
     throw new Error("No children overlap any parent unit — nothing to clip.");
   }
 
-  const parentFid = Number(votes[0].parent_fid);
+  const spatialParentFid = Number(votes[0].parent_fid);
+
+  const resolvedCols = resolveMatchColumns(matchColumns);
+  let parentFid = spatialParentFid;
+  let assignmentMethod: AssignmentMethod | undefined;
+  let spatialAgrees: boolean | null | undefined;
+  if (resolvedCols) {
+    const codeParentFid = await pickFileCodeWinner(conn, {
+      childAttrTable: "child_layer_attr",
+      parentAttrTable: "parent_layer_attr",
+      pairsTable: "cl_pairs",
+      pairsChildCol: "child_fid",
+      pairsParentCol: "parent_fid",
+      columns: resolvedCols,
+    });
+    const outcome = resolveAssignment(codeParentFid, spatialParentFid);
+    parentFid = outcome.parentFid;
+    assignmentMethod = outcome.assignmentMethod;
+    spatialAgrees = outcome.spatialAgrees;
+  }
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_assign AS
@@ -131,5 +163,11 @@ export async function assignOne(conn: AsyncDuckDBConnection): Promise<AssignOneR
   const assignedCount = Number((assignedRes.toArray()[0] as { n: bigint | number }).n);
   const totalCount = Number((totalRes.toArray()[0] as { n: bigint | number }).n);
 
-  return { parentFid, assignedCount, droppedCount: Math.max(0, totalCount - assignedCount) };
+  return {
+    parentFid,
+    assignedCount,
+    droppedCount: Math.max(0, totalCount - assignedCount),
+    assignmentMethod,
+    spatialAgrees,
+  };
 }

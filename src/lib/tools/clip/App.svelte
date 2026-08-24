@@ -4,7 +4,8 @@
   import MapView from "$lib/components/MapView.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import { onMount, untrack } from "svelte";
-  import { PipelineError, runClip } from "./pipeline/index";
+  import { PipelineError, runClip, type ClipIssueRow } from "./pipeline/index";
+  import type { ColumnGuess } from "$lib/db/columns";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -26,6 +27,15 @@
   let assignedCount = $state(0);
   let droppedAssignCount = $state(0);
   let emptyClipCount = $state(0);
+  let issues = $state<ClipIssueRow[]>([]);
+  let issuesGeoJSON = $state<string | null>(null);
+
+  // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
+  // first auto-run never changes behavior.
+  let childColumns = $state<ColumnGuess | null>(null);
+  let parentColumns = $state<ColumnGuess | null>(null);
+  let childMatchColumn = $state<string | null>(null);
+  let parentMatchColumn = $state<string | null>(null);
 
   let clearMap: (() => void) | undefined;
 
@@ -38,9 +48,24 @@
     const p = parentFiles;
     if (c.length > 0 && p.length > 0 && duckdbState.ready) {
       untrack(() => {
-        if (!running) handleRun();
+        if (running) return;
+        childColumns = null;
+        parentColumns = null;
+        childMatchColumn = null;
+        parentMatchColumn = null;
+        handleRun();
       });
     }
+  });
+
+  $effect(() => {
+    const _c = childMatchColumn;
+    const _p = parentMatchColumn;
+    untrack(() => {
+      if (!resultGeoJSON || running) return;
+      if ((childMatchColumn == null) !== (parentMatchColumn == null)) return;
+      handleRun();
+    });
   });
 
   async function handleRun(): Promise<void> {
@@ -55,6 +80,8 @@
     assignedCount = 0;
     droppedAssignCount = 0;
     emptyClipCount = 0;
+    issues = [];
+    issuesGeoJSON = null;
     currentStage = 0;
     errorStage = 0;
     stageLabel = "";
@@ -69,6 +96,7 @@
           currentStage = stage;
           stageLabel = label;
         },
+        { parentMatchColumn: parentMatchColumn ?? undefined, childMatchColumn: childMatchColumn ?? undefined },
       );
 
       resultGeoJSON = result.clippedGeoJSON;
@@ -79,6 +107,10 @@
       assignedCount = result.assignedCount;
       droppedAssignCount = result.droppedAssignCount;
       emptyClipCount = result.emptyClipCount;
+      issues = result.issues;
+      issuesGeoJSON = result.issuesGeoJSON;
+      childColumns = result.childColumns;
+      parentColumns = result.parentColumns;
       currentStage = 4;
       stageLabel = "Done";
     } catch (e) {
@@ -106,6 +138,22 @@
 
   function fileStem(file: File): string {
     return file.name.replace(/\.[^.]+$/, "");
+  }
+
+  const codeMismatchCount = $derived(issues.filter((i) => i.kind === "code-mismatch").length);
+  const codeFallbackCount = $derived(issues.filter((i) => i.kind === "code-fallback").length);
+
+  // No export.ts entry for clip issues (locked, owned by a concurrent
+  // change): download the cached GeoJSON directly instead of DownloadMenu.
+  function downloadIssues(): void {
+    if (!issuesGeoJSON) return;
+    const blob = new Blob([issuesGeoJSON], { type: "application/geo+json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${fileStem(childFiles[0])}_issues.geojson`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 </script>
 
@@ -143,9 +191,35 @@
       <DropZone
         bind:files={parentFiles}
         disabled={running}
-        helpText="The boundary to assign and clip against — e.g. admin0 for an admin2/3 children layer."
+        helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 children layer."
       />
     </section>
+
+    {#if childColumns && parentColumns}
+      <section class="step">
+        <h2 class="step-heading">Code join (optional)</h2>
+        <p class="hint">
+          Wins over the majority-vote parent wherever the codes agree on a parent the file
+          overlaps at all, falls back to the majority vote when no code match exists.
+        </p>
+        <div class="match-cols">
+          <label class="match-field">
+            <span>Child code</span>
+            <select bind:value={childMatchColumn} disabled={running}>
+              <option value={null}>(none)</option>
+              {#each childColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+            </select>
+          </label>
+          <label class="match-field">
+            <span>Parent code</span>
+            <select bind:value={parentMatchColumn} disabled={running}>
+              <option value={null}>(none)</option>
+              {#each parentColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+            </select>
+          </label>
+        </div>
+      </section>
+    {/if}
 
     {#if running || errorStage > 0}
       <ol class="stages">
@@ -180,7 +254,21 @@
         {/if}
         {#if emptyClipCount > 0}
           <p class="warn-line">
-            {emptyClipCount} more dropped — clipped to an empty result.
+            {emptyClipCount} more dropped, clipped to an empty result.
+          </p>
+        {/if}
+        {#if codeMismatchCount > 0}
+          <p class="warn-line">
+            Code match disagreed with the majority-vote parent for {codeMismatchCount} child{codeMismatchCount ===
+            1
+              ? ""
+              : "ren"}; the code match won.
+          </p>
+        {/if}
+        {#if codeFallbackCount > 0}
+          <p class="warn-line">
+            No overlapping code match for {codeFallbackCount} child{codeFallbackCount === 1 ? "" : "ren"};
+            fell back to the majority-vote parent.
           </p>
         {/if}
       </section>
@@ -193,6 +281,11 @@
         cachedGeoJSON={resultGeoJSON}
         exportSource="clip"
       />
+      {#if issues.length > 0 && issuesGeoJSON}
+        <button type="button" class="issues-btn" onclick={downloadIssues}>
+          Download Issues (GeoJSON)
+        </button>
+      {/if}
     {/if}
 
     <p class="privacy">Your files never leave your device.</p>
@@ -246,6 +339,51 @@
 
   .back:hover {
     color: #111;
+  }
+
+  .hint {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .match-cols {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .match-field {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+  }
+
+  .match-field select {
+    width: 100%;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.8rem;
+    border: 1px solid #d1d5db;
+    border-radius: 3px;
+    background: #fff;
+  }
+
+  .issues-btn {
+    background: #fff;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 0.6rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .issues-btn:hover {
+    background: #f3f4f6;
   }
 
   .blurb {
