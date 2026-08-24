@@ -142,19 +142,6 @@
 
   const codeMismatchCount = $derived(issues.filter((i) => i.kind === "code-mismatch").length);
   const codeFallbackCount = $derived(issues.filter((i) => i.kind === "code-fallback").length);
-
-  // No export.ts entry for clip issues (locked, owned by a concurrent
-  // change): download the cached GeoJSON directly instead of DownloadMenu.
-  function downloadIssues(): void {
-    if (!issuesGeoJSON) return;
-    const blob = new Blob([issuesGeoJSON], { type: "application/geo+json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${fileStem(childFiles[0])}_issues.geojson`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
 </script>
 
 <div class="layout">
@@ -282,9 +269,13 @@
         exportSource="clip"
       />
       {#if issues.length > 0 && issuesGeoJSON}
-        <button type="button" class="issues-btn" onclick={downloadIssues}>
-          Download Issues (GeoJSON)
-        </button>
+        <DownloadMenu
+          primaryLabel="Download Issues"
+          filenameStem={fileStem(childFiles[0])}
+          cachedGeoJSON={issuesGeoJSON}
+          exportSource="clip_issues"
+          variant="secondary"
+        />
       {/if}
     {/if}
 
@@ -369,21 +360,6 @@
     border: 1px solid #d1d5db;
     border-radius: 3px;
     background: #fff;
-  }
-
-  .issues-btn {
-    background: #fff;
-    color: #374151;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 0.6rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .issues-btn:hover {
-    background: #f3f4f6;
   }
 
   .blurb {

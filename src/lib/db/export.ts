@@ -15,6 +15,7 @@ export type ExportSource =
   | "stitch_issues"
   | "detect_issues"
   | "clip"
+  | "clip_issues"
   | "mosaic"
   | "mosaic_issues"
   | "dissolve"
@@ -183,13 +184,20 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a", "unit_b"],
   },
   clip: { table: "cl_clip", attrTable: "child_layer_attr", suffix: "_clipped", kind: "spatial" },
+  clip_issues: {
+    table: "cl_issues",
+    attrTable: null,
+    suffix: "_issues",
+    kind: "spatial",
+    columns: ["key", "kind", "unit_a", "parent_fid", "reason"],
+  },
   mosaic: { table: "st_clean", attrTable: "child_layer_attr", suffix: "_mosaicked", kind: "spatial" },
   mosaic_issues: {
     table: "ms_issues",
     attrTable: null,
     suffix: "_issues",
     kind: "spatial",
-    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a"],
+    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a", "parent_fid", "reason"],
   },
   dissolve: {
     table: "ds_dissolved_geom",
