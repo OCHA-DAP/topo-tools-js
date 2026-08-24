@@ -16,7 +16,9 @@ export type ExportSource =
   | "detect_issues"
   | "clip"
   | "mosaic"
-  | "mosaic_issues";
+  | "mosaic_issues"
+  | "dissolve"
+  | "dissolve_issues";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -183,6 +185,19 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     suffix: "_issues",
     kind: "spatial",
     columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a"],
+  },
+  dissolve: {
+    table: "ds_dissolved_geom",
+    attrTable: "ds_dissolved_attr",
+    suffix: "_dissolved",
+    kind: "spatial",
+  },
+  dissolve_issues: {
+    table: "ds_issues",
+    attrTable: null,
+    suffix: "_issues",
+    kind: "spatial",
+    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "fixed", "unit_a", "unit_b"],
   },
 };
 

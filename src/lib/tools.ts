@@ -62,4 +62,11 @@ export const tools: Tool[] = [
       "Fit an already-extended children layer into a new parent boundary — assign, clip, and close seams in one pass, no re-extension.",
     iconHref: "/icons/tools/mosaic.svg",
   },
+  {
+    slug: "dissolve",
+    name: "Dissolve",
+    tagline:
+      "Aggregate a polygon layer into a coarser one by grouping on attribute columns, unioning each group's geometry into a single feature.",
+    iconHref: "/icons/tools/dissolve.svg",
+  },
 ];

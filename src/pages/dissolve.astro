@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/dissolve/App.svelte";
+---
+
+<Layout
+  title="Dissolve: aggregate a polygon layer into a coarser one in your browser"
+  description="Browser-only tool that groups a polygon layer's features by attribute columns and unions each group's geometry into a coarser layer."
+>
+  <App client:load />
+</Layout>
