@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/schema-map/App.svelte";
+---
+
+<Layout
+  title="Schema Map: infer an admin hierarchy crosswalk in your browser"
+  description="Browser-only tool that structurally infers a polygon layer's admin hierarchy from cardinality and containment alone, and proposes a reviewable crosswalk CSV."
+>
+  <App client:load />
+</Layout>

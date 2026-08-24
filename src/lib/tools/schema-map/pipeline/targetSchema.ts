@@ -1,0 +1,16 @@
+export interface TargetSchema {
+  nameField: string;
+  codeField: string;
+}
+
+// COD-AB template, ported from topo-tools-py's bundled data/cod-ab.yaml.
+export const DEFAULT_TARGET_SCHEMA: TargetSchema = {
+  nameField: "adm{n}_name",
+  codeField: "adm{n}_pcode",
+};
+
+export function validateTargetSchema(schema: TargetSchema): void {
+  if (!schema.nameField.includes("{n}") || !schema.codeField.includes("{n}")) {
+    throw new Error("Name and code templates must both contain a \"{n}\" placeholder.");
+  }
+}

@@ -69,4 +69,11 @@ export const tools: Tool[] = [
       "Aggregate a polygon layer into a coarser one by grouping on attribute columns, unioning each group's geometry into a single feature.",
     iconHref: "/icons/tools/dissolve.svg",
   },
+  {
+    slug: "schema-map",
+    name: "Schema Map",
+    tagline:
+      "Infer a polygon layer's admin hierarchy structurally, from cardinality and containment alone, and propose a crosswalk to a target schema for review.",
+    iconHref: "/icons/tools/schema-map.svg",
+  },
 ];

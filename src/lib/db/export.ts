@@ -18,7 +18,8 @@ export type ExportSource =
   | "mosaic"
   | "mosaic_issues"
   | "dissolve"
-  | "dissolve_issues";
+  | "dissolve_issues"
+  | "schema_map";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -113,6 +114,10 @@ interface SourceConfig {
   // (e.g. raw-degree measurements, bounding boxes) that shouldn't leak into
   // the exported attribute table.
   columns?: string[];
+  // Tabular-only: explicit column list/order for a table with a row-order
+  // column that must drive sort but not appear in the export itself.
+  tabularColumns?: string[];
+  orderBy?: string;
 }
 
 const SOURCES: Record<ExportSource, SourceConfig> = {
@@ -198,6 +203,14 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     suffix: "_issues",
     kind: "spatial",
     columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "fixed", "unit_a", "unit_b"],
+  },
+  schema_map: {
+    table: "sm_crosswalk",
+    attrTable: null,
+    suffix: "_crosswalk",
+    kind: "tabular",
+    tabularColumns: ["source_column", "target_column", "unique_count", "note"],
+    orderBy: "column_order",
   },
 };
 
@@ -434,7 +447,9 @@ async function buildSpatialSelect(
 }
 
 async function buildTabularSelect(source: SourceConfig): Promise<string> {
-  return `SELECT * FROM ${source.table}`;
+  const cols = source.tabularColumns ? source.tabularColumns.map((c) => JSON.stringify(c)).join(", ") : "*";
+  const order = source.orderBy ? ` ORDER BY ${source.orderBy}` : "";
+  return `SELECT ${cols} FROM ${source.table}${order}`;
 }
 
 async function exportGdal(
