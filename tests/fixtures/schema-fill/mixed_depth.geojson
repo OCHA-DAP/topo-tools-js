@@ -1,0 +1,68 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "adm1_code": "A1",
+        "adm1_name": "Province A",
+        "adm2_code": "A1-01",
+        "adm2_name": "District A1"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 1],
+            [0, 0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "adm1_code": "A1",
+        "adm1_name": "Province A",
+        "adm2_code": null,
+        "adm2_name": null
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [1, 0],
+            [2, 0],
+            [2, 1],
+            [1, 1],
+            [1, 0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "adm1_code": "B1",
+        "adm1_name": "Province B",
+        "adm2_code": "B1-01",
+        "adm2_name": "District B1"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [0, 1],
+            [1, 1],
+            [1, 2],
+            [0, 2],
+            [0, 1]
+          ]
+        ]
+      }
+    }
+  ]
+}

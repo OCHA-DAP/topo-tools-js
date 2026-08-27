@@ -47,5 +47,7 @@ for rules `mosaic` shares with other tools.
 
 - `mosaic` MAY accept a `matchColumn` name or a
   `parentMatchColumn`/`childMatchColumn` pair for the code-based
-  assignment override (see `docs/adr/0029`); it has no other
-  user-configurable parameters.
+  assignment override (see `docs/adr/0029`).
+- `mosaic` MAY accept a list of parent attribute columns to carry into the
+  output, each joined onto every output row (prefixed `parent_`) from the
+  single winning parent's own attribute row.

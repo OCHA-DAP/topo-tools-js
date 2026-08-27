@@ -3,16 +3,15 @@
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import {
-    runSchemaCrosswalk,
+    runSchemaFill,
     DEFAULT_TARGET_SCHEMA,
-    type CrosswalkRow,
+    DEFAULT_DEPTH_COLUMN,
     type TargetSchema,
   } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
-  import ResultsTable from "$lib/tools/schema-map/ResultsTable.svelte";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -25,15 +24,14 @@
 
   let nameField = $state(DEFAULT_TARGET_SCHEMA.nameField);
   let codeField = $state(DEFAULT_TARGET_SCHEMA.codeField);
+  let depthColumn = $state(DEFAULT_DEPTH_COLUMN);
 
   let running = $state(false);
   let error = $state<string | null>(null);
-  let rows = $state<CrosswalkRow[]>([]);
   let ran = $state(false);
   let resultGeoJSON = $state<string | null>(null);
   let resultBounds = $state<[number, number, number, number] | null>(null);
-  let renamedCount = $state(0);
-  let droppedColumns = $state<string[]>([]);
+  let levels = $state<number[]>([]);
 
   let clearMap: (() => void) | undefined;
 
@@ -63,14 +61,12 @@
     });
   });
 
-  function resetResults(): void {
-    rows = [];
+  function resetRun(): void {
     ran = false;
     error = null;
     resultGeoJSON = null;
     resultBounds = null;
-    renamedCount = 0;
-    droppedColumns = [];
+    levels = [];
   }
 
   async function handleLoad(): Promise<void> {
@@ -80,7 +76,7 @@
     loaded = false;
     originalGeoJSON = null;
     loadedBounds = null;
-    resetResults();
+    resetRun();
 
     try {
       await loadFile(duckdbState.db!, duckdbState.conn!, files);
@@ -97,16 +93,16 @@
   async function handleRun(): Promise<void> {
     error = null;
     running = true;
-    resetResults();
+    resultGeoJSON = null;
+    resultBounds = null;
+    levels = [];
 
     const schema: TargetSchema = { nameField, codeField };
     try {
-      const result = await runSchemaCrosswalk(duckdbState.conn!, schema);
-      rows = result.crosswalk;
-      resultGeoJSON = result.refactor.resultGeoJSON;
-      resultBounds = result.refactor.bounds;
-      renamedCount = result.refactor.renamedCount;
-      droppedColumns = result.refactor.droppedColumns;
+      const result = await runSchemaFill(duckdbState.conn!, schema, depthColumn);
+      resultGeoJSON = result.resultGeoJSON;
+      resultBounds = result.bounds;
+      levels = result.levels;
       ran = true;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -119,7 +115,6 @@
     return file.name.replace(/\.[^.]+$/, "");
   }
 
-  const resolvedCount = $derived(rows.filter((r) => r.targetColumn).length);
   const templateValid = $derived(nameField.includes("{n}") && codeField.includes("{n}"));
 </script>
 
@@ -127,10 +122,11 @@
   <aside class="sidebar">
     <header>
       <a class="back" href={base}>← Topology Tools</a>
-      <h1>Schema Crosswalk</h1>
+      <h1>Schema Fill</h1>
       <p class="blurb">
-        Infer a crosswalk to a target schema, then immediately apply it: one call runs Schema Map
-        and Schema Refactor back to back, always mapping fresh.
+        Cascade each admin-hierarchy column family down from its deepest non-empty level, and
+        stamp every row with its real (pre-fill) depth. Attribute-only, no geometry touched, no
+        topology check. Run after Edge Matcher or Mosaic, on already-clipped output.
       </p>
     </header>
 
@@ -142,6 +138,7 @@
     {/if}
 
     <section class="step">
+      <h2 class="step-heading">Layer</h2>
       <DropZone
         bind:files
         disabled={loading || running}
@@ -163,11 +160,15 @@
           <span>Code template</span>
           <input type="text" bind:value={codeField} disabled={running} />
         </label>
+        <label class="field">
+          <span>Depth column</span>
+          <input type="text" bind:value={depthColumn} disabled={running} />
+        </label>
         {#if !templateValid}
           <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
         {/if}
         <button class="run-btn" onclick={handleRun} disabled={running || !templateValid}>
-          {running ? "Mapping…" : "Run"}
+          {running ? "Filling…" : "Run"}
         </button>
       </section>
     {/if}
@@ -180,25 +181,17 @@
       <section class="step">
         <h2 class="step-heading">Result</h2>
         <p class="summary-line">
-          {resolvedCount} of {rows.length} column{rows.length === 1 ? "" : "s"} resolved to a
-          target column; {renamedCount} renamed, {droppedColumns.length} dropped.
+          Level{levels.length === 1 ? "" : "s"} {levels.join(", ")} filled; depth stamped in
+          "{depthColumn}".
         </p>
-        {#if droppedColumns.length > 0}
-          <p class="summary-line">Dropped: {droppedColumns.join(", ")}.</p>
-        {/if}
       </section>
 
       <section class="step">
         <DownloadMenu
-          primaryLabel="Download Crosswalk CSV"
-          filenameStem={fileStem(files[0])}
-          exportSource="schema_map"
-        />
-        <DownloadMenu
-          primaryLabel="Download Mapped Layer"
+          primaryLabel="Download GeoJSON"
           filenameStem={fileStem(files[0])}
           cachedGeoJSON={resultGeoJSON}
-          exportSource="schema_refactor"
+          exportSource="schema_fill"
         />
       </section>
     {/if}
@@ -206,35 +199,16 @@
     <p class="privacy">Your files never leave your device.</p>
   </aside>
 
-  <div class="results-container">
-    {#if ran}
-      <div class="split">
-        <div class="split-pane">
-          <MapView
-            geojson={resultGeoJSON ?? originalGeoJSON}
-            originalGeojson={resultGeoJSON ? originalGeoJSON : null}
-            bounds={resultBounds ?? loadedBounds}
-            processing={loading || running}
-            registerClear={(fn: () => void) => {
-              clearMap = fn;
-            }}
-          />
-        </div>
-        <div class="split-pane">
-          <ResultsTable {rows} />
-        </div>
-      </div>
-    {:else}
-      <MapView
-        geojson={originalGeoJSON}
-        originalGeojson={null}
-        bounds={loadedBounds}
-        processing={loading}
-        registerClear={(fn: () => void) => {
-          clearMap = fn;
-        }}
-      />
-    {/if}
+  <div class="map-container">
+    <MapView
+      geojson={resultGeoJSON ?? originalGeoJSON}
+      originalGeojson={resultGeoJSON ? originalGeoJSON : null}
+      bounds={resultBounds ?? loadedBounds}
+      processing={loading || running}
+      registerClear={(fn: () => void) => {
+        clearMap = fn;
+      }}
+    />
   </div>
 </div>
 
@@ -387,25 +361,8 @@
     margin-top: auto;
   }
 
-  .results-container {
+  .map-container {
     height: 100%;
     overflow: hidden;
-    background: #fff;
-  }
-
-  .split {
-    display: grid;
-    grid-template-rows: 1fr 1fr;
-    height: 100%;
-  }
-
-  .split-pane {
-    min-height: 0;
-    overflow: hidden;
-    border-bottom: 1px solid #e5e7eb;
-  }
-
-  .split-pane:last-child {
-    border-bottom: none;
   }
 </style>

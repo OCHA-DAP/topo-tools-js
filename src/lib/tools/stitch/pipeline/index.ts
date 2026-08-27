@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { buildCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
+import { buildCoverageCleanEscalating, hasCoverageViolations } from "$lib/db/coverageClean";
 import { hasNoiseFloorGap } from "$lib/db/coverage";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { tableToGeoJSON } from "$lib/db/geojson";
@@ -74,7 +74,7 @@ export async function runStitch(
 
   onProgress(3, "Closing seams");
   try {
-    await buildCoverageClean(conn, sourceTable, "st_clean", {
+    await buildCoverageCleanEscalating(conn, sourceTable, "st_clean", {
       gap: SNAP_TOLERANCE,
       preserveOriginal: true,
     });

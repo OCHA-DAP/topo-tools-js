@@ -114,7 +114,7 @@
     {#if loaded}
       <section class="step">
         <h2 class="step-heading">Target schema</h2>
-        <p class="field-hint">Naming templates for a resolved level's number. Defaults to COD-AB.</p>
+        <p class="field-hint">Naming templates for a resolved level's number. Defaults to a generic schema.</p>
         <label class="field">
           <span>Name template</span>
           <input type="text" bind:value={nameField} disabled={running} />

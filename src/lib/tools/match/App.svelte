@@ -35,8 +35,10 @@
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let unassignedCount = $state<number | null>(null);
   let droppedCount = $state<number | null>(null);
+  let passthroughCount = $state<number | null>(null);
   let codeMismatchCount = $state<number | null>(null);
   let codeFallbackCount = $state<number | null>(null);
+  let passthrough = $state(false);
 
   // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
   // first auto-run never changes behavior, even when a plausible code column
@@ -86,6 +88,14 @@
     });
   });
 
+  $effect(() => {
+    const _p = passthrough;
+    untrack(() => {
+      if (!resultGeoJSON || running) return;
+      handleRun();
+    });
+  });
+
   function fileStem(file: File): string {
     return file.name.replace(/\.[^.]+$/, "");
   }
@@ -122,6 +132,7 @@
     resultBounds = null;
     unassignedCount = null;
     droppedCount = null;
+    passthroughCount = null;
     codeMismatchCount = null;
     codeFallbackCount = null;
     groupRows = [];
@@ -137,12 +148,14 @@
         parentFiles,
         onProgress,
         { parentMatchColumn: parentMatchColumn ?? undefined, childMatchColumn: childMatchColumn ?? undefined },
+        passthrough,
       );
       resultGeoJSON = result.geojson;
       parentOutlineGeoJSON = result.parentOutlineGeojson;
       resultBounds = result.bounds;
       unassignedCount = result.unassignedCount;
       droppedCount = result.droppedCount;
+      passthroughCount = result.passthroughCount;
       codeMismatchCount = result.codeMismatchCount;
       codeFallbackCount = result.codeFallbackCount;
       childColumns = result.childColumns;
@@ -236,6 +249,16 @@
       </section>
     {/if}
 
+    {#if childColumns && parentColumns}
+      <section class="step">
+        <h2 class="step-heading">Unmatched fine units</h2>
+        <label class="passthrough-field">
+          <input type="checkbox" bind:checked={passthrough} disabled={running} />
+          <span>Include zero-overlap units unclipped, instead of dropping them</span>
+        </label>
+      </section>
+    {/if}
+
     {#if running || groupRows.length > 0}
       <section class="step">
         <p class="phase-label">{phaseLabel}</p>
@@ -287,7 +310,9 @@
         {#if unassignedCount !== null && unassignedCount > 0}
           <p>
             {unassignedCount} fine unit{unassignedCount === 1 ? "" : "s"} had no overlap with any
-            coarse polygon and {unassignedCount === 1 ? "was" : "were"} excluded from the result.
+            coarse polygon{passthrough
+              ? `; ${passthroughCount ?? 0} ${(passthroughCount ?? 0) === 1 ? "was" : "were"} extended and included unclipped`
+              : ` and ${unassignedCount === 1 ? "was" : "were"} excluded from the result`}.
           </p>
         {/if}
         {#if droppedCount !== null && droppedCount > 0}
@@ -427,6 +452,14 @@
     border: 1px solid #d1d5db;
     border-radius: 3px;
     background: #fff;
+  }
+
+  .passthrough-field {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #374151;
   }
 
   .phase-label {

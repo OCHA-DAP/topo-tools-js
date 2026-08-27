@@ -35,6 +35,10 @@ export const EXCLUDED_COLUMNS = new Set(["fid", "geom"]);
 
 export const CODE_SHAPE_MAJORITY = 0.5;
 
+// Collapse-ratio ceiling below which a non-bijective bracket winner becomes a
+// numbered sibling instead of supplemental (empirical, topo-tools-py).
+export const WINNER_MAX_COLLAPSE_RATIO = 0.3;
+
 // Confidence tier labels embedded in an unresolved mapping's note text.
 export const NOTE_AMBIGUOUS = "ambiguous";
 export const NOTE_SUPPLEMENTAL = "supplemental";

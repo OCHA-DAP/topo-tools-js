@@ -115,6 +115,25 @@ export async function gatedCoverageClean(
   }
 }
 
+const SNAP_ESCALATION_STEP = SNAP_TOLERANCE;
+const SNAP_ESCALATION_MAX_STEPS = 9;
+
+// Ported from topo-tools-py's coverage_clean_escalating: widens snap by
+// SNAP_TOLERANCE per retry (up to 9 steps) until no invalid edges remain.
+export async function buildCoverageCleanEscalating(
+  conn: AsyncDuckDBConnection,
+  sourceTable: string,
+  targetTable: string,
+  opts: CoverageCleanOptions & { preserveOriginal?: boolean } = {},
+): Promise<void> {
+  let snap = opts.snap ?? SNAP_TOLERANCE;
+  for (let step = 0; step <= SNAP_ESCALATION_MAX_STEPS; step++) {
+    await buildCoverageClean(conn, sourceTable, targetTable, { ...opts, snap });
+    if (!(await hasCoverageViolations(conn, targetTable))) return;
+    snap += SNAP_ESCALATION_STEP;
+  }
+}
+
 // One-shot convenience wrapper for callers that don't need to reuse the frozen
 // input array across a retry (e.g. Topology Cleaner's precision-reduction
 // retry path reuses buildCoverageCleanInput/runCoverageClean directly instead).

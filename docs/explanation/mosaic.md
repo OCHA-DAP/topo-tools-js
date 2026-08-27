@@ -14,9 +14,11 @@ usual `layer_01`). Ported from topo-tools-py's `mosaic`.
 1. **Load** (`pipeline/load.ts`) — load the children layer and the
    parent/clip layer raw, exactly like Clip: neither is coverage-checked
    or -cleaned first.
-2. **Assign** (`$lib/db/assignOne.ts`) — the same assign-one majority vote
+2. **Assign** (`$lib/db/assignOne.ts`), the same assign-one majority vote
    Clip uses, at exactly the same single-children-file scope
-   (`docs/adr/0026`, shared by both tools).
+   (`docs/adr/0026`, shared by both tools). If parent columns were
+   requested, they're joined (prefixed `parent_`) from the winning
+   parent's own attribute row onto `child_layer_attr` here, before clipping.
 3. **Clip** (`$lib/db/clipEngine.ts`) — the same tiled clip Clip uses.
    Fails the run if zero output rows result.
 4. **Stitch** (`stitch/pipeline/index.ts`'s `runStitch`, called with

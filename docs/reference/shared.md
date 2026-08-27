@@ -69,6 +69,18 @@ name instead of repeating them.
 - A `gatedCoverageClean` failure MUST be caught and logged, leaving the
   target table untouched, rather than propagated to the caller.
 
+## No-erosion guard (`$lib/db/coverage.ts::checkNoErosion`)
+
+Shared by `extend` (whole-file) and `match` (per-group).
+
+- For every fid present in the pre-extension table, `checkNoErosion` MUST
+  raise unless the post-extension geometry for that fid, buffered outward
+  by `SNAP_TOLERANCE`, `ST_Covers` the pre-extension geometry. A fid
+  missing from the post-extension table entirely MUST also raise.
+- This check MUST be treated as a hard failure, not a warn-only report:
+  unlike this app's other post-clean topology checks (see `docs/adr/0027`),
+  an erosion here means real data loss, not a cosmetic topology defect.
+
 ## Overlap measurement (`$lib/db/overlap.ts`)
 
 Shared by `match` (parent/child assignment) and `change` (version-to-version

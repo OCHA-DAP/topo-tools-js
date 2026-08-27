@@ -7,7 +7,13 @@ import type { MatchColumnOptions } from "$lib/db/codeJoin";
 import { dropInternalTables } from "$lib/tools/edge-extender/pipeline/index";
 import { loadLayers } from "./load";
 import { computeAssignment } from "./assign";
-import { listGroups, runGroups, type GroupInfo, type GroupResult } from "./groups";
+import {
+  listGroups,
+  PASSTHROUGH_PARENT_FID,
+  runGroups,
+  type GroupInfo,
+  type GroupResult,
+} from "./groups";
 
 export type EdgeMatchPhase =
   | { phase: "loading" }
@@ -31,6 +37,7 @@ export interface EdgeMatchResult {
   groupResults: GroupResult[];
   unassignedCount: number;
   droppedCount: number;
+  passthroughCount: number;
   codeMismatchCount: number;
   codeFallbackCount: number;
   childColumns: ColumnGuess;
@@ -42,16 +49,24 @@ export interface EdgeMatchResult {
 
 // Combines every excluded/flagged child (unassigned, dropped-group, and
 // code-mismatch/code-fallback per docs/adr/0045) into one exportable table.
-async function buildIssuesTable(conn: AsyncDuckDBConnection): Promise<number> {
+async function buildIssuesTable(
+  conn: AsyncDuckDBConnection,
+): Promise<{ dropped: number; passthrough: number }> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_issues AS
     SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
            fid AS unit_a, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason, geom
     FROM ge_unassigned
+    WHERE fid NOT IN (SELECT child_fid FROM ge_assignment)
     UNION ALL
     SELECT 'dropped_group-' || unit_a AS key, 'dropped_group' AS kind,
            unit_a, parent_fid, reason, geom
     FROM ge_dropped
+    UNION ALL
+    SELECT 'passthrough-' || ga.child_fid AS key, 'passthrough' AS kind,
+           ga.child_fid AS unit_a, ga.parent_fid, NULL::VARCHAR AS reason, c.geom
+    FROM ge_assignment ga JOIN child_layer_01 c ON c.fid = ga.child_fid
+    WHERE ga.parent_fid = ${PASSTHROUGH_PARENT_FID} AND ga.child_fid IN (SELECT fid FROM ge_results)
     UNION ALL
     SELECT 'code_mismatch-' || a.child_fid AS key, 'code-mismatch' AS kind,
            a.child_fid AS unit_a, a.parent_fid, NULL::VARCHAR AS reason, c.geom
@@ -63,8 +78,14 @@ async function buildIssuesTable(conn: AsyncDuckDBConnection): Promise<number> {
     FROM ge_assignment a JOIN child_layer_01 c ON c.fid = a.child_fid
     WHERE a.assignment_method = 'spatial_fallback'
   `);
-  const r = await conn.query("SELECT COUNT(*) AS n FROM ge_dropped");
-  return Number((r.toArray()[0] as { n: bigint | number }).n);
+  const [droppedRes, passthroughRes] = await Promise.all([
+    conn.query("SELECT COUNT(*) AS n FROM ge_dropped"),
+    conn.query(`SELECT COUNT(*) AS n FROM ge_issues WHERE kind = 'passthrough'`),
+  ]);
+  return {
+    dropped: Number((droppedRes.toArray()[0] as { n: bigint | number }).n),
+    passthrough: Number((passthroughRes.toArray()[0] as { n: bigint | number }).n),
+  };
 }
 
 async function buildResultsAttrTable(conn: AsyncDuckDBConnection): Promise<void> {
@@ -139,13 +160,14 @@ export async function runEdgeMatch(
   parentFiles: File[],
   onProgress: EdgeMatchProgressFn,
   matchColumns: MatchColumnOptions = {},
+  passthrough = false,
 ): Promise<EdgeMatchResult> {
   onProgress({ phase: "loading" });
   await loadLayers(db, conn, childFiles, parentFiles);
   const parentOutlineGeojson = await tableToGeoJSON(conn, "parent_layer_01", null);
 
   onProgress({ phase: "assigning" });
-  const assignment = await computeAssignment(conn, matchColumns);
+  const assignment = await computeAssignment(conn, matchColumns, passthrough);
 
   const nameGuess = await detectColumns(conn, "parent_layer_attr");
   const childColumns = await detectColumns(conn, "child_layer_attr");
@@ -165,7 +187,7 @@ export async function runEdgeMatch(
       onProgress({ phase: "group-done", groupIndex, groupTotal, result }),
   );
 
-  const droppedCount = await buildIssuesTable(conn);
+  const { dropped: droppedCount, passthrough: passthroughCount } = await buildIssuesTable(conn);
 
   // A group OOM above leaves the connection poisoned for the rest of the
   // session, so attribute enrichment below may also throw. It's a
@@ -222,6 +244,7 @@ export async function runEdgeMatch(
     groupResults,
     unassignedCount: assignment.unassignedCount,
     droppedCount,
+    passthroughCount,
     codeMismatchCount: assignment.codeMismatchCount,
     codeFallbackCount: assignment.codeFallbackCount,
     childColumns,

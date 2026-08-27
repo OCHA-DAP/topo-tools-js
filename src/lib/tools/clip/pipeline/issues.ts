@@ -6,7 +6,7 @@ import type { AssignmentMethod } from "$lib/db/codeJoin";
 
 export interface ClipIssueRow {
   key: string;
-  kind: "unassigned" | "code-mismatch" | "code-fallback";
+  kind: "unassigned" | "clip-empty" | "code-mismatch" | "code-fallback";
   unitA: number;
   parentFid: number | null;
   reason: string | null;
@@ -27,14 +27,24 @@ export async function buildClipIssues(
   conn: AsyncDuckDBConnection,
   assignment: AssignmentOutcomeInfo = {},
 ): Promise<ClipIssuesResult> {
+  // A fid missing from cl_assign was never spatially/code-matched; a fid in
+  // cl_assign but not cl_clip was assigned but its clip intersection was empty.
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_unassigned_issues AS
-    SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
-           fid AS unit_a, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason,
-           geom,
-           ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
-    FROM child_layer_01
-    WHERE fid NOT IN (SELECT fid FROM cl_clip)
+    SELECT 'unassigned-' || c.fid AS key, 'unassigned' AS kind,
+           c.fid AS unit_a, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason,
+           c.geom,
+           ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
+    FROM child_layer_01 c
+    WHERE c.fid NOT IN (SELECT fid FROM cl_clip)
+      AND c.fid NOT IN (SELECT child_fid FROM cl_assign)
+    UNION ALL
+    SELECT 'clip-empty-' || a.child_fid AS key, 'clip-empty' AS kind,
+           a.child_fid AS unit_a, a.parent_fid AS parent_fid, NULL::VARCHAR AS reason,
+           c.geom,
+           ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
+    FROM cl_assign a JOIN child_layer_01 c ON c.fid = a.child_fid
+    WHERE a.child_fid NOT IN (SELECT fid FROM cl_clip)
   `);
 
   // Every assigned child shares the single run-wide assignment_method
@@ -73,7 +83,7 @@ export async function buildClipIssues(
     `)
   ).toArray() as Array<{
     key: string;
-    kind: "unassigned" | "code-mismatch" | "code-fallback";
+    kind: "unassigned" | "clip-empty" | "code-mismatch" | "code-fallback";
     unit_a: bigint | number;
     parent_fid: bigint | number | null;
     xmin: number;

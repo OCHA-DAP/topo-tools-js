@@ -47,9 +47,12 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `clip` MUST report the winning parent's fid, the count of children
   assigned to it, the count dropped for not overlapping it, and the count
   dropped for clipping empty.
-- `clip` MAY produce an issues report, its only one, when a code-based
-  assignment override is supplied and yields at least one
-  `code-mismatch`/`code-fallback` row (see `docs/reference/shared.md`).
+- `clip` MUST produce an issues report whenever it has at least one row,
+  combining every child dropped for not overlapping the winning parent
+  (`kind='unassigned'`) with every assigned child whose clip result came
+  out empty (`kind='clip-empty'`), plus any `code-mismatch`/`code-fallback`
+  row from a supplied code-based assignment override (see
+  `docs/reference/shared.md`).
 
 ## Configuration
 

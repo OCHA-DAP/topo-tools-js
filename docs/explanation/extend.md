@@ -17,21 +17,28 @@ from the input.
    boundary, then subtract the union of its bbox-prefiltered neighbors so
    only the *non-shared* stretch of each boundary remains (shared/touching
    edges don't need extending).
-3. **Points** (`pipeline/points.ts`) — decompose the remaining boundary
-   into real vertex-to-vertex segments and interpolate points along them at
-   a per-file distance (see "Point spacing" below). Segments longer than
+3. **Points** (`pipeline/points.ts`), decomposes the remaining boundary
+   into real vertex-to-vertex segments and interpolates points along them
+   at a per-file distance (see "Point spacing" below). Segments longer than
    `distance × 100` are capped independently to avoid feeding
    `ST_VoronoiDiagram` a pathologically large exactly-collinear point
-   cluster (e.g. long straight desert admin lines).
-4. **Voronoi** (`pipeline/voronoi.ts`) — build a Voronoi diagram over every
-   sampled point, then assign each cell back to its source polygon's fid by
-   point-in-polygon join.
-5. **Merge** (`pipeline/merge.ts`) — for each fid, take its Voronoi cell's
+   cluster (e.g. long straight desert admin lines). The per-fid
+   shared-boundary zone used to exclude junction points is itself built
+   from a bbox-prefiltered union of nearby buffered boundary pieces, not a
+   single whole-file `ST_Union_Agg`, so it stays cheap at real-catalog
+   scale, the same fix already applied to step 2's neighbor union.
+4. **Voronoi** (`pipeline/voronoi.ts`), builds a Voronoi diagram over every
+   sampled point, then assigns each cell back to its source polygon's fid
+   by point-in-polygon join.
+5. **Merge** (`pipeline/merge.ts`), for each fid, takes its Voronoi cell's
    remainder (the cell minus whatever's already covered by a nearby
-   original polygon) and union it with the original polygon via a direct
-   `ST_Union_Agg`. The result is unioned per fid, then (unless the caller is
-   Edge Matcher's per-group loop) a single gated `ST_CoverageClean` pass
-   closes any residual seams in the assembled output.
+   original polygon) and unions it with the original polygon via a direct
+   `ST_Union_Agg`. The merged result is checked against the loaded input by
+   the shared no-erosion guard (`$lib/db/coverage.ts::checkNoErosion`, see
+   `docs/reference/shared.md`), a hard failure rather than a warn-only
+   check, before (unless the caller is Edge Matcher's per-group loop) a
+   single gated `ST_CoverageClean` pass closes any residual seams in the
+   assembled output.
 
 ## Point spacing
 

@@ -1,5 +1,11 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { EXCLUDED_COLUMNS, isNoiseColumn, NOTE_AMBIGUOUS, NOTE_SUPPLEMENTAL } from "./constants";
+import {
+  EXCLUDED_COLUMNS,
+  isNoiseColumn,
+  NOTE_AMBIGUOUS,
+  NOTE_SUPPLEMENTAL,
+  WINNER_MAX_COLLAPSE_RATIO,
+} from "./constants";
 import {
   bijective,
   combinedDistinctCount,
@@ -243,8 +249,8 @@ function bracketIndex(codeCounts: number[], count: number): number | null {
   return null;
 }
 
-// A winner is a function of the level's code column. By pigeonhole a
-// non-bijective winner is strictly coarser, so it's "supplemental" not "ambiguous".
+// A winner is a function of the level's code column. A non-bijective winner
+// with a low collapse ratio is a numbered sibling; a coarser one is supplemental.
 async function bracketLevel(
   conn: AsyncDuckDBConnection,
   table: string,
@@ -260,7 +266,9 @@ async function bracketLevel(
   for (const c of candidates) {
     if (await containmentHolds(conn, table, c, codeColumn)) winners.add(c);
   }
-  const levelHasName = chain[level].cols.some((m) => chainRows.get(m)?.role === "name");
+  const existingNameMembers = chain[level].cols.filter((m) => chainRows.get(m)?.role === "name");
+  const levelHasName = existingNameMembers.length > 0;
+  const levelUnitCount = chain[level].count;
   const parentCodeColumn = level > 0 ? chain[level - 1].cols[0] : null;
 
   const uniqueCountFor = async (column: string): Promise<number> =>
@@ -269,9 +277,10 @@ async function bracketLevel(
       : combinedDistinctCount(conn, table, parentCodeColumn, column);
 
   const rows = new Map<string, CrosswalkRow>();
-  let winnerIndex = 0;
+  let winnerIndex = existingNameMembers.length;
   for (const column of candidates) {
     const uniqueCount = await uniqueCountFor(column);
+    const collapseRatio = levelUnitCount > 0 ? 1 - counts[column] / levelUnitCount : 1;
     if (!winners.has(column)) {
       rows.set(column, {
         sourceColumn: column,
@@ -281,7 +290,7 @@ async function bracketLevel(
         level,
         uniqueCount,
       });
-    } else if (levelHasName) {
+    } else if (levelHasName && collapseRatio > WINNER_MAX_COLLAPSE_RATIO) {
       rows.set(column, {
         sourceColumn: column,
         targetColumn: null,
@@ -290,6 +299,16 @@ async function bracketLevel(
         level,
         uniqueCount,
       });
+    } else if (levelHasName) {
+      rows.set(column, {
+        sourceColumn: column,
+        targetColumn: numberedTarget(schema.nameField, level, winnerIndex),
+        note: "",
+        role: "name",
+        level,
+        uniqueCount,
+      });
+      winnerIndex += 1;
     } else {
       rows.set(column, {
         sourceColumn: column,

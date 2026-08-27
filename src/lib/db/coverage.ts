@@ -67,6 +67,31 @@ export async function hasNoiseFloorGap(
   }
 }
 
+// Ported from topo-tools-py's check_no_erosion; hard error, since a footprint
+// shrunk by extend/merge is data loss, not a cosmetic topology defect.
+export async function checkNoErosion(
+  conn: AsyncDuckDBConnection,
+  tableBefore: string,
+  tableAfter: string,
+  buffer: number = SNAP_TOLERANCE,
+): Promise<void> {
+  const r = await conn.query(`--sql
+    SELECT b.fid AS fid
+    FROM ${tableBefore} b
+    LEFT JOIN ${tableAfter} a USING (fid)
+    WHERE a.geom IS NULL OR NOT ST_Covers(ST_Buffer(a.geom, ${buffer}), b.geom)
+  `);
+  const rows = r.toArray() as Array<{ fid: bigint | number }>;
+  if (rows.length > 0) {
+    const fids = rows.map((row) => Number(row.fid));
+    const shown = fids.slice(0, 20).join(", ");
+    const suffix = fids.length > 20 ? ", ..." : "";
+    throw new Error(
+      `extension eroded the original footprint of ${fids.length} fid(s): ${shown}${suffix}`,
+    );
+  }
+}
+
 // Overlap regions = polygonal pairwise intersections of polygons in the source
 // table, via a bbox-prefiltered join (PIECEWISE_MERGE_JOIN, not the
 // WASM-OOMing SPATIAL_JOIN). ST_Overlaps/ST_Contains, not ST_Intersects,

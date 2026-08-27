@@ -69,6 +69,7 @@ export async function runMosaic(
   parentFiles: File[],
   onProgress: ProgressFn,
   matchColumns: MatchColumnOptions = {},
+  carryParentColumns: string[] = [],
 ): Promise<MosaicResult> {
   onProgress(1, "Loading input");
   await loadLayers(db, conn, childFiles, parentFiles);
@@ -84,6 +85,19 @@ export async function runMosaic(
     assign = await assignOne(conn, matchColumns);
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
+  }
+
+  // Ported from topo-tools-py's carry_columns: joins the single winning
+  // parent's own attribute values onto every output row.
+  if (carryParentColumns.length > 0) {
+    const selectCols = carryParentColumns
+      .map((c) => `p.${JSON.stringify(c)} AS ${JSON.stringify(`parent_${c}`)}`)
+      .join(", ");
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE child_layer_attr AS
+      SELECT c.*, ${selectCols}
+      FROM child_layer_attr c, (SELECT * FROM parent_layer_attr WHERE fid = ${assign.parentFid}) p
+    `);
   }
 
   onProgress(3, "Clipping to parent boundary");

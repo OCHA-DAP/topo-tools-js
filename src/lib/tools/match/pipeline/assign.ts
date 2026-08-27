@@ -6,6 +6,7 @@ import {
   type MatchColumnOptions,
   resolveMatchColumns,
 } from "$lib/db/codeJoin";
+import { PASSTHROUGH_PARENT_FID } from "./groups";
 
 export interface AssignResult {
   groupCount: number;
@@ -20,6 +21,7 @@ export interface AssignResult {
 export async function computeAssignment(
   conn: AsyncDuckDBConnection,
   matchColumns: MatchColumnOptions = {},
+  passthrough = false,
 ): Promise<AssignResult> {
   await computeOverlapPairs(conn, "child_layer_01", "parent_layer_01", "ge_pairs");
 
@@ -66,6 +68,17 @@ export async function computeAssignment(
     SELECT fid, geom FROM child_layer_01
     WHERE fid NOT IN (SELECT child_fid FROM ge_assignment)
   `);
+
+  // Opt-in: tag every zero-overlap child so it runs through the extend
+  // pipeline unclipped, instead of only being reported as unassigned.
+  if (passthrough) {
+    await conn.query(`--sql
+      INSERT INTO ge_assignment
+      SELECT fid AS child_fid, ${PASSTHROUGH_PARENT_FID} AS parent_fid,
+             NULL::VARCHAR AS assignment_method, NULL::BOOLEAN AS spatial_agrees
+      FROM ge_unassigned
+    `);
+  }
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_groups AS

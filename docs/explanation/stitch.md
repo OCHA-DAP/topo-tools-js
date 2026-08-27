@@ -16,11 +16,14 @@ which extracted this exact operation out of `match`'s and (eventually)
    the input's seams are exactly what this tool exists to close, so
    pre-cleaning them would defeat the point.
 2. **Clean** (`pipeline/index.ts`, via `$lib/db/coverageClean`'s
-   `buildCoverageClean`) — one whole-table `ST_CoverageClean` pass at
-   `SNAP_TOLERANCE` gap/snap, `preserveOriginal: true` so a feature that
-   collapses to empty falls back to its pre-clean geometry rather than
-   vanishing. `SNAP_TOLERANCE` is a noise floor, not a real gap-closing
-   width — see below for why a wider gap is left alone rather than filled.
+   `buildCoverageCleanEscalating`), one whole-table `ST_CoverageClean` pass
+   starting at `SNAP_TOLERANCE` gap/snap, `preserveOriginal: true` so a
+   feature that collapses to empty falls back to its pre-clean geometry
+   rather than vanishing. If the pass still leaves invalid edges, the snap
+   width widens by `SNAP_TOLERANCE` and retries, up to 9 additional
+   attempts, before giving up and leaving whatever the last attempt
+   produced. `SNAP_TOLERANCE` is a noise floor, not a real gap-closing
+   width, see below for why a wider gap is left alone rather than filled.
 3. **Issues** (`pipeline/issues.ts`, via `$lib/db/coverage`'s
    `gapRegionsQuery`) — any interior hole left in the cleaned output wider
    than `SNAP_TOLERANCE` gets a `kind='gap'` row (area, max width,

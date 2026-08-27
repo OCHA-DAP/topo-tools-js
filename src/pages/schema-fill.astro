@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/schema-fill/App.svelte";
+---
+
+<Layout
+  title="Schema Fill: cascade admin-hierarchy columns down in your browser"
+  description="Browser-only tool that fills each admin-hierarchy column family down from its deepest non-empty level and stamps every row's real depth."
+>
+  <App client:load />
+</Layout>

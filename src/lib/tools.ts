@@ -90,4 +90,11 @@ export const tools: Tool[] = [
       "Apply a crosswalk CSV, from Schema Map or hand-edited, to rename or drop a polygon layer's columns. Geometry passes through unchanged.",
     iconHref: "/icons/tools/schema-refactor.svg",
   },
+  {
+    slug: "schema-fill",
+    name: "Schema Fill",
+    tagline:
+      "Cascade each admin-hierarchy column family down from its deepest non-empty level, and stamp every row with its real depth.",
+    iconHref: "/icons/tools/schema-fill.svg",
+  },
 ];

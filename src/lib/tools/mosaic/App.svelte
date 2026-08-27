@@ -41,6 +41,7 @@
   let parentColumns = $state<ColumnGuess | null>(null);
   let childMatchColumn = $state<string | null>(null);
   let parentMatchColumn = $state<string | null>(null);
+  let carryParentColumns = $state<string[]>([]);
 
   let clearMap: (() => void) | undefined;
 
@@ -58,6 +59,7 @@
         parentColumns = null;
         childMatchColumn = null;
         parentMatchColumn = null;
+        carryParentColumns = [];
         handleRun();
       });
     }
@@ -69,6 +71,14 @@
     untrack(() => {
       if (!resultGeoJSON || running) return;
       if ((childMatchColumn == null) !== (parentMatchColumn == null)) return;
+      handleRun();
+    });
+  });
+
+  $effect(() => {
+    const _cols = carryParentColumns;
+    untrack(() => {
+      if (!resultGeoJSON || running) return;
       handleRun();
     });
   });
@@ -100,6 +110,7 @@
           stageLabel = label;
         },
         { parentMatchColumn: parentMatchColumn ?? undefined, childMatchColumn: childMatchColumn ?? undefined },
+        carryParentColumns,
       );
 
       resultGeoJSON = result.mosaicGeoJSON;
@@ -207,6 +218,31 @@
               {#each parentColumns.all as col (col)}<option value={col}>{col}</option>{/each}
             </select>
           </label>
+        </div>
+      </section>
+    {/if}
+
+    {#if parentColumns}
+      <section class="step">
+        <h2 class="step-heading">Carry parent columns (optional)</h2>
+        <p class="hint">Join the winning parent's own attribute values onto every output row.</p>
+        <div class="carry-cols">
+          {#each parentColumns.all as col (col)}
+            <label class="carry-field">
+              <input
+                type="checkbox"
+                checked={carryParentColumns.includes(col)}
+                disabled={running}
+                onchange={(e) => {
+                  const checked = (e.target as HTMLInputElement).checked;
+                  carryParentColumns = checked
+                    ? [...carryParentColumns, col]
+                    : carryParentColumns.filter((c) => c !== col);
+                }}
+              />
+              <span>{col}</span>
+            </label>
+          {/each}
         </div>
       </section>
     {/if}
@@ -363,6 +399,22 @@
     border: 1px solid #d1d5db;
     border-radius: 3px;
     background: #fff;
+  }
+
+  .carry-cols {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    max-height: 8rem;
+    overflow-y: auto;
+  }
+
+  .carry-field {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #374151;
   }
 
   .blurb {

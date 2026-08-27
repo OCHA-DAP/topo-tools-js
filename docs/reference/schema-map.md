@@ -124,8 +124,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 ## Configuration
 
-- `schema-map` MUST default to the bundled COD-AB target schema
-  (`name_field = "adm{n}_name"`, `code_field = "adm{n}_pcode"`).
+- `schema-map` MUST default to the bundled generic target schema
+  (`name_field = "adm{n}_name"`, `code_field = "adm{n}_code"`).
 - `schema-map` MAY accept a user-supplied override for `name_field`/
   `code_field`. Both templates MUST contain a `{n}` placeholder; an
   override missing either MUST be rejected before running.

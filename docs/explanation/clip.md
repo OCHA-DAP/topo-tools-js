@@ -26,10 +26,14 @@ scoping decisions the port required.
    overshoot. The parent boundary's parts are grid-tiled first if their
    vertex count exceeds `CLIP_TILE_MIN_VERTICES`, so children are matched
    against bounding-box-nearby tiles instead of one huge polygon.
-3. **Clip** (`pipeline/engine.ts`, `clipEngine`) — every child assigned to
+3. **Clip** (`pipeline/engine.ts`, `clipEngine`), every child assigned to
    the winning parent is intersected against that parent's own geometry
    (tiled the same way as the assign stage), and any assigned child whose
-   clip result comes out empty is dropped from the output.
+   clip result comes out empty is dropped from the output. `pipeline/issues.ts`
+   reports these two drop reasons as distinct kinds, `unassigned` for a
+   child that never overlapped the winning parent at all and `clip-empty`
+   for one that was assigned but whose intersection came out empty, since
+   they point at different causes.
 
 ## Single winner parent, no per-parent loop
 
