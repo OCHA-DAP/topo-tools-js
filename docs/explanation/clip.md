@@ -26,10 +26,14 @@ scoping decisions the port required.
    overshoot. The parent boundary's parts are grid-tiled first if their
    vertex count exceeds `CLIP_TILE_MIN_VERTICES`, so children are matched
    against bounding-box-nearby tiles instead of one huge polygon.
-3. **Clip** (`pipeline/engine.ts`, `clipEngine`) — every child assigned to
+3. **Clip** (`pipeline/engine.ts`, `clipEngine`), every child assigned to
    the winning parent is intersected against that parent's own geometry
    (tiled the same way as the assign stage), and any assigned child whose
-   clip result comes out empty is dropped from the output.
+   clip result comes out empty is dropped from the output. `pipeline/issues.ts`
+   reports these two drop reasons as distinct kinds, `unassigned` for a
+   child that never overlapped the winning parent at all and `clip-empty`
+   for one that was assigned but whose intersection came out empty, since
+   they point at different causes.
 
 ## Single winner parent, no per-parent loop
 
@@ -41,6 +45,23 @@ winner parent every run. `assignOne` and `clipEngine` are written directly
 against that single-winner shape — there is no per-source grouping and no
 per-parent-fid loop to isolate, so there's also no cached-tiles reuse
 concern Python's multi-parent design needs.
+
+## Code-based assignment override (optional)
+
+Given a `matchColumn` (same column name on both layers) or a
+`parentMatchColumn`/`childMatchColumn` pair, `assignOne` also computes an
+exact code join, restricted to `(child, parent)` pairs that already
+spatially overlap, alongside the majority vote above (per file, since
+assign-one has no per-child granularity: every child in the run shares one
+`assignment_method`). The code result wins whenever one exists, even on
+disagreement; a file whose code has no overlapping-parent match falls back
+to the spatial result. This gives `clip` its first issues report
+(`pipeline/issues.ts`, `buildClipIssues`), produced only when the override
+is supplied and yields at least one `code-mismatch`/`code-fallback` row.
+Ported from topo-tools-py's `core/assign`; see `docs/adr/0029` and
+`docs/reference/shared.md` for the full contract, and
+`src/lib/db/codeJoin.ts` for the shared implementation `match` and `mosaic`
+also use.
 
 ## No process isolation needed
 

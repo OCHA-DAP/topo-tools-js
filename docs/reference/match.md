@@ -26,6 +26,15 @@ with other tools.
   the lower parent fid.
 - A child with zero overlap with any parent MUST be recorded as
   unassigned, not silently dropped and not treated as fatal to the run.
+- When the opt-in passthrough flag is set (see Configuration), every
+  unassigned child MUST instead be tagged with a sentinel parent id and
+  processed as its own group (see Per-group extension), landing in the
+  output unclipped rather than only in the issues export.
+- `match` MAY accept a code-based assignment override, evaluated per child;
+  see `docs/reference/shared.md`'s "Code-based assignment override" section
+  and `docs/adr/0029`. `code-mismatch`/`code-fallback` issues rows join
+  `match`'s existing failed-group/unassigned issues rows in the same
+  report.
 
 ## Per-group extension
 
@@ -34,10 +43,16 @@ with other tools.
 - For each group, `match` MUST populate `extend`'s pipeline with that
   group's own child subset and run it unmodified (see
   `docs/reference/extend.md`), with its own final `gatedCoverageClean` pass
-  skipped — that pass is deferred to a single whole-batch pass after every
-  group has run (see Assembly below).
+  skipped (that pass is deferred to a single whole-batch pass after every
+  group has run, see Assembly below).
+- `match` MUST run the shared no-erosion guard (`docs/reference/shared.md`)
+  against each group's extended result before clipping, comparing it to
+  that group's own pre-extension child subset, and MUST treat a violation
+  as a hard failure of that group.
 - `match` MUST clip each group's extended result to that group's own known
-  parent polygon (an exact-boundary clip, not another extension pass).
+  parent polygon (an exact-boundary clip, not another extension pass),
+  except for the passthrough pseudo-group (see Configuration), which is
+  never clipped.
 - A group whose extension or clip fails MUST be recorded as a failed group
   and skipped, without aborting the run. Every child belonging to a failed
   group MUST be recorded with the parent fid and the failure reason, for
@@ -71,6 +86,7 @@ with other tools.
 ## Configuration
 
 - `match` MUST process exactly one child file and one parent file per run.
-- `match` has no user-configurable parameters — assignment, per-group
-  extension, and final cleanup all run automatically once both files are
-  loaded.
+- `match` MAY accept a `matchColumn` name or a
+  `parentMatchColumn`/`childMatchColumn` pair for the code-based
+  assignment override; both are optional, and omitting them runs
+  assignment, per-group extension, and final cleanup exactly as before.

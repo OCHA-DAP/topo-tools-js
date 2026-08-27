@@ -74,7 +74,7 @@ Notes:
 
 ## Architecture
 
-**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly — no data leaves the browser. The root `/` is a landing page that lists tools. Eight tools ship today: **Topology Cleaner** at `/clean`, **Edge Extender** at `/extend`, **Changelog** at `/change`, **Edge Matcher** at `/match`, **Stitch** at `/stitch`, **Detect** at `/detect`, **Clip** at `/clip`, and **Mosaic** at `/mosaic` — see `docs/explanation/{clean,extend,change,match,stitch,detect,clip,mosaic}.md` for what each does and how, and `docs/reference/{clean,extend,change,match,stitch,detect,clip,mosaic}.md` for their behavior contracts.
+**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly, and no data leaves the browser. The root `/` is a landing page that lists tools. Thirteen tools ship today: **Topology Cleaner** at `/clean`, **Edge Extender** at `/extend`, **Changelog** at `/change`, **Edge Matcher** at `/match`, **Stitch** at `/stitch`, **Detect** at `/detect`, **Clip** at `/clip`, **Mosaic** at `/mosaic`, **Dissolve** at `/dissolve`, **Schema Map** at `/schema-map`, **Schema Refactor** at `/schema-refactor`, **Schema Crosswalk** at `/schema-crosswalk`, and **Schema Fill** at `/schema-fill`; see `docs/explanation/{clean,extend,change,match,stitch,detect,clip,mosaic,dissolve,schema-map,schema-refactor,schema-crosswalk,schema-fill}.md` for what each does and how, and `docs/reference/{clean,extend,change,match,stitch,detect,clip,mosaic,dissolve,schema-map,schema-refactor,schema-crosswalk,schema-fill}.md` for their behavior contracts.
 
 **Stack:** Astro 6 (static site) + Svelte 5 (interactive islands) + DuckDB WASM (spatial SQL engine) + MapLibre GL (map rendering)
 
@@ -97,6 +97,11 @@ Notes:
 - `docs/explanation/detect.md` — read-only gap/overlap scan, shared with Topology Cleaner's own detection stage
 - `docs/explanation/clip.md` — assign-one majority vote, per-parent clip, single-winner-parent scope in this app
 - `docs/explanation/mosaic.md` — thin assign-one -> clip -> stitch orchestrator, no re-extension
+- `docs/explanation/dissolve.md`: group-by aggregation, auto column keep/drop, gap-only issues report
+- `docs/explanation/schema-map.md`: structural admin-hierarchy inference, no name/vocabulary matching
+- `docs/explanation/schema-refactor.md`: crosswalk-driven column rename/drop, no geometry touch
+- `docs/explanation/schema-crosswalk.md`: thin schema-map to schema-refactor orchestrator, always maps fresh
+- `docs/explanation/schema-fill.md`: cascades admin-hierarchy column families down, stamps a pre-fill depth column, attribute-only
 - `docs/explanation/performance.md` — WASM memory model, SPATIAL_JOIN behaviour, connection settings, pipeline phase memory profile
 - `docs/how-to/at-scale-testing.md` — portolan catalog layout, picking a file or old/new pair for a real-scale test
 - `docs/adr/README.md` — how to decide whether a fact belongs in an ADR vs. `docs/explanation/` vs. this file

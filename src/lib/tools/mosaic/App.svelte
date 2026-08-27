@@ -5,6 +5,7 @@
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import { onMount, untrack } from "svelte";
   import { PipelineError, runMosaic, type MosaicIssueRow } from "./pipeline/index";
+  import type { ColumnGuess } from "$lib/db/columns";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -34,6 +35,14 @@
   let issuesGeoJSON = $state<string | null>(null);
   let hadResidualOverlaps = $state(false);
 
+  // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
+  // first auto-run never changes behavior.
+  let childColumns = $state<ColumnGuess | null>(null);
+  let parentColumns = $state<ColumnGuess | null>(null);
+  let childMatchColumn = $state<string | null>(null);
+  let parentMatchColumn = $state<string | null>(null);
+  let carryParentColumns = $state<string[]>([]);
+
   let clearMap: (() => void) | undefined;
 
   onMount(() => {
@@ -45,9 +54,33 @@
     const p = parentFiles;
     if (c.length > 0 && p.length > 0 && duckdbState.ready) {
       untrack(() => {
-        if (!running) handleRun();
+        if (running) return;
+        childColumns = null;
+        parentColumns = null;
+        childMatchColumn = null;
+        parentMatchColumn = null;
+        carryParentColumns = [];
+        handleRun();
       });
     }
+  });
+
+  $effect(() => {
+    const _c = childMatchColumn;
+    const _p = parentMatchColumn;
+    untrack(() => {
+      if (!resultGeoJSON || running) return;
+      if ((childMatchColumn == null) !== (parentMatchColumn == null)) return;
+      handleRun();
+    });
+  });
+
+  $effect(() => {
+    const _cols = carryParentColumns;
+    untrack(() => {
+      if (!resultGeoJSON || running) return;
+      handleRun();
+    });
   });
 
   async function handleRun(): Promise<void> {
@@ -76,6 +109,8 @@
           currentStage = stage;
           stageLabel = label;
         },
+        { parentMatchColumn: parentMatchColumn ?? undefined, childMatchColumn: childMatchColumn ?? undefined },
+        carryParentColumns,
       );
 
       resultGeoJSON = result.mosaicGeoJSON;
@@ -86,6 +121,8 @@
       issues = result.issues;
       issuesGeoJSON = result.issuesGeoJSON;
       hadResidualOverlaps = result.hadResidualOverlaps;
+      childColumns = result.childColumns;
+      parentColumns = result.parentColumns;
       currentStage = 7;
       stageLabel = "Done";
     } catch (e) {
@@ -117,6 +154,8 @@
 
   const unassignedCount = $derived(issues.filter((i) => i.kind === "unassigned").length);
   const gapCount = $derived(issues.filter((i) => i.kind === "gap").length);
+  const codeMismatchCount = $derived(issues.filter((i) => i.kind === "code-mismatch").length);
+  const codeFallbackCount = $derived(issues.filter((i) => i.kind === "code-fallback").length);
 </script>
 
 <div class="layout">
@@ -153,9 +192,60 @@
       <DropZone
         bind:files={parentFiles}
         disabled={running}
-        helpText="The boundary to assign and clip against — e.g. admin0 for an admin2/3 children layer."
+        helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 children layer."
       />
     </section>
+
+    {#if childColumns && parentColumns}
+      <section class="step">
+        <h2 class="step-heading">Code join (optional)</h2>
+        <p class="hint">
+          Wins over the majority-vote parent wherever the codes agree on a parent the file
+          overlaps at all, falls back to the majority vote when no code match exists.
+        </p>
+        <div class="match-cols">
+          <label class="match-field">
+            <span>Child code</span>
+            <select bind:value={childMatchColumn} disabled={running}>
+              <option value={null}>(none)</option>
+              {#each childColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+            </select>
+          </label>
+          <label class="match-field">
+            <span>Parent code</span>
+            <select bind:value={parentMatchColumn} disabled={running}>
+              <option value={null}>(none)</option>
+              {#each parentColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+            </select>
+          </label>
+        </div>
+      </section>
+    {/if}
+
+    {#if parentColumns}
+      <section class="step">
+        <h2 class="step-heading">Carry parent columns (optional)</h2>
+        <p class="hint">Join the winning parent's own attribute values onto every output row.</p>
+        <div class="carry-cols">
+          {#each parentColumns.all as col (col)}
+            <label class="carry-field">
+              <input
+                type="checkbox"
+                checked={carryParentColumns.includes(col)}
+                disabled={running}
+                onchange={(e) => {
+                  const checked = (e.target as HTMLInputElement).checked;
+                  carryParentColumns = checked
+                    ? [...carryParentColumns, col]
+                    : carryParentColumns.filter((c) => c !== col);
+                }}
+              />
+              <span>{col}</span>
+            </label>
+          {/each}
+        </div>
+      </section>
+    {/if}
 
     {#if running || errorStage > 0}
       <ol class="stages">
@@ -191,7 +281,21 @@
           </p>
         {/if}
         {#if hadResidualOverlaps}
-          <p class="warn-line">Overlaps remain after seam-closing — see the issues download.</p>
+          <p class="warn-line">Overlaps remain after seam-closing, see the issues download.</p>
+        {/if}
+        {#if codeMismatchCount > 0}
+          <p class="warn-line">
+            Code match disagreed with the majority-vote parent for {codeMismatchCount} child{codeMismatchCount ===
+            1
+              ? ""
+              : "ren"}; the code match won.
+          </p>
+        {/if}
+        {#if codeFallbackCount > 0}
+          <p class="warn-line">
+            No overlapping code match for {codeFallbackCount} child{codeFallbackCount === 1 ? "" : "ren"};
+            fell back to the majority-vote parent.
+          </p>
         {/if}
       </section>
     {/if}
@@ -265,6 +369,52 @@
 
   .back:hover {
     color: #111;
+  }
+
+  .hint {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .match-cols {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .match-field {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+  }
+
+  .match-field select {
+    width: 100%;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.8rem;
+    border: 1px solid #d1d5db;
+    border-radius: 3px;
+    background: #fff;
+  }
+
+  .carry-cols {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    max-height: 8rem;
+    overflow-y: auto;
+  }
+
+  .carry-field {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #374151;
   }
 
   .blurb {

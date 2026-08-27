@@ -3,7 +3,12 @@ import { assignOne } from "$lib/db/assignOne";
 import { clipEngine } from "$lib/db/clipEngine";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
+import { detectColumns, type ColumnGuess } from "$lib/db/columns";
+import type { MatchColumnOptions } from "$lib/db/codeJoin";
+import { buildClipIssues, type ClipIssueRow } from "./issues";
 import { loadLayers } from "./load";
+
+export type { ClipIssueRow } from "./issues";
 
 export type ProgressFn = (stage: number, label: string) => void;
 
@@ -26,6 +31,10 @@ export interface ClipResult {
   assignedCount: number;
   droppedAssignCount: number; // children that didn't overlap the winner parent, dropped before clipping
   emptyClipCount: number; // assigned children whose clipped result was empty, dropped after clipping
+  issues: ClipIssueRow[];
+  issuesGeoJSON: string;
+  childColumns: ColumnGuess;
+  parentColumns: ColumnGuess;
 }
 
 async function computeBounds(
@@ -61,17 +70,20 @@ export async function runClip(
   childFiles: File[],
   parentFiles: File[],
   onProgress: ProgressFn,
+  matchColumns: MatchColumnOptions = {},
 ): Promise<ClipResult> {
   onProgress(1, "Loading input");
   await loadLayers(db, conn, childFiles, parentFiles);
   const childGeoJSON = await tableToGeoJSON(conn, "child_layer_01", null);
   const parentOutlineGeoJSON = await tableToGeoJSON(conn, "parent_layer_01", null);
   const bounds = await computeBounds(conn, "child_layer_01");
+  const childColumns = await detectColumns(conn, "child_layer_attr");
+  const parentColumns = await detectColumns(conn, "parent_layer_attr");
 
   onProgress(2, "Assigning to parent unit");
   let assign;
   try {
-    assign = await assignOne(conn);
+    assign = await assignOne(conn, matchColumns);
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
   }
@@ -89,6 +101,11 @@ export async function runClip(
 
   const clippedGeoJSON = await tableToGeoJSON(conn, "cl_clip", "child_layer_attr");
 
+  const { rows: issues, geojson: issuesGeoJSON } = await buildClipIssues(conn, {
+    assignmentMethod: assign.assignmentMethod,
+    spatialAgrees: assign.spatialAgrees,
+  });
+
   return {
     childGeoJSON,
     parentOutlineGeoJSON,
@@ -98,5 +115,9 @@ export async function runClip(
     assignedCount: assign.assignedCount,
     droppedAssignCount: assign.droppedCount,
     emptyClipCount: engineResult.emptyCount,
+    issues,
+    issuesGeoJSON,
+    childColumns,
+    parentColumns,
   };
 }

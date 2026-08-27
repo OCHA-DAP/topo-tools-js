@@ -14,9 +14,11 @@ usual `layer_01`). Ported from topo-tools-py's `mosaic`.
 1. **Load** (`pipeline/load.ts`) — load the children layer and the
    parent/clip layer raw, exactly like Clip: neither is coverage-checked
    or -cleaned first.
-2. **Assign** (`$lib/db/assignOne.ts`) — the same assign-one majority vote
+2. **Assign** (`$lib/db/assignOne.ts`), the same assign-one majority vote
    Clip uses, at exactly the same single-children-file scope
-   (`docs/adr/0026`, shared by both tools).
+   (`docs/adr/0026`, shared by both tools). If parent columns were
+   requested, they're joined (prefixed `parent_`) from the winning
+   parent's own attribute row onto `child_layer_attr` here, before clipping.
 3. **Clip** (`$lib/db/clipEngine.ts`) — the same tiled clip Clip uses.
    Fails the run if zero output rows result.
 4. **Stitch** (`stitch/pipeline/index.ts`'s `runStitch`, called with
@@ -24,11 +26,13 @@ usual `layer_01`). Ported from topo-tools-py's `mosaic`.
    whole-table `ST_CoverageClean` pass over the clipped result, closing
    seams between the (already-extended, but freshly-clipped-to-a-new-
    boundary) child pieces.
-5. **Assemble issues** (`pipeline/issues.ts`) — combines every child that
+5. **Assemble issues** (`pipeline/issues.ts`), combines every child that
    never reached the final output (kind `unassigned`, whichever stage
    dropped it: not overlapping the winner parent, or clipping to empty)
    with every leftover gap `runStitch`'s own issues check finds (kind
-   `gap`), into one report.
+   `gap`) and any `code-mismatch`/`code-fallback` rows from an optional
+   code-based assignment override (same override Clip's assign-one
+   accepts, see `docs/explanation/clip.md`), into one report.
 
 ## Why assign-one, not assign-many
 

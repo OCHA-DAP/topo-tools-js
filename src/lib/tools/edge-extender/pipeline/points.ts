@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { bboxColumnsSql, bboxOverlapSql } from "$lib/db/bbox";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
 
 // Cap on points generated per real (untouched) boundary segment; bounds the size of the
@@ -50,15 +51,27 @@ export async function buildSegments(conn: AsyncDuckDBConnection): Promise<void> 
 export async function stagePoints(conn: AsyncDuckDBConnection, distance: number): Promise<void> {
   const capThreshold = distance * MAX_POINTS_PER_SEGMENT;
 
-  // Buffered union of all line endpoints — marks the shared-boundary zone.
-  // Subtracting this zone from interpolated points removes redundant Voronoi
-  // generators at junction vertices.
+  // Per-fid, bbox-prefiltered union of nearby buffered line endpoints (self
+  // included), marking each fid's own shared-boundary zone.
   console.log("[EE-DEBUG] points:1 buffer+union boundary zone (layer_03a)");
   await conn.query(`--sql
-    CREATE OR REPLACE TABLE layer_03a AS
-    SELECT ST_Union_Agg(ST_Buffer(ST_Boundary(geom), ${SNAP_TOLERANCE})) AS geom
+    CREATE OR REPLACE TABLE layer_03a_src AS
+    SELECT fid, ST_Buffer(ST_Boundary(geom), ${SNAP_TOLERANCE}) AS geom, ${bboxColumnsSql()}
     FROM layer_02a
   `);
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE layer_03a_fids AS
+    SELECT fid, ${bboxColumnsSql()} FROM layer_01
+  `);
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE layer_03a AS
+    SELECT f.fid AS fid, ST_Union_Agg(s.geom) AS geom
+    FROM layer_03a_fids f
+    JOIN layer_03a_src s ON ${bboxOverlapSql("f", "s")}
+    GROUP BY f.fid
+  `);
+  await conn.query("DROP TABLE IF EXISTS layer_03a_src");
+  await conn.query("DROP TABLE IF EXISTS layer_03a_fids");
 
   // Split into "long" real segments (rare — a single one can span many degrees, e.g.
   // Chad/Algeria's straight desert admin lines) and "normal" ones. Long segments get capped
@@ -119,29 +132,41 @@ export async function stagePoints(conn: AsyncDuckDBConnection, distance: number)
     GROUP BY fid
   `);
 
-  // Points from above minus the shared-boundary zone, union'd with line endpoints also minus
-  // the shared-boundary zone. CROSS JOIN against single-row layer_03a is safe (nested loop, no
-  // SPATIAL_JOIN).
+  // Points minus their fid's shared-boundary zone; LEFT JOIN so a fid with
+  // no nearby zone keeps its own geometry untouched, not dropped.
   console.log("[EE-DEBUG] points:5 difference vs boundary zone (layer_03b)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_03b AS
     SELECT fid, geom FROM (
       SELECT
         a.fid,
-        UNNEST(ST_Dump(ST_Difference(a.geom, b.geom))).geom AS geom
+        UNNEST(ST_Dump(
+          CASE WHEN b.geom IS NOT NULL THEN ST_Difference(a.geom, b.geom) ELSE a.geom END
+        )).geom AS geom
       FROM layer_03_tmp4 AS a
-      CROSS JOIN layer_03a AS b
+      LEFT JOIN layer_03a AS b ON a.fid = b.fid
       UNION ALL
       SELECT
         a.fid,
         UNNEST(ST_Dump(ST_Boundary(
-          ST_Difference(a.geom, b.geom)
+          CASE WHEN b.geom IS NOT NULL THEN ST_Difference(a.geom, b.geom) ELSE a.geom END
         ))).geom AS geom
       FROM layer_02a AS a
-      CROSS JOIN layer_03a AS b
+      LEFT JOIN layer_03a AS b ON a.fid = b.fid
     )
     WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `);
+
+  const [beforeFids, afterFids] = await Promise.all([
+    conn.query("SELECT COUNT(DISTINCT fid) AS n FROM layer_03_tmp4"),
+    conn.query("SELECT COUNT(DISTINCT fid) AS n FROM layer_03b"),
+  ]);
+  const nBefore = Number((beforeFids.toArray()[0] as { n: bigint | number }).n);
+  const nAfter = Number((afterFids.toArray()[0] as { n: bigint | number }).n);
+  if (nAfter < nBefore)
+    console.warn(
+      `points: ${nBefore - nAfter} fid(s) lost all points after boundary-zone differencing`,
+    );
   console.log("[EE-DEBUG] points:6 done, dropping tmp tables");
 
   await conn.query("DROP TABLE IF EXISTS layer_03_tmp2");

@@ -20,6 +20,9 @@ const OWNED_TABLES = [
   "cl_btile",
   "cl_child_bbox",
   "cl_clip",
+  "cl_unassigned_issues",
+  "cl_code_issues",
+  "cl_issues",
 ];
 
 export async function dropPriorRun(conn: AsyncDuckDBConnection): Promise<void> {

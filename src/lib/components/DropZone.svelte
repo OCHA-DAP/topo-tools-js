@@ -6,11 +6,13 @@
     disabled = false,
     helpText = "GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)",
     disabledMessage,
+    accept = "geodata",
   }: {
     files?: File[];
     disabled?: boolean;
     helpText?: string;
     disabledMessage?: string;
+    accept?: "geodata" | "csv";
   } = $props();
 
   const SINGLE_EXTS = [
@@ -24,6 +26,7 @@
     ".gpx",
   ];
   const SHP_EXTS = [".shp", ".dbf", ".shx", ".prj", ".cpg"];
+  const CSV_EXTS = [".csv"];
 
   let dragging = $state(false);
 
@@ -34,6 +37,7 @@
 
   function isIncluded(file: File): boolean {
     const e = extOf(file.name);
+    if (accept === "csv") return CSV_EXTS.includes(e);
     return SINGLE_EXTS.includes(e) || SHP_EXTS.includes(e);
   }
 
@@ -209,7 +213,9 @@
   <label class="browse-label">
     <input
       type="file"
-      accept={[...SINGLE_EXTS, ".json", ...SHP_EXTS, ".zip"].join(",")}
+      accept={accept === "csv"
+        ? CSV_EXTS.join(",")
+        : [...SINGLE_EXTS, ".json", ...SHP_EXTS, ".zip"].join(",")}
       multiple
       onchange={handleBrowse}
       {disabled}

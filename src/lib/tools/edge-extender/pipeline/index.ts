@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
-import { gapRegionsQuery } from "$lib/db/coverage";
+import { checkNoErosion, gapRegionsQuery } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { stageCleanInput } from "./clean";
 import { computeEffectiveDistance } from "./distance";
@@ -208,6 +208,8 @@ export async function runPipeline(
   onProgress(5, "Merging polygons");
   await stageMerge(conn);
   console.log("[EE-DEBUG] === stageMerge done, runPipeline continuing ===");
+
+  await checkNoErosion(conn, "layer_01", "layer_05");
 
   if (!skipOutputClean) {
     console.log("[EE-DEBUG] === stageOutputClean ===");

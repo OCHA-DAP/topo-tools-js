@@ -37,10 +37,17 @@ for rules `mosaic` shares with other tools.
 - `mosaic` MUST export the final stitched layer.
 - `mosaic` MUST also produce a combined issues report listing every child
   that never made it into the final output (kind `unassigned`, identified
-  by its own fid) and every leftover gap the stitch pass's own issues
-  check finds (kind `gap`), and MUST produce it only when it has at least
-  one row.
+  by its own fid), every leftover gap the stitch pass's own issues check
+  finds (kind `gap`), and any `code-mismatch`/`code-fallback` rows from a
+  supplied code-based assignment override (see `docs/reference/clip.md`,
+  `docs/reference/shared.md`), and MUST produce it only when it has at
+  least one row.
 
 ## Configuration
 
-- `mosaic` has no user-configurable parameters.
+- `mosaic` MAY accept a `matchColumn` name or a
+  `parentMatchColumn`/`childMatchColumn` pair for the code-based
+  assignment override (see `docs/adr/0029`).
+- `mosaic` MAY accept a list of parent attribute columns to carry into the
+  output, each joined onto every output row (prefixed `parent_`) from the
+  single winning parent's own attribute row.

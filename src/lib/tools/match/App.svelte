@@ -6,6 +6,7 @@
   import MapView from "./MapView.svelte";
   import { runEdgeMatch, type EdgeMatchPhase } from "./pipeline/index";
   import type { GroupResult } from "./pipeline/groups";
+  import type { ColumnGuess } from "$lib/db/columns";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -34,6 +35,19 @@
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let unassignedCount = $state<number | null>(null);
   let droppedCount = $state<number | null>(null);
+  let passthroughCount = $state<number | null>(null);
+  let codeMismatchCount = $state<number | null>(null);
+  let codeFallbackCount = $state<number | null>(null);
+  let passthrough = $state(false);
+
+  // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
+  // first auto-run never changes behavior, even when a plausible code column
+  // exists. Repicking after a run reruns the whole pipeline, since a
+  // reassigned child can move to a different group entirely.
+  let childColumns = $state<ColumnGuess | null>(null);
+  let parentColumns = $state<ColumnGuess | null>(null);
+  let childMatchColumn = $state<string | null>(null);
+  let parentMatchColumn = $state<string | null>(null);
 
   onMount(() => {
     initDuckDB();
@@ -51,9 +65,35 @@
     const c = parentFiles;
     if (f.length > 0 && c.length > 0 && duckdbState.ready) {
       untrack(() => {
-        if (!running) handleRun();
+        if (running) return;
+        childColumns = null;
+        parentColumns = null;
+        childMatchColumn = null;
+        parentMatchColumn = null;
+        handleRun();
       });
     }
+  });
+
+  // Repicking the code-join column after the first run reruns the whole
+  // pipeline: a reassigned child can move to a different group entirely, so
+  // there is no cheaper partial-recompute path here (unlike Changelog's).
+  $effect(() => {
+    const _c = childMatchColumn;
+    const _p = parentMatchColumn;
+    untrack(() => {
+      if (!resultGeoJSON || running) return;
+      if ((childMatchColumn == null) !== (parentMatchColumn == null)) return;
+      handleRun();
+    });
+  });
+
+  $effect(() => {
+    const _p = passthrough;
+    untrack(() => {
+      if (!resultGeoJSON || running) return;
+      handleRun();
+    });
   });
 
   function fileStem(file: File): string {
@@ -92,6 +132,9 @@
     resultBounds = null;
     unassignedCount = null;
     droppedCount = null;
+    passthroughCount = null;
+    codeMismatchCount = null;
+    codeFallbackCount = null;
     groupRows = [];
     activeGroupIndex = -1;
     activeStage = 0;
@@ -104,12 +147,19 @@
         childFiles,
         parentFiles,
         onProgress,
+        { parentMatchColumn: parentMatchColumn ?? undefined, childMatchColumn: childMatchColumn ?? undefined },
+        passthrough,
       );
       resultGeoJSON = result.geojson;
       parentOutlineGeoJSON = result.parentOutlineGeojson;
       resultBounds = result.bounds;
       unassignedCount = result.unassignedCount;
       droppedCount = result.droppedCount;
+      passthroughCount = result.passthroughCount;
+      codeMismatchCount = result.codeMismatchCount;
+      codeFallbackCount = result.codeFallbackCount;
+      childColumns = result.childColumns;
+      parentColumns = result.parentColumns;
       phaseLabel = "Done";
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -169,9 +219,45 @@
       <DropZone
         bind:files={parentFiles}
         disabled={running}
-        helpText="The boundary to match and clip against — one level up or many."
+        helpText="The boundary to match and clip against, one level up or many."
       />
     </section>
+
+    {#if childColumns && parentColumns}
+      <section class="step">
+        <h2 class="step-heading">Code join (optional)</h2>
+        <p class="hint">
+          Wins over spatial overlap wherever the codes agree on a parent the child overlaps at all,
+          falls back to spatial when no code match exists.
+        </p>
+        <div class="match-cols">
+          <label class="match-field">
+            <span>Fine code</span>
+            <select bind:value={childMatchColumn} disabled={running}>
+              <option value={null}>(none)</option>
+              {#each childColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+            </select>
+          </label>
+          <label class="match-field">
+            <span>Coarse code</span>
+            <select bind:value={parentMatchColumn} disabled={running}>
+              <option value={null}>(none)</option>
+              {#each parentColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+            </select>
+          </label>
+        </div>
+      </section>
+    {/if}
+
+    {#if childColumns && parentColumns}
+      <section class="step">
+        <h2 class="step-heading">Unmatched fine units</h2>
+        <label class="passthrough-field">
+          <input type="checkbox" bind:checked={passthrough} disabled={running} />
+          <span>Include zero-overlap units unclipped, instead of dropping them</span>
+        </label>
+      </section>
+    {/if}
 
     {#if running || groupRows.length > 0}
       <section class="step">
@@ -219,18 +305,32 @@
       <div class="error-panel">{error}</div>
     {/if}
 
-    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0)}
+    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0)}
       <div class="warn-panel">
         {#if unassignedCount !== null && unassignedCount > 0}
           <p>
             {unassignedCount} fine unit{unassignedCount === 1 ? "" : "s"} had no overlap with any
-            coarse polygon and {unassignedCount === 1 ? "was" : "were"} excluded from the result.
+            coarse polygon{passthrough
+              ? `; ${passthroughCount ?? 0} ${(passthroughCount ?? 0) === 1 ? "was" : "were"} extended and included unclipped`
+              : ` and ${unassignedCount === 1 ? "was" : "were"} excluded from the result`}.
           </p>
         {/if}
         {#if droppedCount !== null && droppedCount > 0}
           <p>
             {droppedCount} fine unit{droppedCount === 1 ? "" : "s"} belonged to a group whose
             extension failed and {droppedCount === 1 ? "was" : "were"} excluded from the result.
+          </p>
+        {/if}
+        {#if codeMismatchCount !== null && codeMismatchCount > 0}
+          <p>
+            {codeMismatchCount} unit{codeMismatchCount === 1 ? "" : "s"} matched by code to a
+            different parent than the spatial overlap pick; the code match won.
+          </p>
+        {/if}
+        {#if codeFallbackCount !== null && codeFallbackCount > 0}
+          <p>
+            {codeFallbackCount} unit{codeFallbackCount === 1 ? "" : "s"} had no overlapping code
+            match and fell back to the spatial pick.
           </p>
         {/if}
         <DownloadMenu
@@ -329,6 +429,37 @@
     font-weight: 600;
     color: #111;
     margin: 0;
+  }
+
+  .match-cols {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .match-field {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+  }
+
+  .match-field select {
+    width: 100%;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.8rem;
+    border: 1px solid #d1d5db;
+    border-radius: 3px;
+    background: #fff;
+  }
+
+  .passthrough-field {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #374151;
   }
 
   .phase-label {

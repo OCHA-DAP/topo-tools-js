@@ -24,6 +24,7 @@ const OWNED_TABLES = [
   "st_gap_regions",
   "st_issues",
   "ms_unassigned",
+  "ms_code_issues",
   "ms_issues",
 ];
 

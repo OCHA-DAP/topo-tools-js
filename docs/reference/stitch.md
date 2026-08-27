@@ -14,8 +14,12 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 ## Stitching
 
 - `stitch` MUST run one whole-table `ST_CoverageClean` pass over the
-  input, at `SNAP_TOLERANCE` gap width and snapping distance — not a
-  shape-based heuristic, and not user-configurable.
+  input, starting at `SNAP_TOLERANCE` gap width and snapping distance
+  (not a shape-based heuristic, and not user-configurable). If that pass
+  still leaves invalid edges, `stitch` MUST retry with the snap width
+  widened by `SNAP_TOLERANCE`, up to 9 further attempts, stopping at the
+  first attempt with no invalid edges or after the attempt cap, whichever
+  comes first.
 - The pass MUST preserve the input's fid set: a feature `ST_CoverageClean`
   collapses to empty MUST fall back to its pre-clean geometry rather than
   being dropped.

@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
 import { SNAP_TOLERANCE } from "./constants";
 
 // Drop intersection crumbs below SNAP_TOLERANCE², in deg² (matches topo-tools-py ADR-0030).
@@ -36,9 +37,20 @@ export async function computeOverlapPairs(
   pairsTable: string,
 ): Promise<void> {
   const overlapTable = `${pairsTable}_overlap`;
+  const aBbox = `${pairsTable}_a_bbox`;
+  const bBbox = `${pairsTable}_b_bbox`;
   const aAreas = `${pairsTable}_a_areas`;
   const bAreas = `${pairsTable}_b_areas`;
   const pairAreas = `${pairsTable}_pair_areas`;
+
+  // Bbox-prefiltered (not a plain ST_Intersects self-join) so a heavy parent
+  // table doesn't choke DuckDB's SPATIAL_JOIN plan; see $lib/db/bbox.
+  await conn.query(
+    `CREATE OR REPLACE TABLE ${aBbox} AS SELECT fid, geom, ${bboxColumnsSql()} FROM ${aTable}`,
+  );
+  await conn.query(
+    `CREATE OR REPLACE TABLE ${bBbox} AS SELECT fid, geom, ${bboxColumnsSql()} FROM ${bTable}`,
+  );
 
   await conn.query(`DROP TABLE IF EXISTS ${overlapTable}`);
   await withLooseMemoryLimit(conn, async () => {
@@ -46,12 +58,16 @@ export async function computeOverlapPairs(
       CREATE TABLE ${overlapTable} AS
       SELECT a.fid AS a_fid, b.fid AS b_fid,
              ST_MakeValid(ST_CollectionExtract(ST_Intersection(a.geom, b.geom), 3)) AS geom
-      FROM ${aTable} a JOIN ${bTable} b ON ST_Intersects(a.geom, b.geom)
+      FROM ${aBbox} a JOIN ${bBbox} b
+        ON ${bboxOverlapSql("a", "b")}
+       AND ST_Intersects(a.geom, b.geom)
     `);
     await conn.query(
       `DELETE FROM ${overlapTable} WHERE geom IS NULL OR ST_IsEmpty(geom) OR ST_Area(geom) < ${SLIVER}`,
     );
   });
+  await conn.query(`DROP TABLE IF EXISTS ${aBbox}`);
+  await conn.query(`DROP TABLE IF EXISTS ${bBbox}`);
 
   for (const t of [aAreas, bAreas, pairAreas, pairsTable]) {
     await conn.query(`DROP TABLE IF EXISTS ${t}`);

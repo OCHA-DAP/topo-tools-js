@@ -57,6 +57,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   cell generation don't cause a GEOS noding failure on the subsequent
   difference. A noding failure that survives the snap MUST propagate as a
   normal pipeline error, not be retried.
+- `extend` MUST run the shared no-erosion guard (`docs/reference/shared.md`)
+  against the merged result, before the final clean pass below, comparing
+  it to the loaded-and-normalized input, and MUST treat a violation as a
+  hard failure of the run.
 - `extend` MUST run one whole-layer `gatedCoverageClean` pass over the
   merged result, using a fixed gap-closing width, unless the caller
   explicitly requests skipping it (see `match`'s per-group use).

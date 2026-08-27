@@ -3,6 +3,8 @@ import { assignOne } from "$lib/db/assignOne";
 import { clipEngine } from "$lib/db/clipEngine";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
+import { detectColumns, type ColumnGuess } from "$lib/db/columns";
+import type { MatchColumnOptions } from "$lib/db/codeJoin";
 import { runStitch } from "../../stitch/pipeline/index";
 import { buildMosaicIssues, type MosaicIssueRow } from "./issues";
 import { loadLayers } from "./load";
@@ -30,6 +32,8 @@ export interface MosaicResult {
   issues: MosaicIssueRow[];
   issuesGeoJSON: string;
   hadResidualOverlaps: boolean;
+  childColumns: ColumnGuess;
+  parentColumns: ColumnGuess;
 }
 
 async function computeBounds(
@@ -64,19 +68,36 @@ export async function runMosaic(
   childFiles: File[],
   parentFiles: File[],
   onProgress: ProgressFn,
+  matchColumns: MatchColumnOptions = {},
+  carryParentColumns: string[] = [],
 ): Promise<MosaicResult> {
   onProgress(1, "Loading input");
   await loadLayers(db, conn, childFiles, parentFiles);
   const childGeoJSON = await tableToGeoJSON(conn, "child_layer_01", null);
   const parentOutlineGeoJSON = await tableToGeoJSON(conn, "parent_layer_01", null);
   const bounds = await computeBounds(conn, "child_layer_01");
+  const childColumns = await detectColumns(conn, "child_layer_attr");
+  const parentColumns = await detectColumns(conn, "parent_layer_attr");
 
   onProgress(2, "Assigning to parent unit");
   let assign;
   try {
-    assign = await assignOne(conn);
+    assign = await assignOne(conn, matchColumns);
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
+  }
+
+  // Ported from topo-tools-py's carry_columns: joins the single winning
+  // parent's own attribute values onto every output row.
+  if (carryParentColumns.length > 0) {
+    const selectCols = carryParentColumns
+      .map((c) => `p.${JSON.stringify(c)} AS ${JSON.stringify(`parent_${c}`)}`)
+      .join(", ");
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE child_layer_attr AS
+      SELECT c.*, ${selectCols}
+      FROM child_layer_attr c, (SELECT * FROM parent_layer_attr WHERE fid = ${assign.parentFid}) p
+    `);
   }
 
   onProgress(3, "Clipping to parent boundary");
@@ -111,7 +132,10 @@ export async function runMosaic(
   }
 
   onProgress(6, "Assembling issues report");
-  const { rows, geojson } = await buildMosaicIssues(conn);
+  const { rows, geojson } = await buildMosaicIssues(conn, {
+    assignmentMethod: assign.assignmentMethod,
+    spatialAgrees: assign.spatialAgrees,
+  });
 
   return {
     childGeoJSON,
@@ -122,5 +146,7 @@ export async function runMosaic(
     issues: rows,
     issuesGeoJSON: geojson,
     hadResidualOverlaps: stitch.hadResidualOverlaps,
+    childColumns,
+    parentColumns,
   };
 }

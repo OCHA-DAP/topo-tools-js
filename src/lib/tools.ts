@@ -62,4 +62,39 @@ export const tools: Tool[] = [
       "Fit an already-extended children layer into a new parent boundary — assign, clip, and close seams in one pass, no re-extension.",
     iconHref: "/icons/tools/mosaic.svg",
   },
+  {
+    slug: "dissolve",
+    name: "Dissolve",
+    tagline:
+      "Aggregate a polygon layer into a coarser one by grouping on attribute columns, unioning each group's geometry into a single feature.",
+    iconHref: "/icons/tools/dissolve.svg",
+  },
+  {
+    slug: "schema-crosswalk",
+    name: "Schema Crosswalk",
+    tagline:
+      "Infer a polygon layer's admin hierarchy crosswalk and immediately apply it, producing both the crosswalk CSV and the renamed layer in one call.",
+    iconHref: "/icons/tools/schema-crosswalk.svg",
+  },
+  {
+    slug: "schema-map",
+    name: "Schema Map",
+    tagline:
+      "Infer a polygon layer's admin hierarchy structurally, from cardinality and containment alone, and propose a crosswalk to a target schema for review.",
+    iconHref: "/icons/tools/schema-map.svg",
+  },
+  {
+    slug: "schema-refactor",
+    name: "Schema Refactor",
+    tagline:
+      "Apply a crosswalk CSV, from Schema Map or hand-edited, to rename or drop a polygon layer's columns. Geometry passes through unchanged.",
+    iconHref: "/icons/tools/schema-refactor.svg",
+  },
+  {
+    slug: "schema-fill",
+    name: "Schema Fill",
+    tagline:
+      "Cascade each admin-hierarchy column family down from its deepest non-empty level, and stamp every row with its real depth.",
+    iconHref: "/icons/tools/schema-fill.svg",
+  },
 ];

@@ -2,6 +2,10 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { PipelineError, runPipeline } from "$lib/tools/edge-extender/pipeline/index";
 import { clipToBoundary } from "$lib/db/clipToBoundary";
 
+// Sentinel parent_fid for the orphan passthrough pseudo-group (ported from
+// topo-tools-py's PASSTHROUGH_PARENT_FID).
+export const PASSTHROUGH_PARENT_FID = -1;
+
 export interface GroupInfo {
   parentFid: number;
   childCount: number;
@@ -37,7 +41,7 @@ export async function listGroups(
     SELECT g.parent_fid AS parent_fid, g.child_count AS child_count, ${nameExpr} AS name
     FROM ge_groups g
     LEFT JOIN parent_layer_attr a ON a.fid = g.parent_fid
-    ORDER BY g.parent_fid
+    ORDER BY (g.parent_fid = ${PASSTHROUGH_PARENT_FID}), g.parent_fid
   `);
   return (
     rows.toArray() as Array<{
@@ -50,7 +54,12 @@ export async function listGroups(
     return {
       parentFid,
       childCount: Number(r.child_count),
-      label: r.name ? `${r.name} (fid ${parentFid})` : `Group ${parentFid}`,
+      label:
+        parentFid === PASSTHROUGH_PARENT_FID
+          ? "Unmatched children (passthrough)"
+          : r.name
+            ? `${r.name} (fid ${parentFid})`
+            : `Group ${parentFid}`,
     };
   });
 }
@@ -99,19 +108,30 @@ export async function runGroups(
         { skipOutputClean: true },
       );
 
-      console.log("[EE-DEBUG] group:2 clip vs parent geometry (ge_group_clip)");
-      await clipToBoundary(
-        conn,
-        "layer_05",
-        `SELECT geom FROM parent_layer_01 WHERE fid = ${group.parentFid}`,
-        "ge_group_clip",
-      );
-      console.log("[EE-DEBUG] group:3 insert into ge_results");
-      await conn.query(`--sql
-        INSERT INTO ge_results
-        SELECT fid, geom FROM ge_group_clip
-        WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-      `);
+      if (group.parentFid === PASSTHROUGH_PARENT_FID) {
+        // Orphan passthrough: no real parent boundary to clip against, so
+        // the extended geometry goes straight into ge_results unclipped.
+        console.log("[EE-DEBUG] group:2 passthrough, insert into ge_results unclipped");
+        await conn.query(`--sql
+          INSERT INTO ge_results
+          SELECT fid, geom FROM layer_05
+          WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+        `);
+      } else {
+        console.log("[EE-DEBUG] group:2 clip vs parent geometry (ge_group_clip)");
+        await clipToBoundary(
+          conn,
+          "layer_05",
+          `SELECT geom FROM parent_layer_01 WHERE fid = ${group.parentFid}`,
+          "ge_group_clip",
+        );
+        console.log("[EE-DEBUG] group:3 insert into ge_results");
+        await conn.query(`--sql
+          INSERT INTO ge_results
+          SELECT fid, geom FROM ge_group_clip
+          WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+        `);
+      }
 
       console.log(`[EE-DEBUG] ##### GROUP DONE (success): ${group.label} #####`);
       result = { ...group, status: "done" };

@@ -69,6 +69,18 @@ name instead of repeating them.
 - A `gatedCoverageClean` failure MUST be caught and logged, leaving the
   target table untouched, rather than propagated to the caller.
 
+## No-erosion guard (`$lib/db/coverage.ts::checkNoErosion`)
+
+Shared by `extend` (whole-file) and `match` (per-group).
+
+- For every fid present in the pre-extension table, `checkNoErosion` MUST
+  raise unless the post-extension geometry for that fid, buffered outward
+  by `SNAP_TOLERANCE`, `ST_Covers` the pre-extension geometry. A fid
+  missing from the post-extension table entirely MUST also raise.
+- This check MUST be treated as a hard failure, not a warn-only report:
+  unlike this app's other post-clean topology checks (see `docs/adr/0027`),
+  an erosion here means real data loss, not a cosmetic topology defect.
+
 ## Overlap measurement (`$lib/db/overlap.ts`)
 
 Shared by `match` (parent/child assignment) and `change` (version-to-version
@@ -81,3 +93,26 @@ comparison).
   be discarded before it contributes to any pair's shared area.
 - Area and ratio calculations (`coverage_a`, `coverage_b`, `iou`) MUST use
   an equal-area projection, not raw EPSG:4326 degree-area.
+
+## Code-based assignment override (`$lib/db/codeJoin.ts`)
+
+Shared by `match`, `mosaic`, and `clip` for parent assignment.
+
+- Callers MAY supply a `matchColumn` name (same column on both layers) or a
+  `parentMatchColumn`/`childMatchColumn` pair (different names), mutually
+  exclusive with each other. Supplying only one of the pair MUST raise.
+- When supplied, an exact code join, restricted to `(child, parent)` pairs
+  that already spatially overlap, MUST win over the default
+  spatial-majority-vote assignment wherever a code match exists, even when
+  it disagrees with the spatial result. A child (or, for assign-one, a
+  whole file) whose code has no overlapping-parent match MUST fall back to
+  the spatial result (see `docs/adr/0029`).
+- The outcome MUST be recorded as `assignmentMethod: 'code' | 'spatial_fallback'`
+  and `spatialAgrees: boolean | null` (`true`/`false` when the method is
+  `'code'`, `null` when it's `'spatial_fallback'`).
+- A disagreement or fallback MUST surface as an issues row: `kind='code-mismatch'`
+  when the code match won but disagreed with the spatial result, or
+  `kind='code-fallback'` when no code match existed. `unitA` MUST hold the
+  child's own fid, `parentFid` the winning parent's fid.
+- Omitting both parameters MUST leave assignment behavior and output schema
+  unchanged for existing callers.
