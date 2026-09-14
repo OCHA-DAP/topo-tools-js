@@ -154,9 +154,8 @@ The retry loop in `pipeline/index.ts` (up to 10 attempts, doubling distance each
 
 ## Known-good baselines at real scale
 
-Confirmed clean end-to-end runs against real portolan-catalog data (see
-[`docs/how-to/at-scale-testing.md`](../how-to/at-scale-testing.md) for how
-to pick a file):
+Confirmed clean end-to-end runs against real portolan-catalog data (see the
+`at-scale-testing` skill for how to pick a file):
 
 | Tool | Dataset | Scale | Result |
 | ---- | ------- | ----- | ------ |

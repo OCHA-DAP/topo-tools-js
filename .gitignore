@@ -23,7 +23,8 @@ npm-debug.log*
 *.swp
 *.swo
 
-.claude/
+.claude/*
+!.claude/skills/
 .playwright-cli/
 tmp/
 
