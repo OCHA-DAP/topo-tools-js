@@ -7,26 +7,31 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 - `schema-fill` MUST load the input via the shared loader (see
   `docs/reference/shared.md`).
-- `schema-fill` MUST accept the same target-schema shape `schema-map`
+- `schema-fill` MUST accept an optional target-schema shape `schema-map`
   accepts (a `nameField`/`codeField` pair, each containing a `{n}`
-  placeholder), defaulting to the bundled generic schema
-  (`adm{n}_name`/`adm{n}_code`) when not overridden.
-- `schema-fill` MUST detect every admin level `1..N` present via the
-  schema's `codeField` prefix (e.g. `adm`), `N` being the deepest level
-  column found, and MUST raise if any level in that range is missing its
-  own code column, or if none is found at all.
-- `schema-fill` MUST additionally include level 0 in the detected/filled
-  range whenever its own code column (e.g. `adm0_code`) is present, without
-  requiring it.
+  placeholder); both MUST be given together or both omitted.
+- Given a target schema, `schema-fill` MUST detect every admin level `1..N`
+  present via the schema's `codeField` prefix (e.g. `adm`), `N` being the
+  deepest level column found, and MUST raise if any level in that range is
+  missing its own code column, or if none is found at all. `schema-fill`
+  MUST additionally include level 0 in the detected/filled range whenever
+  its own code column (e.g. `adm0_code`) is present, without requiring it.
+- Given no target schema, `schema-fill` MUST detect the same level set
+  structurally instead, via `schema-map`'s level-detection engine, and MUST
+  raise if any detected level lacks its own code column, or if none is
+  found at all.
 
 ## Filling
 
 - For each admin-hierarchy column family sharing a level prefix and suffix
   (matched independently against the schema's own `nameField` prefix and
-  `codeField` prefix, e.g. every `adm{n}_code`, every `adm{n}_name`),
-  `schema-fill` MUST fill a `NULL` value at level `k` from the nearest
-  non-`NULL` shallower level (`COALESCE` over levels `k, k-1, ..., 1`),
-  leaving a value that is already non-`NULL` untouched.
+  `codeField` prefix when a schema is given, e.g. every `adm{n}_code`,
+  every `adm{n}_name`, or grouped by shared naming kind across
+  structurally-detected levels otherwise), `schema-fill` MUST leave a
+  value at level `k` untouched when a row's own depth reaches `k`, even
+  when that value is `NULL`. `schema-fill` MUST fill a `NULL` value at
+  level `k` only when a row's own depth stops short of `k`, from the
+  nearest non-`NULL` shallower level.
 - `schema-fill` MUST append one new column, named by the configured depth
   column (default `adm_lvl`), stamping each row with the deepest level
   whose _original_ (pre-fill) code column was non-`NULL`.

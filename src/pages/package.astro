@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/package/App.svelte";
+---
+
+<Layout
+  title="Package: polygons, points, and lines in one pass, in your browser"
+  description="Browser-only tool that runs Package Polygons, Package Points, and Package Lines against the same layer in a single pass."
+>
+  <App client:load />
+</Layout>

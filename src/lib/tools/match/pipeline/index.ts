@@ -4,6 +4,7 @@ import { hasNoiseFloorGap } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
 import type { MatchColumnOptions } from "$lib/db/codeJoin";
+import { applyOptionalFill, type ApplyFillOptions } from "$lib/db/fillCompose";
 import { dropInternalTables } from "$lib/tools/edge-extender/pipeline/index";
 import { loadLayers } from "./load";
 import { computeAssignment } from "./assign";
@@ -161,6 +162,7 @@ export async function runEdgeMatch(
   onProgress: EdgeMatchProgressFn,
   matchColumns: MatchColumnOptions = {},
   passthrough = false,
+  fillOptions?: ApplyFillOptions,
 ): Promise<EdgeMatchResult> {
   onProgress({ phase: "loading" });
   await loadLayers(db, conn, childFiles, parentFiles);
@@ -201,6 +203,7 @@ export async function runEdgeMatch(
     await dropInternalTables(conn);
 
     await buildResultsAttrTable(conn);
+    if (fillOptions) await applyOptionalFill(conn, "ge_results_attr", fillOptions);
 
     // child_layer_attr/ge_unassigned/ge_dropped/ge_issues are deliberately
     // NOT dropped here: DownloadMenu's "unassigned"/"issues" exports read

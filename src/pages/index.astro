@@ -14,7 +14,10 @@ const mosaic = bySlug("mosaic");
 const clip = bySlug("clip");
 const stitch = bySlug("stitch");
 const change = bySlug("change");
-const dissolve = bySlug("dissolve");
+const pkg = bySlug("package");
+const packagePolygons = bySlug("package-polygons");
+const packagePoints = bySlug("package-points");
+const packageLines = bySlug("package-lines");
 const schemaCrosswalk = bySlug("schema-crosswalk");
 const schemaMap = bySlug("schema-map");
 const schemaRefactor = bySlug("schema-refactor");
@@ -59,7 +62,14 @@ const schemaRefactor = bySlug("schema-refactor");
 
         <ToolCard tool={change} />
 
-        <ToolCard tool={dissolve} />
+        <GroupBox>
+          <ToolCard tool={pkg} header />
+          <div class="below">
+            <ToolCard tool={packagePolygons} variant="secondary" />
+            <ToolCard tool={packagePoints} variant="secondary" />
+            <ToolCard tool={packageLines} variant="secondary" />
+          </div>
+        </GroupBox>
 
         <GroupBox>
           <ToolCard tool={schemaCrosswalk} header />

@@ -7,6 +7,7 @@
   import { runEdgeMatch, type EdgeMatchPhase } from "./pipeline/index";
   import type { GroupResult } from "./pipeline/groups";
   import type { ColumnGuess } from "$lib/db/columns";
+  import type { ApplyFillOptions } from "$lib/db/fillCompose";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -49,9 +50,20 @@
   let childMatchColumn = $state<string | null>(null);
   let parentMatchColumn = $state<string | null>(null);
 
+  let fillSchema = $state(false);
+  let fillNameField = $state("");
+  let fillCodeField = $state("");
+  let fillDepthColumn = $state("adm_lvl");
+
   onMount(() => {
     initDuckDB();
   });
+
+  const fillOneBlank = $derived((fillNameField.trim() === "") !== (fillCodeField.trim() === ""));
+  const fillBothBlank = $derived(fillNameField.trim() === "" && fillCodeField.trim() === "");
+  const fillTemplateValid = $derived(
+    !fillOneBlank && (fillBothBlank || (fillNameField.includes("{n}") && fillCodeField.includes("{n}"))),
+  );
 
   $effect(() => {
     if (duckdbState.ready) {
@@ -92,6 +104,19 @@
     const _p = passthrough;
     untrack(() => {
       if (!resultGeoJSON || running) return;
+      handleRun();
+    });
+  });
+
+  // Re-run picks up a schema-fill option change on already-produced output;
+  // holds off while the template pair is mid-edit (one side blank).
+  $effect(() => {
+    const _s = fillSchema;
+    const _n = fillNameField;
+    const _c = fillCodeField;
+    const _d = fillDepthColumn;
+    untrack(() => {
+      if (!resultGeoJSON || running || !fillTemplateValid) return;
       handleRun();
     });
   });
@@ -141,6 +166,15 @@
     phaseLabel = "";
 
     try {
+      const fillOptions: ApplyFillOptions | undefined = fillSchema
+        ? {
+            requested: true,
+            nameField: fillBothBlank ? null : fillNameField,
+            codeField: fillBothBlank ? null : fillCodeField,
+            depthColumn: fillDepthColumn,
+          }
+        : undefined;
+
       const result = await runEdgeMatch(
         duckdbState.db!,
         duckdbState.conn!,
@@ -149,6 +183,7 @@
         onProgress,
         { parentMatchColumn: parentMatchColumn ?? undefined, childMatchColumn: childMatchColumn ?? undefined },
         passthrough,
+        fillOptions,
       );
       resultGeoJSON = result.geojson;
       parentOutlineGeoJSON = result.parentOutlineGeojson;
@@ -258,6 +293,44 @@
         </label>
       </section>
     {/if}
+
+    <section class="step">
+      <h2 class="step-heading">Schema fill (optional)</h2>
+      <label class="checkbox-field">
+        <input type="checkbox" bind:checked={fillSchema} disabled={running} />
+        <span>Cascade admin-hierarchy columns down before export</span>
+      </label>
+      {#if fillSchema}
+        <p class="hint">Leave both templates blank to auto-detect the hierarchy structurally.</p>
+        <label class="field">
+          <span>Name template</span>
+          <input
+            type="text"
+            bind:value={fillNameField}
+            placeholder="auto-detect"
+            disabled={running}
+          />
+        </label>
+        <label class="field">
+          <span>Code template</span>
+          <input
+            type="text"
+            bind:value={fillCodeField}
+            placeholder="auto-detect"
+            disabled={running}
+          />
+        </label>
+        <label class="field">
+          <span>Depth column</span>
+          <input type="text" bind:value={fillDepthColumn} disabled={running} />
+        </label>
+        {#if fillOneBlank}
+          <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
+        {:else if !fillBothBlank && !fillTemplateValid}
+          <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
+        {/if}
+      {/if}
+    </section>
 
     {#if running || groupRows.length > 0}
       <section class="step">
@@ -454,12 +527,35 @@
     background: #fff;
   }
 
-  .passthrough-field {
+  .passthrough-field,
+  .checkbox-field {
     display: flex;
     align-items: center;
     gap: 0.4rem;
     font-size: 0.8rem;
     color: #374151;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: #374151;
+  }
+
+  .field input {
+    padding: 0.4rem 0.55rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .field-error {
+    font-size: 0.75rem;
+    color: #b91c1c;
+    margin: 0;
   }
 
   .phase-label {

@@ -29,7 +29,9 @@ from the input.
    scale, the same fix already applied to step 2's neighbor union.
 4. **Voronoi** (`pipeline/voronoi.ts`), builds a Voronoi diagram over every
    sampled point, then assigns each cell back to its source polygon's fid
-   by point-in-polygon join.
+   by point-in-polygon join. A peripheral cell whose bbox exceeds valid
+   WGS84 range is clipped to world bounds; see
+   [ADR 0030](../adr/0030-voronoi-conditional-per-cell-world-bounds-clip.md).
 5. **Merge** (`pipeline/merge.ts`), for each fid, takes its Voronoi cell's
    remainder (the cell minus whatever's already covered by a nearby
    original polygon) and unions it with the original polygon via a direct

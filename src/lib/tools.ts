@@ -63,11 +63,32 @@ export const tools: Tool[] = [
     iconHref: "/icons/tools/mosaic.svg",
   },
   {
-    slug: "dissolve",
-    name: "Dissolve",
+    slug: "package",
+    name: "Package",
     tagline:
-      "Aggregate a polygon layer into a coarser one by grouping on attribute columns, unioning each group's geometry into a single feature.",
-    iconHref: "/icons/tools/dissolve.svg",
+      "Run Package Polygons, Package Points, and Package Lines against the same layer in one pass.",
+    iconHref: "/icons/tools/package.svg",
+  },
+  {
+    slug: "package-polygons",
+    name: "Package Polygons",
+    tagline:
+      "Dissolve a polygon layer up to every coarser admin level it contains, one output file per level.",
+    iconHref: "/icons/tools/package-polygons.svg",
+  },
+  {
+    slug: "package-points",
+    name: "Package Points",
+    tagline:
+      "Produce one representative point per admin unit, at every level a polygon layer's hierarchy contains.",
+    iconHref: "/icons/tools/package-points.svg",
+  },
+  {
+    slug: "package-lines",
+    name: "Package Lines",
+    tagline:
+      "Extract every shared and exterior boundary edge in a polygon layer, classified by the coarsest level at which two neighbours diverge.",
+    iconHref: "/icons/tools/package-lines.svg",
   },
   {
     slug: "schema-crosswalk",

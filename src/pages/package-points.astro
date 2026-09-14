@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/package-points/App.svelte";
+---
+
+<Layout
+  title="Package Points: one representative point per admin unit in your browser"
+  description="Browser-only tool that produces one representative point per admin unit, at every level a polygon layer's hierarchy contains."
+>
+  <App client:load />
+</Layout>

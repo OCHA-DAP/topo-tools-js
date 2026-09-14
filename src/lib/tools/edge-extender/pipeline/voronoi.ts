@@ -1,16 +1,27 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
 export async function stageVoronoi(conn: AsyncDuckDBConnection): Promise<void> {
-  // Voronoi diagram from all generator points
+  // Clip only cells whose own bbox exceeds WGS84 world bounds (GEOS's own
+  // exterior-cell envelope can overshoot at country scale). See ADR 0030.
   console.log("[EE-DEBUG] voronoi:1 ST_VoronoiDiagram (layer_04_tmp1)");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE layer_04_tmp1 AS
-    SELECT UNNEST(ST_Dump(
-      ST_CollectionExtract(
-        ST_VoronoiDiagram(ST_Collect(list(geom))), 3
-      )
-    )).geom AS geom
-    FROM layer_03b
+    SELECT CASE
+        WHEN ST_XMin(geom) < -180 OR ST_XMax(geom) > 180
+          OR ST_YMin(geom) < -90  OR ST_YMax(geom) > 90
+        THEN ST_CollectionExtract(
+            ST_Intersection(geom, ST_GeomFromText('POLYGON((-180 -90, 180 -90, 180 90, -180 90, -180 -90))')), 3
+        )
+        ELSE geom
+    END AS geom
+    FROM (
+      SELECT UNNEST(ST_Dump(
+        ST_CollectionExtract(
+          ST_VoronoiDiagram(ST_Collect(list(geom))), 3
+        )
+      )).geom AS geom
+      FROM layer_03b
+    )
   `);
 
   // Assign source fid to each Voronoi cell via point-in-polygon. ST_Intersects

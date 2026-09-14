@@ -2,12 +2,7 @@
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
-  import {
-    runSchemaFill,
-    DEFAULT_TARGET_SCHEMA,
-    DEFAULT_DEPTH_COLUMN,
-    type TargetSchema,
-  } from "./pipeline/index";
+  import { runSchemaFill, DEFAULT_DEPTH_COLUMN, type TargetSchema } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
@@ -22,8 +17,8 @@
   let originalGeoJSON = $state<string | null>(null);
   let loadedBounds = $state<[number, number, number, number] | null>(null);
 
-  let nameField = $state(DEFAULT_TARGET_SCHEMA.nameField);
-  let codeField = $state(DEFAULT_TARGET_SCHEMA.codeField);
+  let nameField = $state("");
+  let codeField = $state("");
   let depthColumn = $state(DEFAULT_DEPTH_COLUMN);
 
   let running = $state(false);
@@ -97,7 +92,8 @@
     resultBounds = null;
     levels = [];
 
-    const schema: TargetSchema = { nameField, codeField };
+    const schema: TargetSchema | null =
+      nameField.trim() === "" && codeField.trim() === "" ? null : { nameField, codeField };
     try {
       const result = await runSchemaFill(duckdbState.conn!, schema, depthColumn);
       resultGeoJSON = result.resultGeoJSON;
@@ -115,7 +111,11 @@
     return file.name.replace(/\.[^.]+$/, "");
   }
 
-  const templateValid = $derived(nameField.includes("{n}") && codeField.includes("{n}"));
+  const bothBlank = $derived(nameField.trim() === "" && codeField.trim() === "");
+  const oneBlank = $derived((nameField.trim() === "") !== (codeField.trim() === ""));
+  const templateValid = $derived(
+    !oneBlank && (bothBlank || (nameField.includes("{n}") && codeField.includes("{n}"))),
+  );
 </script>
 
 <div class="layout">
@@ -151,20 +151,25 @@
     {#if loaded}
       <section class="step">
         <h2 class="step-heading">Target schema</h2>
-        <p class="field-hint">Naming templates for a resolved level's number. Defaults to a generic schema.</p>
+        <p class="field-hint">
+          Naming templates for a resolved level's number. Leave both blank to auto-detect the
+          hierarchy structurally instead.
+        </p>
         <label class="field">
           <span>Name template</span>
-          <input type="text" bind:value={nameField} disabled={running} />
+          <input type="text" bind:value={nameField} placeholder="auto-detect" disabled={running} />
         </label>
         <label class="field">
           <span>Code template</span>
-          <input type="text" bind:value={codeField} disabled={running} />
+          <input type="text" bind:value={codeField} placeholder="auto-detect" disabled={running} />
         </label>
         <label class="field">
           <span>Depth column</span>
           <input type="text" bind:value={depthColumn} disabled={running} />
         </label>
-        {#if !templateValid}
+        {#if oneBlank}
+          <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
+        {:else if !bothBlank && !templateValid}
           <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
         {/if}
         <button class="run-btn" onclick={handleRun} disabled={running || !templateValid}>

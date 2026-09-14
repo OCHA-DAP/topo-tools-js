@@ -46,6 +46,15 @@ float noise — and `stitch` deliberately leaves those unfilled rather than
 guessing at a fill width; the issues report exists so a human can decide
 whether a leftover gap needs attention.
 
+## Optional schema fill
+
+`stitch` accepts an opt-in `fillSchema` flag (`$lib/db/fillCompose.ts`,
+shared with `mosaic` and `match`) that cascades admin-hierarchy column
+families down the final attribute table in place, right before export,
+using `schema-fill`'s own depth-pin algorithm. See
+`docs/explanation/schema-fill.md` for the algorithm; off by default, and a
+no-op on output when disabled.
+
 ## Relationship to Topology Cleaner
 
 Both tools wrap `ST_CoverageClean`, but for different jobs: Topology

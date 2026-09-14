@@ -1,7 +1,9 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { isTemporalDuckdbType } from "$lib/db/columnTypes";
 import {
   EXCLUDED_COLUMNS,
   isNoiseColumn,
+  MIN_ROOT_EVIDENCE_COLUMNS,
   NOTE_AMBIGUOUS,
   NOTE_SUPPLEMENTAL,
   WINNER_MAX_COLLAPSE_RATIO,
@@ -12,7 +14,10 @@ import {
   containmentHolds,
   distinctCounts,
   embeds,
+  fullyPopulated,
+  hasGeometryColumn,
   looksCodeShaped,
+  spatiallyCoherent,
 } from "./queries";
 import type { TargetSchema } from "./targetSchema";
 
@@ -24,6 +29,8 @@ export interface CrosswalkRow {
   level: number | null;
   uniqueCount: number;
 }
+
+export type ResolvedColumn = CrosswalkRow;
 
 interface Group {
   count: number;
@@ -41,13 +48,26 @@ export async function candidateColumns(
     .filter((c) => !EXCLUDED_COLUMNS.has(c) && !isNoiseColumn(c));
 }
 
-// Union pairwise-bijective same-count columns into one cluster; a
-// non-bijective third column stays its own singleton, not discarded.
+async function temporalColumns(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  columns: string[],
+): Promise<Set<string>> {
+  const desc = await conn.query(`DESCRIBE ${table}`);
+  const rows = desc.toArray() as Array<{ column_name: string; column_type: string }>;
+  const types = new Map(rows.map((r) => [r.column_name, r.column_type]));
+  return new Set(columns.filter((c) => isTemporalDuckdbType(types.get(c) ?? "")));
+}
+
+// Union bijective columns, cross-count only if either side is NULL-sparse.
 async function clusterByBijection(
   conn: AsyncDuckDBConnection,
   table: string,
   cols: string[],
+  counts: Record<string, number>,
 ): Promise<string[][]> {
+  const fully = new Map<string, boolean>();
+  for (const c of cols) fully.set(c, await fullyPopulated(conn, table, c));
   const parent = new Map(cols.map((c) => [c, c]));
   const find = (c: string): string => {
     while (parent.get(c) !== c) {
@@ -58,8 +78,12 @@ async function clusterByBijection(
   };
   for (let i = 0; i < cols.length; i++) {
     for (let j = i + 1; j < cols.length; j++) {
-      if (await bijective(conn, table, cols[i], cols[j])) {
-        parent.set(find(cols[i]), find(cols[j]));
+      const a = cols[i];
+      const b = cols[j];
+      const bothDense = fully.get(a) && fully.get(b);
+      const comparable = bothDense ? counts[a] === counts[b] : sameNamingDigit(a, b);
+      if (comparable && (await bijective(conn, table, a, b))) {
+        parent.set(find(a), find(b));
       }
     }
   }
@@ -78,20 +102,55 @@ async function buildLevelGroups(
   columns: string[],
   counts: Record<string, number>,
 ): Promise<Group[]> {
-  const byCount = new Map<number, string[]>();
-  for (const c of columns) {
-    const n = counts[c];
-    if (!byCount.has(n)) byCount.set(n, []);
-    byCount.get(n)!.push(c);
-  }
   const groups: Group[] = [];
-  for (const [count, cols] of byCount) {
-    for (const cluster of await clusterByBijection(conn, table, cols)) {
-      groups.push({ count, cols: cluster });
-    }
+  for (const cluster of await clusterByBijection(conn, table, columns, counts)) {
+    const count = Math.max(...cluster.map((c) => counts[c]));
+    groups.push({ count, cols: cluster });
   }
   groups.sort((a, b) => a.count - b.count);
   return groups;
+}
+
+// Coarsest-first topological order by pairwise containment: a sparse-but-
+// coarser group can otherwise sort after a dense-but-finer one by raw count.
+async function orderGroupsByContainment(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  groups: Group[],
+): Promise<Group[]> {
+  const n = groups.length;
+  const joins: boolean[][] = Array.from({ length: n }, () => new Array(n).fill(false));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (i === j) continue;
+      joins[i][j] = await allContainmentHolds(conn, table, groups[i].cols, groups[j].cols);
+    }
+  }
+  const indegree = new Array<number>(n)
+    .fill(0)
+    .map((_, i) => joins.reduce((acc, row) => acc + (row[i] ? 1 : 0), 0));
+  const remaining = new Set<number>(Array.from({ length: n }, (_, i) => i));
+  const order: number[] = [];
+  while (remaining.size > 0) {
+    const readyCandidates = [...remaining].filter((i) => indegree[i] === 0);
+    const ready = readyCandidates.length > 0 ? readyCandidates : [...remaining];
+    let best = ready[0];
+    for (const i of ready) {
+      if (groups[i].count < groups[best].count) best = i;
+      else if (
+        groups[i].count === groups[best].count &&
+        groups[i].cols.join(",") < groups[best].cols.join(",")
+      ) {
+        best = i;
+      }
+    }
+    order.push(best);
+    remaining.delete(best);
+    for (const j of remaining) {
+      if (joins[best][j]) indegree[j] -= 1;
+    }
+  }
+  return order.map((i) => groups[i]);
 }
 
 async function allContainmentHolds(
@@ -113,17 +172,24 @@ async function anyEmbeds(
   table: string,
   coarserCols: string[],
   finerCols: string[],
+  hasGeom: boolean,
 ): Promise<boolean> {
   for (const a of coarserCols) {
     for (const b of finerCols) {
-      if (await embeds(conn, table, b, a)) return true;
+      if (await embeds(conn, table, b, a, hasGeom)) return true;
     }
   }
   return false;
 }
 
-// Longest-path DP over the full containment/embedding DAG. A non-constant
-// edge needs embedding justification unless no pair in the file embeds at all.
+function sameNamingDigit(a: string, b: string): boolean {
+  const da = a.match(/\d+/);
+  const db = b.match(/\d+/);
+  return da !== null && db !== null && da[0] === db[0];
+}
+
+// Longest-path DP over the containment/embedding DAG; a non-constant edge
+// needs embedding justification unless no pair in the file embeds at all.
 async function buildChain(
   conn: AsyncDuckDBConnection,
   table: string,
@@ -132,17 +198,44 @@ async function buildChain(
   const n = groups.length;
   if (n === 0) return [];
 
+  const hasGeom = await hasGeometryColumn(conn, table);
   const edges = new Map<string, { joins: boolean; embeds: boolean }>();
   for (let finerIdx = 0; finerIdx < n; finerIdx++) {
     for (let coarserIdx = 0; coarserIdx < finerIdx; coarserIdx++) {
       const coarserCols = groups[coarserIdx].cols;
       const finerCols = groups[finerIdx].cols;
       const joins = await allContainmentHolds(conn, table, coarserCols, finerCols);
-      const hasEmbedding = joins && (await anyEmbeds(conn, table, coarserCols, finerCols));
+      const hasEmbedding = joins && (await anyEmbeds(conn, table, coarserCols, finerCols, hasGeom));
       edges.set(`${coarserIdx},${finerIdx}`, { joins, embeds: hasEmbedding });
     }
   }
   const noEmbeddingAnywhere = ![...edges.values()].some((e) => e.embeds);
+
+  // Only an unbroken, fully-populated prefix from index 0 is a genuine root;
+  // a sparse column can coincidentally have one distinct value.
+  const inRootPrefix = new Array<boolean>(n).fill(false);
+  let stillRoot = true;
+  for (let idx = 0; idx < n; idx++) {
+    let allPopulated = true;
+    for (const c of groups[idx].cols) {
+      if (!(await fullyPopulated(conn, table, c))) {
+        allPopulated = false;
+        break;
+      }
+    }
+    inRootPrefix[idx] = stillRoot && groups[idx].count === 1 && allPopulated;
+    stillRoot = inRootPrefix[idx];
+  }
+
+  const groupCodeShaped = new Array<boolean>(n).fill(false);
+  for (let i = 0; i < n; i++) {
+    for (const c of groups[i].cols) {
+      if (await looksCodeShaped(conn, table, c)) {
+        groupCodeShaped[i] = true;
+        break;
+      }
+    }
+  }
 
   const bestLen = new Array<number>(n).fill(1);
   const bestPrev = new Array<number | null>(n).fill(null);
@@ -150,9 +243,35 @@ async function buildChain(
     for (let coarserIdx = 0; coarserIdx < finerIdx; coarserIdx++) {
       const edge = edges.get(`${coarserIdx},${finerIdx}`)!;
       if (!edge.joins) continue;
-      const justified = groups[coarserIdx].count === 1 || edge.embeds || noEmbeddingAnywhere;
-      if (justified && bestLen[coarserIdx] + 1 > bestLen[finerIdx]) {
-        bestLen[finerIdx] = bestLen[coarserIdx] + 1;
+      // A coincidentally-constant, non-root column can't extend a chain.
+      if (groups[coarserIdx].count === 1 && !inRootPrefix[coarserIdx]) continue;
+
+      let rootFreebie = false;
+      if (inRootPrefix[coarserIdx]) {
+        if (edge.embeds || !hasGeom) {
+          rootFreebie = true;
+        } else {
+          for (const c of groups[finerIdx].cols) {
+            if (await spatiallyCoherent(conn, table, c)) {
+              rootFreebie = true;
+              break;
+            }
+          }
+        }
+      }
+      const justified = rootFreebie || edge.embeds || noEmbeddingAnywhere;
+      if (!justified) continue;
+
+      const candidateLen = bestLen[coarserIdx] + 1;
+      const prev = bestPrev[finerIdx];
+      const better =
+        candidateLen > bestLen[finerIdx] ||
+        (candidateLen === bestLen[finerIdx] &&
+          prev !== null &&
+          groupCodeShaped[coarserIdx] &&
+          !groupCodeShaped[prev]);
+      if (better) {
+        bestLen[finerIdx] = candidateLen;
         bestPrev[finerIdx] = coarserIdx;
       }
     }
@@ -163,7 +282,11 @@ async function buildChain(
     const cur = [bestLen[i], groups[i].cols.length, groups[i].count];
     const best = [bestLen[end], groups[end].cols.length, groups[end].count];
     const better =
-      cur[0] !== best[0] ? cur[0] > best[0] : cur[1] !== best[1] ? cur[1] > best[1] : cur[2] > best[2];
+      cur[0] !== best[0]
+        ? cur[0] > best[0]
+        : cur[1] !== best[1]
+          ? cur[1] > best[1]
+          : cur[2] > best[2];
     if (better) end = i;
   }
   const chainIndices: number[] = [];
@@ -299,16 +422,6 @@ async function bracketLevel(
         level,
         uniqueCount,
       });
-    } else if (levelHasName) {
-      rows.set(column, {
-        sourceColumn: column,
-        targetColumn: numberedTarget(schema.nameField, level, winnerIndex),
-        note: "",
-        role: "name",
-        level,
-        uniqueCount,
-      });
-      winnerIndex += 1;
     } else {
       rows.set(column, {
         sourceColumn: column,
@@ -360,31 +473,28 @@ async function bracketOtherColumns(
   return rows;
 }
 
-function sortKey(row: CrosswalkRow, sourcePosition: number): [number, number, number, number] {
-  if (row.level === null) return [1, 0, 0, sourcePosition];
-  const rolePriority = row.role === "name" ? 0 : 1;
-  return [0, -row.level, rolePriority, sourcePosition];
-}
-
-function compareKeys(a: number[], b: number[]): number {
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return a[i] - b[i];
-  }
-  return 0;
-}
-
-export async function inferSchemaMap(
+// Resolve every candidate column to a level/role; `schema` only renders
+// target names, never affects structural detection.
+export async function resolveColumns(
   conn: AsyncDuckDBConnection,
   table: string,
   schema: TargetSchema,
-): Promise<CrosswalkRow[]> {
+): Promise<Map<string, ResolvedColumn>> {
   const columns = await candidateColumns(conn, table);
   const counts = await distinctCounts(conn, table, columns);
 
-  // An all-null column has no evidence either way, same principle as embeds().
-  const chainableColumns = columns.filter((c) => counts[c] > 0);
-  const levelGroups = await buildLevelGroups(conn, table, chainableColumns, counts);
-  const chain = await buildChain(conn, table, levelGroups);
+  // An all-null column has no evidence either way, same principle as embeds();
+  // a date/time column is categorically never an admin identity column.
+  const temporal = await temporalColumns(conn, table, columns);
+  const chainableColumns = columns.filter((c) => counts[c] > 0 && !temporal.has(c));
+  let levelGroups = await buildLevelGroups(conn, table, chainableColumns, counts);
+  levelGroups = await orderGroupsByContainment(conn, table, levelGroups);
+  let chain = await buildChain(conn, table, levelGroups);
+  // A lone level with a lone column has no parent to embed and no sibling
+  // to pair with, indistinguishable from an arbitrary non-hierarchy column.
+  if (chain.length === 1 && chain[0].cols.length < MIN_ROOT_EVIDENCE_COLUMNS) {
+    chain = [];
+  }
 
   const rows = await assignChainRoles(conn, table, chain, schema, counts);
 
@@ -413,6 +523,29 @@ export async function inferSchemaMap(
       });
     }
   }
+  return rows;
+}
+
+function sortKey(row: CrosswalkRow, sourcePosition: number): [number, number, number, number] {
+  if (row.level === null) return [1, 0, 0, sourcePosition];
+  const rolePriority = row.role === "name" ? 0 : 1;
+  return [0, -row.level, rolePriority, sourcePosition];
+}
+
+function compareKeys(a: number[], b: number[]): number {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
+export async function inferSchemaMap(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  schema: TargetSchema,
+): Promise<CrosswalkRow[]> {
+  const columns = await candidateColumns(conn, table);
+  const rows = await resolveColumns(conn, table, schema);
 
   const position = new Map(columns.map((c, i) => [c, i]));
   const entries = columns.map((c) => rows.get(c)!);

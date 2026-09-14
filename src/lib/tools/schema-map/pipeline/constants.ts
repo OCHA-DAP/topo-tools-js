@@ -39,6 +39,19 @@ export const CODE_SHAPE_MAJORITY = 0.5;
 // numbered sibling instead of supplemental (empirical, topo-tools-py).
 export const WINNER_MAX_COLLAPSE_RATIO = 0.3;
 
+// containmentHolds's one-violator tolerance only applies once there are more
+// than this many finer-side groups to evaluate (topo-tools-py's ADR-0100).
+export const MIN_GROUPS_FOR_TOLERANCE = 2;
+
+// spatiallyCoherent is waived under this many evaluated rows: too little
+// evidence to judge centroid spread either way.
+export const MIN_ROWS_FOR_SPATIAL_COHERENCE = 10;
+export const MIN_SPATIAL_R2 = 0.7;
+
+// A lone chain needs at least this many columns to be trusted as real
+// hierarchy evidence rather than an arbitrary unrelated column.
+export const MIN_ROOT_EVIDENCE_COLUMNS = 2;
+
 // Confidence tier labels embedded in an unresolved mapping's note text.
 export const NOTE_AMBIGUOUS = "ambiguous";
 export const NOTE_SUPPLEMENTAL = "supplemental";

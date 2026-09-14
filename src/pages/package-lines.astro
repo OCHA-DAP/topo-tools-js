@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/package-lines/App.svelte";
+---
+
+<Layout
+  title="Package Lines: shared and exterior boundary edges in your browser"
+  description="Browser-only tool that extracts every shared and exterior boundary edge in a polygon layer, classified by the coarsest admin level at which two neighbours diverge."
+>
+  <App client:load />
+</Layout>

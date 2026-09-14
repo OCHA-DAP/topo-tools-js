@@ -50,6 +50,16 @@ extended, making it just assign + clip + stitch — useful when refitting an
 existing Edge Extender output against a different or updated parent
 boundary without redoing the Voronoi work.
 
+## Optional schema fill
+
+`mosaic` accepts an opt-in `fillSchema` flag (`$lib/db/fillCompose.ts`,
+shared with `stitch` and `match`), threaded straight through into the
+`runStitch` call above rather than needing a separate call site: it
+cascades admin-hierarchy column families down `child_layer_attr` in place,
+right before export, using `schema-fill`'s own depth-pin algorithm. See
+`docs/explanation/schema-fill.md` for the algorithm; off by default, and a
+no-op on output when disabled.
+
 ## Warn-only, not a hard export gate
 
 Unlike topo-tools-py's `mosaic`, which raises before export if the

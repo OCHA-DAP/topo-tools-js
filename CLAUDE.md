@@ -74,7 +74,7 @@ Notes:
 
 ## Architecture
 
-**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly, and no data leaves the browser. The root `/` is a landing page that lists tools. Thirteen tools ship today: **Topology Cleaner** at `/clean`, **Edge Extender** at `/extend`, **Changelog** at `/change`, **Edge Matcher** at `/match`, **Stitch** at `/stitch`, **Detect** at `/detect`, **Clip** at `/clip`, **Mosaic** at `/mosaic`, **Dissolve** at `/dissolve`, **Schema Map** at `/schema-map`, **Schema Refactor** at `/schema-refactor`, **Schema Crosswalk** at `/schema-crosswalk`, and **Schema Fill** at `/schema-fill`; see `docs/explanation/{clean,extend,change,match,stitch,detect,clip,mosaic,dissolve,schema-map,schema-refactor,schema-crosswalk,schema-fill}.md` for what each does and how, and `docs/reference/{clean,extend,change,match,stitch,detect,clip,mosaic,dissolve,schema-map,schema-refactor,schema-crosswalk,schema-fill}.md` for their behavior contracts.
+**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly, and no data leaves the browser. The root `/` is a landing page that lists tools. Sixteen tools ship today: **Topology Cleaner** at `/clean`, **Edge Extender** at `/extend`, **Changelog** at `/change`, **Edge Matcher** at `/match`, **Stitch** at `/stitch`, **Detect** at `/detect`, **Clip** at `/clip`, **Mosaic** at `/mosaic`, **Package** at `/package`, **Package Polygons** at `/package-polygons`, **Package Points** at `/package-points`, **Package Lines** at `/package-lines`, **Schema Map** at `/schema-map`, **Schema Refactor** at `/schema-refactor`, **Schema Crosswalk** at `/schema-crosswalk`, and **Schema Fill** at `/schema-fill`; see `docs/explanation/{clean,extend,change,match,stitch,detect,clip,mosaic,package,package-polygons,package-points,package-lines,schema-map,schema-refactor,schema-crosswalk,schema-fill}.md` for what each does and how, and `docs/reference/{clean,extend,change,match,stitch,detect,clip,mosaic,package,package-polygons,package-points,package-lines,schema-map,schema-refactor,schema-crosswalk,schema-fill}.md` for their behavior contracts.
 
 **Stack:** Astro 6 (static site) + Svelte 5 (interactive islands) + DuckDB WASM (spatial SQL engine) + MapLibre GL (map rendering)
 
@@ -97,7 +97,10 @@ Notes:
 - `docs/explanation/detect.md` — read-only gap/overlap scan, shared with Topology Cleaner's own detection stage
 - `docs/explanation/clip.md` — assign-one majority vote, per-parent clip, single-winner-parent scope in this app
 - `docs/explanation/mosaic.md` — thin assign-one -> clip -> stitch orchestrator, no re-extension
-- `docs/explanation/dissolve.md`: group-by aggregation, auto column keep/drop, gap-only issues report
+- `docs/explanation/package.md`: thin package-polygons/points/lines orchestrator, no table-name collisions
+- `docs/explanation/package-polygons.md`: per-level group-by dissolve, auto column keep/sum/drop, gap-only issues report
+- `docs/explanation/package-points.md`: one representative point per level, generalizable-columns gate
+- `docs/explanation/package-lines.md`: shared/exterior boundary extraction, coarsest-divergence classification
 - `docs/explanation/schema-map.md`: structural admin-hierarchy inference, no name/vocabulary matching
 - `docs/explanation/schema-refactor.md`: crosswalk-driven column rename/drop, no geometry touch
 - `docs/explanation/schema-crosswalk.md`: thin schema-map to schema-refactor orchestrator, always maps fresh

@@ -5,6 +5,7 @@ import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
 import type { MatchColumnOptions } from "$lib/db/codeJoin";
+import type { ApplyFillOptions } from "$lib/db/fillCompose";
 import { runStitch } from "../../stitch/pipeline/index";
 import { buildMosaicIssues, type MosaicIssueRow } from "./issues";
 import { loadLayers } from "./load";
@@ -70,6 +71,7 @@ export async function runMosaic(
   onProgress: ProgressFn,
   matchColumns: MatchColumnOptions = {},
   carryParentColumns: string[] = [],
+  fillOptions?: ApplyFillOptions,
 ): Promise<MosaicResult> {
   onProgress(1, "Loading input");
   await loadLayers(db, conn, childFiles, parentFiles);
@@ -126,6 +128,7 @@ export async function runMosaic(
       },
       "cl_clip",
       "child_layer_attr",
+      fillOptions,
     );
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 4);

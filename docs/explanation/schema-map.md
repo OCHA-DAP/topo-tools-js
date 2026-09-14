@@ -10,7 +10,7 @@ bijection alone. Ported from topo-tools-py's `schema-map`
 algorithm, adapted to many small targeted DuckDB queries orchestrated by
 TypeScript control flow instead of Python loops around `conn.execute()`
 calls, following this app's own "scale with columns, not rows" precedent
-already used by `dissolve`.
+already used by `package-polygons`.
 
 Column-name/vocabulary matching was topo-tools-py's original design
 (deleted in its ADR-0054, after failing on real French-vocabulary Malagasy
@@ -90,6 +90,59 @@ independently-defined coarser grouping, not noise, hence a distinct
 candidate failing the function check in both directions has no defensible
 relationship to report at all, and stays `ambiguous`.
 
+## Why a root-prefix restriction protects the chain
+
+Only an unbroken, fully-populated run of single-value groups starting at
+the coarsest position (`orderGroupsByContainment`'s coarsest-first,
+containment-based ordering, not raw `COUNT(DISTINCT)`) is trusted as a free
+chain root needing no embedding evidence of its own. A single-value group
+anywhere else in the ordering, most often a sparse audit-style column that
+happens to have one non-null value, cannot silently justify an
+embedding-free chain link (topo-tools-py's ADR-0100).
+
+## Why the root's embedding-free freebie sometimes needs spatial corroboration
+
+Once a `geom` column is loaded, an ungrounded finer group extending
+straight off a constant root is corroborated by checking that its own
+values partition the file's centroids into spatially coherent clusters
+(R² >= 0.7 against total centroid variance, waived under 10 evaluated
+rows). The same corroboration backs `embeds`'s existing one-sentinel
+tolerance: a single string-containment violation is excused only if the
+child column is itself spatially coherent. Two real false chains motivated
+this (Colombia's/Ecuador's/Tunisia's/Greece's audit columns outranking the
+real hierarchy); a blanket version applied everywhere regressed
+correctly-chaining Belgium/Costa Rica data, so it stays scoped to these two
+call sites.
+
+## Temporal columns are excluded by type, not name
+
+A `DATE`/`TIME`/`TIMESTAMP`/`INTERVAL` column is excluded from chain
+candidacy before cardinality sees it (`$lib/db/columnTypes.ts`'s
+`isTemporalDuckdbType`), and never wins the code/name tiebreak via
+`looksCodeShaped`'s digit-majority heuristic: a formatted date is
+digit-heavy but carries no hierarchy meaning. This is a type check, never a
+name check, consistent with the rest of the algorithm.
+
+## Column resolution is one shared function
+
+`pipeline/inference.ts`'s `resolveColumns` is the whole structural
+resolution pipeline (candidate columns through chain-building through
+bracketing) minus the final crosswalk sort; `inferSchemaMap` is a thin
+wrapper around it. `schema-fill`'s auto-detect path and the `package-*`
+tools' level-detection engine both consume `resolveColumns` directly, so no
+tool's structural understanding of a file can drift from schema-map's own.
+
+## Deferred refinements
+
+topo-tools-py's matcher also carries `_containment_perfect`/"strong" edges
+with chain-embedding propagation, a bijection joint-evidence threshold with
+same-naming-digit bridging, skip-level "bridged" edges, and folding a
+constant root out of the crosswalk output entirely. None of these are
+ported: they refine narrow sparse-companion and cosmetic cases with no
+known regression on this app's own data, and the root-detection data they'd
+otherwise fold away must stay visible for `package-polygons`'s own
+root-level handling.
+
 ## Query shape
 
 Every relational check (`COUNT(DISTINCT)`, containment, embedding,
@@ -99,7 +152,7 @@ run for one column pair at a time and orchestrated by TypeScript loops in
 dozens per file, so the total query count (roughly quadratic in column
 count for chain-building) stays cheap; this mirrors topo-tools-py's own
 structure of Python loops around individual `conn.execute()` calls, and
-this app's own `dissolve` precedent of a query shape that scales with
+this app's own `package-polygons` precedent of a query shape that scales with
 column count, not row count.
 
 ## Row-order determinism

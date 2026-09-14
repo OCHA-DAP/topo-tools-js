@@ -1,24 +1,32 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import type { TargetSchema } from "$lib/tools/schema-map/pipeline/targetSchema";
-import { escapeRegExp, fieldPrefix, levelPrefix } from "./levels";
+import {
+  detectLevelCodes,
+  detectLevelColumns,
+  groupFamiliesByLevel,
+} from "$lib/tools/schema-map/pipeline/levelColumns";
+import {
+  validateTargetSchema,
+  type TargetSchema,
+} from "$lib/tools/schema-map/pipeline/targetSchema";
+import { columnFamilies, detectLevels, fieldPrefix, levelPrefix } from "./levels";
 
-// Groups level columns by suffix, e.g. {"_code": {1: "adm1_code", ...}}.
-function columnFamilies(
-  columns: string[],
-  levels: number[],
-  prefix: string,
-): Map<string, Map<number, string>> {
-  const pattern = new RegExp(`^${escapeRegExp(prefix)}(\\d+)(.*)$`);
-  const families = new Map<string, Map<number, string>>();
-  for (const column of columns) {
-    const m = pattern.exec(column);
-    if (!m) continue;
-    const level = Number(m[1]);
-    if (!levels.includes(level)) continue;
-    if (!families.has(m[2])) families.set(m[2], new Map());
-    families.get(m[2])!.set(level, column);
+// Explicit schema: levels via its codeField prefix. Null schema: the same
+// level set resolved structurally instead, via schema-map's own engine.
+export async function resolveLevels(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  schema: TargetSchema | null,
+): Promise<number[]> {
+  if (schema !== null) {
+    validateTargetSchema(schema);
+    return detectLevels(conn, table, schema);
   }
-  return families;
+  const levelColumns = await detectLevelColumns(conn, table);
+  const missing = [...levelColumns].filter(([, cols]) => !cols.hasCode).map(([n]) => n);
+  if (missing.length > 0) {
+    throw new Error(`missing code column for level(s) ${missing.join(", ")} in ${table}`);
+  }
+  return [...levelColumns.keys()].sort((a, b) => a - b);
 }
 
 function depthColumnSql(codeColumns: Map<number, string>, depthColumn: string): string {
@@ -31,8 +39,38 @@ function depthColumnSql(codeColumns: Map<number, string>, depthColumn: string): 
 
 export interface FillOptions {
   levels: number[];
-  schema: TargetSchema;
+  schema: TargetSchema | null;
   depthColumn: string;
+}
+
+// Each level's code column, and every column family to cascade down; a null
+// schema triggers structural auto-detection of each family instead.
+async function resolveFamilies(
+  conn: AsyncDuckDBConnection,
+  tableIn: string,
+  columns: string[],
+  levels: number[],
+  schema: TargetSchema | null,
+): Promise<{ codeColumns: Map<number, string>; families: Array<Map<number, string>> }> {
+  if (schema !== null) {
+    const codePrefix = levelPrefix(schema);
+    const namePrefix = fieldPrefix(schema.nameField);
+    const codeSuffix = schema.codeField.split("{n}")[1];
+    let codeColumns = new Map<number, string>();
+    const families: Array<Map<number, string>> = [];
+    for (const prefix of new Set([codePrefix, namePrefix])) {
+      const familyGroup = columnFamilies(columns, levels, prefix);
+      if (prefix === codePrefix) codeColumns = familyGroup.get(codeSuffix) ?? new Map();
+      for (const family of familyGroup.values()) families.push(family);
+    }
+    return { codeColumns, families };
+  }
+
+  const levelColumns = await detectLevelColumns(conn, tableIn);
+  const allCodes = await detectLevelCodes(conn, tableIn);
+  const codeColumns = new Map([...allCodes].filter(([lvl]) => levels.includes(lvl)));
+  const families = [...(await groupFamiliesByLevel(conn, tableIn, levelColumns)).values()];
+  return { codeColumns, families };
 }
 
 // depthColumn is stamped from tableIn's raw columns: DuckDB resolves a
@@ -43,47 +81,50 @@ export async function runFill(
   tableOut: string,
   { levels, schema, depthColumn }: FillOptions,
 ): Promise<void> {
-  const codePrefix = levelPrefix(schema);
-  const namePrefix = fieldPrefix(schema.nameField);
-  const codeSuffix = schema.codeField.split("{n}")[1];
-
   const desc = await conn.query(`DESCRIBE "${tableIn}"`);
   const columns = (desc.toArray() as Array<{ column_name: string }>).map((r) => r.column_name);
+  if (columns.includes(depthColumn)) {
+    throw new Error(`depthColumn "${depthColumn}" already exists on ${tableIn}`);
+  }
 
+  const { codeColumns, families } = await resolveFamilies(conn, tableIn, columns, levels, schema);
+
+  // A column at the level a row's own hierarchy really reaches, including a
+  // legitimate NULL there, is pinned and never backfilled from a sibling.
   const filledColumns = new Set<string>();
   const filledSelectParts: string[] = [];
-  let codeColumns = new Map<number, string>();
-
-  for (const prefix of new Set([codePrefix, namePrefix])) {
-    const families = columnFamilies(columns, levels, prefix);
-    if (prefix === codePrefix) codeColumns = families.get(codeSuffix) ?? new Map();
-
-    for (const perLevel of families.values()) {
-      for (const col of perLevel.values()) filledColumns.add(col);
-      const sortedLevels = [...perLevel.keys()].sort((a, b) => a - b);
-      for (const level of sortedLevels) {
-        const chain = sortedLevels.filter((k) => k <= level).map((k) => perLevel.get(k)!);
-        const target = JSON.stringify(perLevel.get(level)!);
-        if (chain.length > 1) {
-          const coalesce = [...chain]
-            .reverse()
-            .map((c) => JSON.stringify(c))
-            .join(", ");
-          filledSelectParts.push(`COALESCE(${coalesce}) AS ${target}`);
-        } else {
-          filledSelectParts.push(target);
-        }
-      }
+  for (const perLevel of families) {
+    for (const col of perLevel.values()) filledColumns.add(col);
+    if (perLevel.size === 1) {
+      const [[, onlyColumn]] = perLevel;
+      filledSelectParts.push(JSON.stringify(onlyColumn));
+      continue;
+    }
+    const sortedLevels = [...perLevel.keys()].sort((a, b) => a - b);
+    const fallbackCases = [...sortedLevels]
+      .reverse()
+      .map((lvl) => `WHEN "${depthColumn}" >= ${lvl} THEN ${JSON.stringify(perLevel.get(lvl))}`)
+      .join(" ");
+    const fallback = `CASE ${fallbackCases} END`;
+    for (const level of sortedLevels) {
+      const column = perLevel.get(level)!;
+      filledSelectParts.push(
+        `CASE WHEN "${depthColumn}" >= ${level} THEN ${JSON.stringify(column)} ELSE (${fallback}) END AS ${JSON.stringify(column)}`,
+      );
     }
   }
 
   const selectParts = columns
     .filter((c) => !filledColumns.has(c))
     .map((c) => JSON.stringify(c))
-    .concat(filledSelectParts);
-  selectParts.push(depthColumnSql(codeColumns, depthColumn));
+    .concat(filledSelectParts, [JSON.stringify(depthColumn)]);
 
-  await conn.query(
-    `CREATE OR REPLACE TABLE "${tableOut}" AS SELECT ${selectParts.join(", ")} FROM "${tableIn}"`,
-  );
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE "${tableOut}" AS
+    WITH "depth" AS (
+      SELECT *, ${depthColumnSql(codeColumns, depthColumn)}
+      FROM "${tableIn}"
+    )
+    SELECT ${selectParts.join(", ")} FROM "depth"
+  `);
 }

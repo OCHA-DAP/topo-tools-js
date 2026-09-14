@@ -2,6 +2,7 @@
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import { loadFile } from "$lib/db/loader";
   import { PipelineError, runStitch, type StitchIssueRow } from "./pipeline/index";
+  import type { ApplyFillOptions } from "$lib/db/fillCompose";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
@@ -24,11 +25,22 @@
   let hadResidualOverlaps = $state(false);
   let error = $state<string | null>(null);
 
+  let fillSchema = $state(false);
+  let fillNameField = $state("");
+  let fillCodeField = $state("");
+  let fillDepthColumn = $state("adm_lvl");
+
   let clearMap: (() => void) | undefined;
 
   onMount(() => {
     initDuckDB();
   });
+
+  const fillOneBlank = $derived((fillNameField.trim() === "") !== (fillCodeField.trim() === ""));
+  const fillBothBlank = $derived(fillNameField.trim() === "" && fillCodeField.trim() === "");
+  const fillTemplateValid = $derived(
+    !fillOneBlank && (fillBothBlank || (fillNameField.includes("{n}") && fillCodeField.includes("{n}"))),
+  );
 
   $effect(() => {
     const f = files;
@@ -37,6 +49,19 @@
         if (!running) handleRun();
       });
     }
+  });
+
+  // Re-run picks up a schema-fill option change on already-produced output;
+  // holds off while the template pair is mid-edit (one side blank).
+  $effect(() => {
+    const _s = fillSchema;
+    const _n = fillNameField;
+    const _c = fillCodeField;
+    const _d = fillDepthColumn;
+    untrack(() => {
+      if (!resultGeoJSON || running || !fillTemplateValid) return;
+      handleRun();
+    });
   });
 
   async function handleRun() {
@@ -58,10 +83,25 @@
       stageLabel = "Loading file…";
       await loadFile(duckdbState.db!, duckdbState.conn!, files);
 
-      const result = await runStitch(duckdbState.conn!, (stage, label) => {
-        currentStage = stage;
-        stageLabel = label;
-      });
+      const fillOptions: ApplyFillOptions | undefined = fillSchema
+        ? {
+            requested: true,
+            nameField: fillBothBlank ? null : fillNameField,
+            codeField: fillBothBlank ? null : fillCodeField,
+            depthColumn: fillDepthColumn,
+          }
+        : undefined;
+
+      const result = await runStitch(
+        duckdbState.conn!,
+        (stage, label) => {
+          currentStage = stage;
+          stageLabel = label;
+        },
+        undefined,
+        undefined,
+        fillOptions,
+      );
 
       resultGeoJSON = result.stitchedGeoJSON;
       originalGeoJSON = result.originalGeoJSON;
@@ -145,7 +185,47 @@
       {#if error}
         <div class="error-panel">{error}</div>
       {/if}
+    </section>
 
+    <section class="step">
+      <h2 class="step-heading">Schema fill (optional)</h2>
+      <label class="checkbox-field">
+        <input type="checkbox" bind:checked={fillSchema} disabled={running} />
+        <span>Cascade admin-hierarchy columns down before export</span>
+      </label>
+      {#if fillSchema}
+        <p class="hint">Leave both templates blank to auto-detect the hierarchy structurally.</p>
+        <label class="field">
+          <span>Name template</span>
+          <input
+            type="text"
+            bind:value={fillNameField}
+            placeholder="auto-detect"
+            disabled={running}
+          />
+        </label>
+        <label class="field">
+          <span>Code template</span>
+          <input
+            type="text"
+            bind:value={fillCodeField}
+            placeholder="auto-detect"
+            disabled={running}
+          />
+        </label>
+        <label class="field">
+          <span>Depth column</span>
+          <input type="text" bind:value={fillDepthColumn} disabled={running} />
+        </label>
+        {#if fillOneBlank}
+          <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
+        {:else if !fillBothBlank && !fillTemplateValid}
+          <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
+        {/if}
+      {/if}
+    </section>
+
+    <section class="step">
       {#if hadResidualOverlaps}
         <div class="warn-panel">
           Some overlaps remain after cleaning — this shouldn't normally happen. Inspect the output
@@ -328,6 +408,43 @@
     font-size: 0.8rem;
     color: #6b7280;
     line-height: 1.4;
+  }
+
+  .checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #374151;
+  }
+
+  .hint {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: #374151;
+  }
+
+  .field input {
+    padding: 0.4rem 0.55rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .field-error {
+    font-size: 0.75rem;
+    color: #b91c1c;
+    margin: 0;
   }
 
   .privacy {

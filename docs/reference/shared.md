@@ -116,3 +116,25 @@ Shared by `match`, `mosaic`, and `clip` for parent assignment.
   child's own fid, `parentFid` the winning parent's fid.
 - Omitting both parameters MUST leave assignment behavior and output schema
   unchanged for existing callers.
+
+## Opt-in schema fill (`$lib/db/fillCompose.ts`)
+
+Shared by `stitch`, `mosaic` (via `stitch`'s own call), and `match` for an
+optional post-processing pass over each tool's own final attribute table.
+
+- Callers MUST supply `fillSchema` (boolean), and MAY additionally supply a
+  `nameField`/`codeField` pair, each containing a `{n}` placeholder. Both
+  MUST be given together or both omitted; supplying only one MUST raise.
+- Supplying `nameField`/`codeField` without `fillSchema` enabled MUST raise.
+- `fillSchema: false` (the default) MUST leave the tool's output
+  byte-identical to a run with no schema-fill support at all.
+- `fillSchema: true` MUST cascade admin-hierarchy column families down the
+  tool's own final attribute table in place, using the same depth-pin
+  algorithm as `schema-fill` (see `docs/reference/schema-fill.md`): a
+  legitimate `NULL` at a row's own real depth MUST be left untouched, and a
+  `NULL` at a deeper level MUST be filled from the nearest non-`NULL`
+  shallower level. A pre-existing column matching the configured depth
+  column name MUST raise before any fill runs.
+- The `nameField`/`codeField` pair, when supplied, MUST select the explicit
+  target-schema path; when omitted, level and family detection MUST fall
+  back to `schema-map`'s structural level-detection engine.

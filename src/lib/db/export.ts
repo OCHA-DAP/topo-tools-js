@@ -18,10 +18,19 @@ export type ExportSource =
   | "clip_issues"
   | "mosaic"
   | "mosaic_issues"
-  | "dissolve"
-  | "dissolve_issues"
   | "schema_map"
-  | "schema_refactor";
+  | "schema_refactor"
+  | "schema_fill"
+  | "package_polygons_level_0"
+  | "package_polygons_level_1"
+  | "package_polygons_level_2"
+  | "package_polygons_level_3"
+  | "package_polygons_level_4"
+  | "package_polygons_level_5"
+  | "package_polygons_level_6"
+  | "package_polygons_level_7"
+  | "package_points"
+  | "package_lines";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -200,19 +209,6 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     kind: "spatial",
     columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a", "parent_fid", "reason"],
   },
-  dissolve: {
-    table: "ds_dissolved_geom",
-    attrTable: "ds_dissolved_attr",
-    suffix: "_dissolved",
-    kind: "spatial",
-  },
-  dissolve_issues: {
-    table: "ds_issues",
-    attrTable: null,
-    suffix: "_issues",
-    kind: "spatial",
-    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "fixed", "unit_a", "unit_b"],
-  },
   schema_map: {
     table: "sm_crosswalk",
     attrTable: null,
@@ -227,6 +223,22 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     suffix: "_mapped",
     kind: "spatial",
   },
+  schema_fill: {
+    table: "layer_01",
+    attrTable: "sf_result_attr",
+    suffix: "_filled",
+    kind: "spatial",
+  },
+  package_polygons_level_0: { table: "pp_geom_0", attrTable: "pp_attr_0", suffix: "_pp_level0", kind: "spatial" },
+  package_polygons_level_1: { table: "pp_geom_1", attrTable: "pp_attr_1", suffix: "_pp_level1", kind: "spatial" },
+  package_polygons_level_2: { table: "pp_geom_2", attrTable: "pp_attr_2", suffix: "_pp_level2", kind: "spatial" },
+  package_polygons_level_3: { table: "pp_geom_3", attrTable: "pp_attr_3", suffix: "_pp_level3", kind: "spatial" },
+  package_polygons_level_4: { table: "pp_geom_4", attrTable: "pp_attr_4", suffix: "_pp_level4", kind: "spatial" },
+  package_polygons_level_5: { table: "pp_geom_5", attrTable: "pp_attr_5", suffix: "_pp_level5", kind: "spatial" },
+  package_polygons_level_6: { table: "pp_geom_6", attrTable: "pp_attr_6", suffix: "_pp_level6", kind: "spatial" },
+  package_polygons_level_7: { table: "pp_geom_7", attrTable: "pp_attr_7", suffix: "_pp_level7", kind: "spatial" },
+  package_points: { table: "pkpt_geom", attrTable: "pkpt_attr", suffix: "_pp_points", kind: "spatial" },
+  package_lines: { table: "pl_geom", attrTable: "pl_attr", suffix: "_pp_lines", kind: "spatial" },
 };
 
 export function sourceKind(source: ExportSource): SourceKind {

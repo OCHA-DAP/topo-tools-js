@@ -81,6 +81,15 @@ GEOS robustness class documented in
 [`docs/explanation/performance.md`](performance.md#wasm-geos-overlayng-floating-point-divergence))
 propagates to the caller rather than falling back to an approximation.
 
+## Optional schema fill
+
+`match` accepts an opt-in `fillSchema` flag (`$lib/db/fillCompose.ts`,
+shared with `stitch` and `mosaic`) that cascades admin-hierarchy column
+families down `ge_results_attr` in place, right after the attribute join and
+before export, using `schema-fill`'s own depth-pin algorithm. See
+`docs/explanation/schema-fill.md` for the algorithm; off by default, and a
+no-op on output when disabled.
+
 ## Cross-group boundary seams
 
 Because each group's extension is clipped independently against its own

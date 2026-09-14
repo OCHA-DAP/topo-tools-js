@@ -3,10 +3,8 @@ import { tableToGeoJSON } from "$lib/db/geojson";
 import {
   DEFAULT_TARGET_SCHEMA,
   type TargetSchema,
-  validateTargetSchema,
 } from "$lib/tools/schema-map/pipeline/targetSchema";
-import { detectLevels } from "./levels";
-import { runFill } from "./fill";
+import { resolveLevels, runFill } from "./fill";
 
 export {
   DEFAULT_TARGET_SCHEMA,
@@ -36,15 +34,14 @@ async function computeBounds(
     : null;
 }
 
-// No topology gate: fill only touches attribute columns, layer_01's
-// geometry passes through into the result unchanged.
+// No topology gate: fill only touches attribute columns. A null schema
+// triggers structural auto-detection of the hierarchy instead.
 export async function runSchemaFill(
   conn: AsyncDuckDBConnection,
-  schema: TargetSchema = DEFAULT_TARGET_SCHEMA,
+  schema: TargetSchema | null = DEFAULT_TARGET_SCHEMA,
   depthColumn: string = DEFAULT_DEPTH_COLUMN,
 ): Promise<SchemaFillResult> {
-  validateTargetSchema(schema);
-  const levels = await detectLevels(conn, "layer_attr", schema);
+  const levels = await resolveLevels(conn, "layer_attr", schema);
   await runFill(conn, "layer_attr", "sf_result_attr", { levels, schema, depthColumn });
 
   const resultGeoJSON = await tableToGeoJSON(conn, "layer_01", "sf_result_attr");

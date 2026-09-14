@@ -3,10 +3,10 @@ import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { gapRegionsQuery } from "$lib/db/coverage";
 import { degSqToM2, degToM } from "$lib/db/units";
 
-// Gap-only issues report, same column shape as stitch's issues table; no
-// overlap rows, since a plain GROUP BY dissolve cannot itself produce one.
+// Gap-only issues report per level table, same shape dissolve's own issues
+// table used; a plain GROUP BY dissolve cannot itself produce an overlap.
 
-export interface DissolveIssueRow {
+export interface PolygonIssueRow {
   key: string;
   areaM2: number;
   maxWidthM: number;
@@ -14,21 +14,24 @@ export interface DissolveIssueRow {
   bbox: [number, number, number, number];
 }
 
-export interface DissolveIssuesResult {
-  rows: DissolveIssueRow[];
-  geojson: string; // FeatureCollection of gap polygons, props {key, area_m2, max_width_m}
+export interface PolygonIssuesResult {
+  rows: PolygonIssueRow[];
+  geojson: string;
 }
 
-export async function buildDissolveIssues(
+export async function buildPolygonIssues(
   conn: AsyncDuckDBConnection,
   sourceTable: string,
-): Promise<DissolveIssuesResult> {
-  await conn.query(gapRegionsQuery("ds_gap_regions", sourceTable));
+  level: number,
+): Promise<PolygonIssuesResult> {
+  const gapTable = `pp_gap_regions_${level}`;
+  const issuesTable = `pp_issues_${level}`;
+  await conn.query(gapRegionsQuery(gapTable, sourceTable));
 
   const areaFactor = degSqToM2(1).toExponential();
   const widthFactor = degToM(1).toExponential();
   await conn.query(`--sql
-    CREATE OR REPLACE TABLE ds_issues AS
+    CREATE OR REPLACE TABLE ${issuesTable} AS
     SELECT 'gap-' || n AS key, 'gap' AS kind,
            ST_Area(geom) * ${areaFactor} AS area_m2,
            (ST_MaximumInscribedCircle(geom)).radius * 2 * ${widthFactor} AS max_width_m,
@@ -37,15 +40,15 @@ export async function buildDissolveIssues(
            NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b,
            geom,
            ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
-    FROM ds_gap_regions
+    FROM ${gapTable}
     WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
       AND (ST_MaximumInscribedCircle(geom)).radius * 2 > ${SNAP_TOLERANCE}
   `);
 
   const meta = await conn.query(`--sql
-    SELECT key, area_m2, max_width_m, thinness_ratio, xmin, ymin, xmax, ymax FROM ds_issues
+    SELECT key, area_m2, max_width_m, thinness_ratio, xmin, ymin, xmax, ymax FROM ${issuesTable}
   `);
-  const rows: DissolveIssueRow[] = (
+  const rows: PolygonIssueRow[] = (
     meta.toArray() as Array<{
       key: string;
       area_m2: number | null;
@@ -65,7 +68,7 @@ export async function buildDissolveIssues(
   }));
 
   const gj = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, ST_AsGeoJSON(geom) AS _geom FROM ds_issues
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, ST_AsGeoJSON(geom) AS _geom FROM ${issuesTable}
   `);
   const features = (
     gj.toArray() as Array<{
