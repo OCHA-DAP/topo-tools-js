@@ -106,7 +106,7 @@ Notes:
 - `docs/explanation/schema-crosswalk.md`: thin schema-map to schema-refactor orchestrator, always maps fresh
 - `docs/explanation/schema-fill.md`: cascades admin-hierarchy column families down, stamps a pre-fill depth column, attribute-only
 - `docs/explanation/performance.md` — WASM memory model, SPATIAL_JOIN behaviour, connection settings, pipeline phase memory profile
-- `docs/how-to/at-scale-testing.md` — portolan catalog layout, picking a file or old/new pair for a real-scale test
+- `.claude/skills/at-scale-testing/` (portolan catalog layout, picking a file or old/new pair for a real-scale test)
 - `docs/adr/README.md` — how to decide whether a fact belongs in an ADR vs. `docs/explanation/` vs. this file
 - `docs/adr/` — immutable decision records behind the WASM-GEOS robustness workarounds referenced above
 
@@ -129,5 +129,5 @@ canonical source.coop source). Only ever read from it — drop copies of its
 files into tool DropZones, never point a write/export/cleanup operation at
 it, and never run shell commands there beyond read-only listing/inspection.
 
-See `docs/how-to/at-scale-testing.md` for the STAC layout and how to pick a
+See the `at-scale-testing` skill for the STAC layout and how to pick a
 file (or an old/new comparison pair, for `change`) from the catalog.
