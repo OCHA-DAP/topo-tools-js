@@ -118,4 +118,18 @@ export const tools: Tool[] = [
       "Cascade each admin-hierarchy column family down from its deepest non-empty level, and stamp every row with its real depth.",
     iconHref: "/icons/tools/schema-fill.svg",
   },
+  {
+    slug: "code-refactor",
+    name: "Code Refactor",
+    tagline:
+      "Cold-start a hierarchical admin code on a flat polygon layer, ranked per parent and zero-padded to a configurable width.",
+    iconHref: "/icons/tools/code-refactor.svg",
+  },
+  {
+    slug: "code-update",
+    name: "Code Update",
+    tagline:
+      "Reconcile an already-coded layer against an uncoded candidate: retain codes for unchanged units, assign fresh ones for the rest.",
+    iconHref: "/icons/tools/code-update.svg",
+  },
 ];

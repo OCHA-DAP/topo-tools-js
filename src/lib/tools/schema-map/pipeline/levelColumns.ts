@@ -7,6 +7,7 @@ export interface LevelColumns {
   groupBy: string[];
   identityColumns: string[];
   hasCode: boolean;
+  nameColumn: string | null;
 }
 
 const MIN_LEVELS_TO_DIFF = 2;
@@ -151,11 +152,13 @@ export async function detectLevelColumns(
     const hasCode =
       level === rootLevel ||
       allColumnsByLevel.get(level)!.some((c) => rows.get(c)!.role === "code");
+    const nameColumn = allColumnsByLevel.get(level)!.find((c) => rows.get(c)!.role === "name") ?? null;
     if (!anchors.has(level)) {
       result.set(level, {
         groupBy,
         identityColumns: [...allColumnsByLevel.get(level)!],
         hasCode,
+        nameColumn,
       });
       continue;
     }
@@ -172,7 +175,12 @@ export async function detectLevelColumns(
       .get(level)!
       .filter((c) => isLevelIdentityColumn(c, prefix, anchor, suffix))
       .concat(completed);
-    result.set(level, { groupBy: groupBy.concat(completed), identityColumns: identity, hasCode });
+    result.set(level, {
+      groupBy: groupBy.concat(completed),
+      identityColumns: identity,
+      hasCode,
+      nameColumn,
+    });
   }
 
   const finalResult = new Map<number, LevelColumns>();
@@ -188,7 +196,7 @@ export async function detectLevelColumnsOrSingle(
   try {
     return await detectLevelColumns(conn, table);
   } catch {
-    return new Map([[0, { groupBy: [], identityColumns: [], hasCode: true }]]);
+    return new Map([[0, { groupBy: [], identityColumns: [], hasCode: true, nameColumn: null }]]);
   }
 }
 
@@ -272,7 +280,7 @@ export async function detectRootLevel(
   const row = r.toArray()[0] as Record<string, number | bigint>;
   const rootColumns = candidates.filter((_c, i) => Number(row[`__ra_${i}`]) <= 1);
   if (rootColumns.length === 0) return null;
-  return { groupBy: [], identityColumns: rootColumns, hasCode: true };
+  return { groupBy: [], identityColumns: rootColumns, hasCode: true, nameColumn: null };
 }
 
 // Groups every level's identity columns by shared naming kind, across levels.

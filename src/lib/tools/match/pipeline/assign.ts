@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { computeOverlapPairs } from "$lib/db/overlap";
+import { assignBestOverlap } from "$lib/db/assignBestOverlap";
 import {
   buildPerChildCodeWinners,
   combinePerChildAssignment,
@@ -23,18 +23,7 @@ export async function computeAssignment(
   matchColumns: MatchColumnOptions = {},
   passthrough = false,
 ): Promise<AssignResult> {
-  await computeOverlapPairs(conn, "child_layer_01", "parent_layer_01", "ge_pairs");
-
-  await conn.query(`--sql
-    CREATE OR REPLACE TABLE ge_spatial AS
-    SELECT a_fid AS child_fid, b_fid AS parent_fid
-    FROM (
-      SELECT a_fid, b_fid,
-             ROW_NUMBER() OVER (PARTITION BY a_fid ORDER BY shared_area DESC, b_fid ASC) AS rn
-      FROM ge_pairs
-    )
-    WHERE rn = 1
-  `);
+  await assignBestOverlap(conn, "child_layer_01", "parent_layer_01", "ge_pairs", "ge_spatial");
 
   const resolvedCols = resolveMatchColumns(matchColumns);
   if (resolvedCols) {

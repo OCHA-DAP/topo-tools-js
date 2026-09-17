@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/code-refactor/App.svelte";
+---
+
+<Layout
+  title="Code Refactor: cold-start a hierarchical admin code in your browser"
+  description="Browser-only tool that assigns a fresh, sequential hierarchical code to a flat polygon layer, ranked per parent, zero-padded to a configurable width."
+>
+  <App client:load />
+</Layout>
