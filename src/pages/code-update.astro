@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/code-update/App.svelte";
+---
+
+<Layout
+  title="Code Update: reconcile a hierarchical admin code against a new boundary layer"
+  description="Browser-only tool that reconciles an already-coded polygon layer against an uncoded candidate, retaining codes for unchanged units and assigning fresh ones for the rest."
+>
+  <App client:load />
+</Layout>

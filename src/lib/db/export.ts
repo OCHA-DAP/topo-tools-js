@@ -30,7 +30,11 @@ export type ExportSource =
   | "package_polygons_level_6"
   | "package_polygons_level_7"
   | "package_points"
-  | "package_lines";
+  | "package_lines"
+  | "code_refactor"
+  | "code_refactor_issues"
+  | "code_update"
+  | "code_update_changelog";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -239,6 +243,38 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
   package_polygons_level_7: { table: "pp_geom_7", attrTable: "pp_attr_7", suffix: "_pp_level7", kind: "spatial" },
   package_points: { table: "pkpt_geom", attrTable: "pkpt_attr", suffix: "_pp_points", kind: "spatial" },
   package_lines: { table: "pl_geom", attrTable: "pl_attr", suffix: "_pp_lines", kind: "spatial" },
+  code_refactor: { table: "layer_01", attrTable: "layer_attr", suffix: "_coded", kind: "spatial" },
+  code_refactor_issues: {
+    table: "cr_issues",
+    attrTable: null,
+    suffix: "_issues",
+    kind: "tabular",
+    tabularColumns: ["kind", "level", "parent_code", "assigned_code", "child_count", "min_width", "reason"],
+  },
+  code_update: {
+    table: "cu_b_layer_01",
+    attrTable: "cu_b_layer_attr",
+    suffix: "_coded",
+    kind: "spatial",
+  },
+  code_update_changelog: {
+    table: "cu_changelog",
+    attrTable: null,
+    suffix: "_changelog",
+    kind: "tabular",
+    tabularColumns: [
+      "level",
+      "old_code",
+      "old_name",
+      "new_code",
+      "new_name",
+      "relationship_class",
+      "cluster_id",
+      "match_method",
+      "code_outcome",
+      "reason",
+    ],
+  },
 };
 
 export function sourceKind(source: ExportSource): SourceKind {

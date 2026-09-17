@@ -94,6 +94,16 @@ comparison).
 - Area and ratio calculations (`coverage_a`, `coverage_b`, `iou`) MUST use
   an equal-area projection, not raw EPSG:4326 degree-area.
 
+### Best-overlap plurality pick (`$lib/db/assignBestOverlap.ts`)
+
+Shared by `match` (parent/child assignment) and `code-update` (per-level
+reparent).
+
+- `assignBestOverlap` MUST assign each child to the parent it shares the
+  largest overlap area with, breaking a tie by lowest parent fid.
+- A child with zero overlapping parents MUST be absent from the output
+  table entirely, not assigned a null parent.
+
 ## Code-based assignment override (`$lib/db/codeJoin.ts`)
 
 Shared by `match`, `mosaic`, and `clip` for parent assignment.
@@ -116,6 +126,31 @@ Shared by `match`, `mosaic`, and `clip` for parent assignment.
   child's own fid, `parentFid` the winning parent's fid.
 - Omitting both parameters MUST leave assignment behavior and output schema
   unchanged for existing callers.
+
+## Hierarchical code format and retention (`$lib/db/code.ts`)
+
+Shared by `code-refactor` (cold-start) and `code-update` (reconcile
+against an already-coded OLD layer).
+
+- A `CodeFormat` (`rootCode`, `delimiter`, `minWidth`) MUST be validated
+  via `resolveCodeFormat`: `rootCode` non-empty, `delimiter` exactly one
+  character, `minWidth` positive. No field has a default.
+- `assignNewCodes` MUST rank rows per parent group by their given sort
+  columns and format each as `parentCode || delimiter || lpad(tail,
+  width, '0')`, starting from `nextAvailableInteger` for that parent. It
+  MUST NOT reuse a raw source value as-is.
+- A parent whose live child count exceeds `10 ** minWidth - 1` MUST NOT
+  have its already-assigned, lower-numbered children's codes repadded;
+  the overflowing child's own tail width MUST grow instead
+  (`GREATEST(minWidth, LENGTH(tail))`).
+- `detectCodeFormat` MUST infer `delimiter` as the single non-alphanumeric
+  character common to every sampled code, `rootCode` as the shared first
+  delimiter-split component, and `minWidth` as the mode (not min or max)
+  of every non-root component's width. Any field that can't be
+  confidently inferred MUST throw rather than fall back to a literal.
+- `rewriteChildCode` MUST reattach a code's own final component onto a
+  new parent code, leaving the tail integer and sibling ranking
+  untouched.
 
 ## Opt-in schema fill (`$lib/db/fillCompose.ts`)
 
