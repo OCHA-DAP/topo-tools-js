@@ -1,0 +1,91 @@
+---
+interface Props {
+  n: number;
+  title: string;
+  summary: string;
+  last?: boolean;
+}
+
+const { n, title, summary, last = false } = Astro.props;
+---
+
+<li class={`step ${last ? "last" : ""}`}>
+  <div class="rail" aria-hidden="true">
+    <span class="badge">{n}</span>
+  </div>
+  <div class="body">
+    <h3 class="title"><span class="sr-only">Step {n}: </span>{title}</h3>
+    <p class="summary">{summary}</p>
+    <slot />
+  </div>
+</li>
+
+<style>
+  .step {
+    display: grid;
+    grid-template-columns: 2rem 1fr;
+    column-gap: 1rem;
+    list-style: none;
+  }
+  .rail {
+    position: relative;
+    display: flex;
+    justify-content: center;
+  }
+  .rail::after {
+    content: "";
+    position: absolute;
+    top: 2rem;
+    bottom: 0;
+    width: 2px;
+    background: #e5e7eb;
+  }
+  .step.last .rail::after {
+    display: none;
+  }
+  .badge {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: #111;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding-bottom: 1.75rem;
+    min-width: 0;
+  }
+  .step.last .body {
+    padding-bottom: 0;
+  }
+  .title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #111;
+    margin: 0;
+    line-height: 2rem;
+  }
+  .summary {
+    font-size: 0.875rem;
+    color: #4b5563;
+    margin: -0.4rem 0 0;
+    line-height: 1.45;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+</style>

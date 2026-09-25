@@ -2,6 +2,7 @@
 import OfflineToggle from "$lib/components/OfflineToggle.svelte";
 import ToolCard from "$lib/components/ToolCard.astro";
 import GroupBox from "$lib/components/GroupBox.astro";
+import Step from "$lib/components/Step.astro";
 import { tools } from "$lib/tools";
 import Layout from "../layouts/Layout.astro";
 
@@ -21,63 +22,92 @@ const packageLines = bySlug("package-lines");
 const schemaCrosswalk = bySlug("schema-crosswalk");
 const schemaMap = bySlug("schema-map");
 const schemaRefactor = bySlug("schema-refactor");
+const schemaFill = bySlug("schema-fill");
+const codeRefactor = bySlug("code-refactor");
+const codeUpdate = bySlug("code-update");
 ---
 
 <Layout
-  title="Topology Tools — browser-only geospatial utilities"
+  title="Topology Tools: browser-only geospatial utilities"
   description="A suite of browser-only geospatial topology tools. All processing runs client-side; your files never leave your device."
 >
   <main class="page">
     <header class="hero">
       <h1>Topology Tools</h1>
       <p class="tagline">
-        Browser-only geospatial topology utilities. All processing runs client-side via WebAssembly
-        — your files never leave your device.
+        Take a raw administrative boundary delivery through to a clean, coded, packaged release,
+        one step at a time. All processing runs in your browser via WebAssembly, so your files never
+        leave your device.
       </p>
     </header>
 
     <section class="tools">
-      <h2 class="section-heading">Tools</h2>
+      <h2 class="section-heading">COD-AB cleaning</h2>
+      <ol class="steps">
+        <Step n={1} title="Schema" summary="Map source columns to admin code and name columns, then apply the crosswalk.">
+          <GroupBox>
+            <ToolCard tool={schemaCrosswalk} header />
+            <div class="below">
+              <ToolCard tool={schemaMap} variant="secondary" />
+              <ToolCard tool={schemaRefactor} variant="secondary" />
+            </div>
+          </GroupBox>
+        </Step>
+
+        <Step n={2} title="Topology" summary="Find gaps and overlaps between units, then clean them.">
+          <GroupBox>
+            <ToolCard tool={clean} header />
+            <div class="below">
+              <ToolCard tool={detect} variant="secondary" />
+            </div>
+          </GroupBox>
+        </Step>
+
+        <Step n={3} title="Edge matching" summary="Fit units to a reference boundary so the outer edge follows the agreed outline.">
+          <GroupBox>
+            <ToolCard tool={match} header />
+            <div class="below">
+              <ToolCard tool={extend} variant="secondary" />
+              <GroupBox nested>
+                <ToolCard tool={mosaic} variant="secondary" header />
+                <div class="below">
+                  <ToolCard tool={clip} variant="tertiary" />
+                  <ToolCard tool={stitch} variant="tertiary" />
+                </div>
+              </GroupBox>
+            </div>
+          </GroupBox>
+        </Step>
+
+        <Step n={4} title="Codes" summary="Keep the previous release's codes for units that carry over, or cold-start codes when there is no previous release.">
+          <GroupBox>
+            <ToolCard tool={codeUpdate} header />
+            <div class="below">
+              <ToolCard tool={codeRefactor} variant="secondary" />
+            </div>
+          </GroupBox>
+        </Step>
+
+        <Step n={5} title="Names" summary="Review names by hand: duplicates under the same parent, near-duplicate typos, blanks and placeholders, and encoding artifacts." />
+
+        <Step n={6} title="Packaging" summary="Build per-level polygons, label points, and the boundary line network for release." last>
+          <GroupBox>
+            <ToolCard tool={pkg} header />
+            <div class="below">
+              <ToolCard tool={packagePolygons} variant="secondary" />
+              <ToolCard tool={packagePoints} variant="secondary" />
+              <ToolCard tool={packageLines} variant="secondary" />
+            </div>
+          </GroupBox>
+        </Step>
+      </ol>
+    </section>
+
+    <section class="tools">
+      <h2 class="section-heading">Other tools</h2>
       <div class="groups">
-        <GroupBox>
-          <ToolCard tool={clean} header />
-          <div class="below">
-            <ToolCard tool={detect} variant="secondary" />
-          </div>
-        </GroupBox>
-
-        <GroupBox>
-          <ToolCard tool={match} header />
-          <div class="below">
-            <ToolCard tool={extend} variant="secondary" />
-            <GroupBox nested>
-              <ToolCard tool={mosaic} variant="secondary" header />
-              <div class="below">
-                <ToolCard tool={clip} variant="tertiary" />
-                <ToolCard tool={stitch} variant="tertiary" />
-              </div>
-            </GroupBox>
-          </div>
-        </GroupBox>
-
         <ToolCard tool={change} />
-
-        <GroupBox>
-          <ToolCard tool={pkg} header />
-          <div class="below">
-            <ToolCard tool={packagePolygons} variant="secondary" />
-            <ToolCard tool={packagePoints} variant="secondary" />
-            <ToolCard tool={packageLines} variant="secondary" />
-          </div>
-        </GroupBox>
-
-        <GroupBox>
-          <ToolCard tool={schemaCrosswalk} header />
-          <div class="below">
-            <ToolCard tool={schemaMap} variant="secondary" />
-            <ToolCard tool={schemaRefactor} variant="secondary" />
-          </div>
-        </GroupBox>
+        <ToolCard tool={schemaFill} />
       </div>
     </section>
 
@@ -124,6 +154,10 @@ const schemaRefactor = bySlug("schema-refactor");
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin: 0 0 0.75rem;
+  }
+  .steps {
+    margin: 0;
+    padding: 0;
   }
   .groups {
     display: flex;
