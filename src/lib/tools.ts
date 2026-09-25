@@ -24,7 +24,7 @@ export const tools: Tool[] = [
     slug: "match",
     name: "Edge Matcher",
     tagline:
-      "Match fine polygons to their best-overlapping coarse boundary — admin 4 into 3, admin 4 into 0, or any other pair — then extend each group to fit its boundary exactly.",
+      "Match fine polygons to their best-overlapping coarse boundary (admin 4 into 3, admin 4 into 0, or any other pair), then extend each group to fit its boundary exactly.",
     iconHref: "/icons/tools/match.svg",
   },
   {
@@ -45,7 +45,7 @@ export const tools: Tool[] = [
     slug: "detect",
     name: "Detect",
     tagline:
-      "Scan a polygon layer for gaps and overlaps and report them — a read-only inspection, not a fix.",
+      "Scan a polygon layer for gaps and overlaps and report them without fixing anything (read-only).",
     iconHref: "/icons/tools/detect.svg",
   },
   {
@@ -59,7 +59,7 @@ export const tools: Tool[] = [
     slug: "mosaic",
     name: "Mosaic",
     tagline:
-      "Fit an already-extended children layer into a new parent boundary — assign, clip, and close seams in one pass, no re-extension.",
+      "Fit an already-extended children layer into a new parent boundary. Assign, clip, and close seams in one pass, no re-extension.",
     iconHref: "/icons/tools/mosaic.svg",
   },
   {
