@@ -33,7 +33,9 @@ export function validateColumnsMatch(crosswalkColumns: Set<string>, actual: Set<
 export function validateTargets(crosswalk: CrosswalkRow[]): void {
   const targets = crosswalk.map((r) => r.targetColumn).filter((t): t is string => !!t);
   const dupes = [...new Set(targets.filter((t, i) => targets.indexOf(t) !== i))].sort();
-  const reservedHits = [...new Set(targets.filter((t) => RESERVED_NAMES.has(t.toLowerCase())))].sort();
+  const reservedHits = [
+    ...new Set(targets.filter((t) => RESERVED_NAMES.has(t.toLowerCase()))),
+  ].sort();
   if (dupes.length === 0 && reservedHits.length === 0) return;
 
   const details: string[] = [];
@@ -41,7 +43,9 @@ export function validateTargets(crosswalk: CrosswalkRow[]): void {
     details.push(`target_column value(s) used more than once: ${JSON.stringify(dupes)}`);
   }
   if (reservedHits.length > 0) {
-    details.push(`target_column value(s) collide with reserved names: ${JSON.stringify(reservedHits)}`);
+    details.push(
+      `target_column value(s) collide with reserved names: ${JSON.stringify(reservedHits)}`,
+    );
   }
   throw new Error(`crosswalk has invalid target_column value(s) (${details.join("; ")})`);
 }

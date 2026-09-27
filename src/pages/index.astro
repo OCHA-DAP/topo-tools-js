@@ -36,8 +36,8 @@ const codeUpdate = bySlug("code-update");
     <header class="hero">
       <h1>Topology Tools</h1>
       <p class="tagline">
-        Take a raw administrative boundary delivery through to a clean, coded, packaged release,
-        one step at a time. All processing runs in your browser via WebAssembly, so your files never
+        Take a raw administrative boundary delivery through to a clean, coded, packaged release, one
+        step at a time. All processing runs in your browser via WebAssembly, so your files never
         leave your device.
       </p>
     </header>
@@ -45,7 +45,11 @@ const codeUpdate = bySlug("code-update");
     <section class="tools">
       <h2 class="section-heading">COD-AB cleaning</h2>
       <ol class="steps">
-        <Step n={1} title="Schema" summary="Map source columns to admin code and name columns, then apply the crosswalk.">
+        <Step
+          n={1}
+          title="Schema"
+          summary="Map source columns to admin code and name columns, then apply the crosswalk."
+        >
           <GroupBox>
             <ToolCard tool={schemaCrosswalk} header />
             <Disclosure label="Show 2 individual tools">
@@ -55,7 +59,11 @@ const codeUpdate = bySlug("code-update");
           </GroupBox>
         </Step>
 
-        <Step n={2} title="Topology" summary="Find gaps and overlaps between units, then clean them.">
+        <Step
+          n={2}
+          title="Topology"
+          summary="Find gaps and overlaps between units, then clean them."
+        >
           <GroupBox>
             <ToolCard tool={clean} header />
             <Disclosure label="Show 1 individual tool">
@@ -64,7 +72,11 @@ const codeUpdate = bySlug("code-update");
           </GroupBox>
         </Step>
 
-        <Step n={3} title="Edge matching" summary="Fit units to a reference boundary so the outer edge follows the agreed outline.">
+        <Step
+          n={3}
+          title="Edge matching"
+          summary="Fit units to a reference boundary so the outer edge follows the agreed outline."
+        >
           <GroupBox>
             <ToolCard tool={match} header />
             <Disclosure label="Show 2 individual tools">
@@ -80,7 +92,11 @@ const codeUpdate = bySlug("code-update");
           </GroupBox>
         </Step>
 
-        <Step n={4} title="Codes" summary="Keep the previous release's codes for units that carry over, or cold-start codes when there is no previous release.">
+        <Step
+          n={4}
+          title="Codes"
+          summary="Keep the previous release's codes for units that carry over, or cold-start codes when there is no previous release."
+        >
           <GroupBox>
             <ToolCard tool={codeUpdate} header />
             <Disclosure label="Show 1 individual tool">
@@ -89,9 +105,18 @@ const codeUpdate = bySlug("code-update");
           </GroupBox>
         </Step>
 
-        <Step n={5} title="Names" summary="Review names by hand: duplicates under the same parent, near-duplicate typos, blanks and placeholders, and encoding artifacts." />
+        <Step
+          n={5}
+          title="Names"
+          summary="Review names by hand: duplicates under the same parent, near-duplicate typos, blanks and placeholders, and encoding artifacts."
+        />
 
-        <Step n={6} title="Packaging" summary="Build per-level polygons, label points, and the boundary line network for release." last>
+        <Step
+          n={6}
+          title="Packaging"
+          summary="Build per-level polygons, label points, and the boundary line network for release."
+          last
+        >
           <GroupBox>
             <ToolCard tool={pkg} header />
             <Disclosure label="Show 3 individual tools">
@@ -120,7 +145,9 @@ const codeUpdate = bySlug("code-update");
     </section>
 
     <footer class="footer">
-      <p>Made by <a href="https://github.com/OCHA-DAP/topo-tools-js">OCHA</a>.</p>
+      <p>
+        Made by <a href="https://github.com/OCHA-DAP/topo-tools-js">OCHA</a>.
+      </p>
     </footer>
   </main>
 </Layout>

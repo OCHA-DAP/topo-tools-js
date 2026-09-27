@@ -12,7 +12,8 @@ function flagOverflow(changelog: ChangeRow[], fmt: CodeFormat): void {
   const capacity = 10 ** fmt.minWidth - 1;
   const byParent = new Map<string, ChangeRow[]>();
   for (const row of changelog) {
-    if ((row.codeOutcome !== "new" && row.codeOutcome !== "retained") || row.newCode === null) continue;
+    if ((row.codeOutcome !== "new" && row.codeOutcome !== "retained") || row.newCode === null)
+      continue;
     const key = `${row.level}:${parentPrefix(row.newCode, fmt)}`;
     const group = byParent.get(key);
     if (group) group.push(row);
@@ -39,7 +40,9 @@ async function applyMapping(
   matchCol: string,
   rows: string[],
 ): Promise<void> {
-  await conn.query(`CREATE OR REPLACE TEMP TABLE ${quoteIdent(mapping)} (raw_val VARCHAR, new_val VARCHAR)`);
+  await conn.query(
+    `CREATE OR REPLACE TEMP TABLE ${quoteIdent(mapping)} (raw_val VARCHAR, new_val VARCHAR)`,
+  );
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH).join(", ");
     await conn.query(`INSERT INTO ${quoteIdent(mapping)} VALUES ${slice}`);
@@ -69,16 +72,21 @@ export async function writeOutputs(
   flagOverflow(changelog, fmt);
 
   const desc = await conn.query(`DESCRIBE ${quoteIdent(finestTable)}`);
-  const existing = new Set((desc.toArray() as Array<{ column_name: string }>).map((r) => r.column_name));
+  const existing = new Set(
+    (desc.toArray() as Array<{ column_name: string }>).map((r) => r.column_name),
+  );
 
   const finest = Math.max(...sideA.columns.keys());
   const predecessorByBFid = new Map<number, string | null>();
   for (const row of changelog) {
-    if (row.level === finest && row.bFid !== null) predecessorByBFid.set(row.bFid, row.predecessorCode);
+    if (row.level === finest && row.bFid !== null)
+      predecessorByBFid.set(row.bFid, row.predecessorCode);
   }
 
   if (!existing.has(predecessorField)) {
-    await conn.query(`ALTER TABLE ${quoteIdent(finestTable)} ADD COLUMN ${quoteIdent(predecessorField)} VARCHAR`);
+    await conn.query(
+      `ALTER TABLE ${quoteIdent(finestTable)} ADD COLUMN ${quoteIdent(predecessorField)} VARCHAR`,
+    );
     existing.add(predecessorField);
   }
   const finestRaw = rawValByFid.get(finest)!;
@@ -91,14 +99,23 @@ export async function writeOutputs(
     .filter((v): v is string => v !== null);
   const finestRawCol = sideB.columns.get(finest)!;
   if (predRows.length > 0) {
-    await applyMapping(conn, finestTable, "cu_out_map_predecessor", predecessorField, finestRawCol, predRows);
+    await applyMapping(
+      conn,
+      finestTable,
+      "cu_out_map_predecessor",
+      predecessorField,
+      finestRawCol,
+      predRows,
+    );
   }
 
   for (const n of [...sideA.columns.keys()].sort((a, b) => a - b)) {
     const outputCol = sideA.columns.get(n)!;
     const rawCol = sideB.columns.get(n)!;
     if (!existing.has(outputCol)) {
-      await conn.query(`ALTER TABLE ${quoteIdent(finestTable)} ADD COLUMN ${quoteIdent(outputCol)} VARCHAR`);
+      await conn.query(
+        `ALTER TABLE ${quoteIdent(finestTable)} ADD COLUMN ${quoteIdent(outputCol)} VARCHAR`,
+      );
       existing.add(outputCol);
     }
     const rawForLevel = rawValByFid.get(n)!;
@@ -115,7 +132,10 @@ export async function writeOutputs(
   }
 }
 
-export async function buildChangelogTable(conn: AsyncDuckDBConnection, changelog: ChangeRow[]): Promise<void> {
+export async function buildChangelogTable(
+  conn: AsyncDuckDBConnection,
+  changelog: ChangeRow[],
+): Promise<void> {
   await conn.query("DROP TABLE IF EXISTS cu_changelog");
   await conn.query(`--sql
     CREATE TABLE cu_changelog (

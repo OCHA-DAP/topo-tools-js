@@ -16,7 +16,7 @@ Built a 155-candidate list spanning 5 decades (`1e-9` to `1e-5`) × 31
 multiples per decade (integers 1–9.5 plus fractions: halves, thirds,
 quarters, etc.), tested against the reproducible whole-dataset monolithic
 merge failure. A methodological trap surfaced first: rerunning the pipeline
-from scratch on the identical input produced a *different* pathological fid
+from scratch on the identical input produced a _different_ pathological fid
 than the original diagnosis — direct evidence the Voronoi diagram output is
 not bit-stable across separate runs on the same input (see
 [0007](0007-noding-non-determinism-accepted-not-chased.md)), so "the known
@@ -35,7 +35,7 @@ Leave `NODING_RETRY_PRECISIONS` (`src/lib/db/precisionRetry.ts`) unchanged
 at its original 28-value list. The failure signature is a single-point,
 needle-in-a-haystack floating-point coincidence at one specific rounding
 grid, not a systematic region of instability that a finer or differently-
-spaced grid would avoid. The value of the retry loop is having *several*
+spaced grid would avoid. The value of the retry loop is having _several_
 independent candidates to try, not the specific spacing or density of those
 candidates.
 

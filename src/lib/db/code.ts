@@ -17,7 +17,11 @@ function quoteLiteral(value: string): string {
   return "'" + value.replace(/'/g, "''") + "'";
 }
 
-export function resolveCodeFormat(rootCode: string, delimiter: string, minWidth: number): CodeFormat {
+export function resolveCodeFormat(
+  rootCode: string,
+  delimiter: string,
+  minWidth: number,
+): CodeFormat {
   if (!rootCode) throw new Error("root code must be a non-empty string");
   if (delimiter.length !== 1) {
     throw new Error(`delimiter must be a single character, got ${JSON.stringify(delimiter)}`);
@@ -93,7 +97,9 @@ export async function assignNewCodes(
   const qParent = quoteIdent(parentColumn);
   const qCode = quoteIdent(codeColumn);
 
-  const parentRows = (await conn.query(`SELECT DISTINCT ${qParent} AS p FROM ${qTable}`)).toArray() as Array<{
+  const parentRows = (
+    await conn.query(`SELECT DISTINCT ${qParent} AS p FROM ${qTable}`)
+  ).toArray() as Array<{
     p: string | null;
   }>;
 
@@ -108,7 +114,9 @@ export async function assignNewCodes(
     CREATE OR REPLACE TEMP TABLE ${baseTable} (parent_code VARCHAR, base_n INTEGER)
   `);
   if (baseByParent.size > 0) {
-    const values = [...baseByParent.entries()].map(([p, n]) => `(${quoteLiteral(p)}, ${n})`).join(", ");
+    const values = [...baseByParent.entries()]
+      .map(([p, n]) => `(${quoteLiteral(p)}, ${n})`)
+      .join(", ");
     await conn.query(`INSERT INTO ${baseTable} VALUES ${values}`);
   }
 
@@ -163,7 +171,9 @@ export async function detectCodeFormat(
   ).toArray() as Array<{ v: string }>;
   const codes = rows.map((r) => r.v);
   if (codes.length === 0) {
-    throw new Error(`no non-null values in ${JSON.stringify(codeColumn)} to detect a code format from`);
+    throw new Error(
+      `no non-null values in ${JSON.stringify(codeColumn)} to detect a code format from`,
+    );
   }
 
   const delimiter = detectDelimiter(codes, codeColumn);
@@ -211,7 +221,9 @@ function detectMinWidth(codes: string[], delimiter: string, codeColumn: string):
     for (const part of code.split(delimiter).slice(1)) widths.push(part.length);
   }
   if (widths.length === 0) {
-    throw new Error(`no delimited components found in ${JSON.stringify(codeColumn)} to measure width from`);
+    throw new Error(
+      `no delimited components found in ${JSON.stringify(codeColumn)} to measure width from`,
+    );
   }
   const counts = new Map<number, number>();
   for (const w of widths) counts.set(w, (counts.get(w) ?? 0) + 1);

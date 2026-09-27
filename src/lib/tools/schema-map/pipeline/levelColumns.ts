@@ -152,7 +152,8 @@ export async function detectLevelColumns(
     const hasCode =
       level === rootLevel ||
       allColumnsByLevel.get(level)!.some((c) => rows.get(c)!.role === "code");
-    const nameColumn = allColumnsByLevel.get(level)!.find((c) => rows.get(c)!.role === "name") ?? null;
+    const nameColumn =
+      allColumnsByLevel.get(level)!.find((c) => rows.get(c)!.role === "name") ?? null;
     if (!anchors.has(level)) {
       result.set(level, {
         groupBy,

@@ -32,7 +32,9 @@ export async function assignRefactorCodes(
     });
 
     const parentMatch =
-      parentColumn === null ? "TRUE" : `t.${quoteIdent(parentColumn)} IS NOT DISTINCT FROM s.parent_code`;
+      parentColumn === null
+        ? "TRUE"
+        : `t.${quoteIdent(parentColumn)} IS NOT DISTINCT FROM s.parent_code`;
     await conn.query(`--sql
       UPDATE ${qTable} t
       SET ${qCode} = s.code_val

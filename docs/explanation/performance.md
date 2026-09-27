@@ -25,7 +25,7 @@ working values (reconfirmed at finer grain by a later 155-value sweep, see
 precision candidates (`src/lib/db/precisionRetry.ts`'s `withNodingRetry`,
 28 values spanning 0.1mm–111mm), applying `ST_ReducePrecision` only to
 whichever table carries the suspected pathological vertices — always the
-algorithmically-*derived* side of an operation, never real input data — and
+algorithmically-_derived_ side of an operation, never real input data — and
 stopping at the first candidate that succeeds. Consumers: Edge Extender's
 final merge dissolve, Edge Matcher's group-clip step, and
 `clipToBoundary.ts`'s general clip-to-known-boundary helper. Full decision
@@ -54,10 +54,10 @@ DuckDB on Linux uses virtual memory. The SPATIAL_JOIN operator pre-allocates ~1�
 
 ### Reading error messages
 
-| Message | Meaning |
-| ------- | ------- |
+| Message                                                      | Meaning                                                                                                                                                                                               |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `"failed to allocate data of size X MiB (Y GiB/Y GiB used)"` | DuckDB's budget manager rejected the allocation. Y equals `memory_limit` exactly. Actual data in memory may be much smaller — this is often the SPATIAL_JOIN reservation bug, not real data pressure. |
-| `"Allocation failure"` | WASM `memory.grow()` failed. The physical heap is genuinely exhausted. No budget trick helps; the query must use less memory. |
+| `"Allocation failure"`                                       | WASM `memory.grow()` failed. The physical heap is genuinely exhausted. No budget trick helps; the query must use less memory.                                                                         |
 
 A whole-batch `ST_CoverageClean` on a large assembled result (e.g. Edge
 Matcher's final output) can hit this ceiling outright — see
@@ -111,12 +111,12 @@ Ported from edge-extender's `ce7fc0f`/`a3b1687`/`7f0a1a4` (see that repo's `docs
 
 ## Connection settings (`duckdb.svelte.ts`)
 
-| Setting | Effect |
-| ------- | ------- |
-| `SET threads = 1` | Primary memory dial. In WASM, DuckDB is single-threaded anyway; this makes it explicit and prevents unexpected parallel allocations. |
+| Setting                                | Effect                                                                                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SET threads = 1`                      | Primary memory dial. In WASM, DuckDB is single-threaded anyway; this makes it explicit and prevents unexpected parallel allocations.                   |
 | `SET preserve_insertion_order = false` | Free win. Removes sequence-tracking overhead from every intermediate buffer and eliminates the reorder pass after aggregations. No correctness impact. |
-| `SET geometry_always_xy = true` | Correctness: forces (lon, lat) coordinate order regardless of CRS definition. Required for correct EPSG:4326 output. |
-| `memory_limit` | Left at default (80% of device RAM). The only override is the targeted `999GB` workaround in `voronoi.ts` described above. |
+| `SET geometry_always_xy = true`        | Correctness: forces (lon, lat) coordinate order regardless of CRS definition. Required for correct EPSG:4326 output.                                   |
+| `memory_limit`                         | Left at default (80% of device RAM). The only override is the targeted `999GB` workaround in `voronoi.ts` described above.                             |
 
 ---
 
@@ -139,14 +139,14 @@ with "Read-write random access not supported."
 
 ## Pipeline phase memory profile
 
-| Phase | Module | Memory concern | Notes |
-| ----- | ------ | -------------- | ----- |
-| Load | `loader.ts` | Low | File buffer registered directly; no copy |
-| Lines | `lines.ts` | Medium | Bbox-self-join materializes per-polygon neighbor unions (3–10 geoms each). No global aggregate. |
-| Points | `points.ts`, `distance.ts` | Low–medium | Starting distance is derived per-file from `memory_limit` + natural boundary resolution (`distance.ts`), not user-supplied. Segments longer than `distance * MAX_POINTS_PER_SEGMENT` are capped to avoid Voronoi collinearity degeneracy. `MAX_POINTS = 10M` enforces a hard cap with retry-and-double-distance fallback. |
-| **Voronoi** | `voronoi.ts` | **High** | `ST_VoronoiDiagram(ST_Collect(list(geom)))` materialises entire point cloud in GEOS. `_04_tmp2` join uses the `999GB` override. Retry mechanism doubles spacing until it fits. |
-| **Merge** | `merge.ts` | **High** | Per-part bbox-prefiltered neighbor-union differencing (`layer_05_tmp1`/`layer_05_tmp2`) computes each fid's Voronoi-cell remainder against nearby originals, then a single whole-table `ST_CoverageClean` pass (`layer_05_tmp3` → `layer_05`) closes floating-point-scale seams left by the independent per-fid `ST_Difference` calls. Bbox-prefiltered joins avoid SPATIAL_JOIN. |
-| Export | `index.ts` | Medium | `ST_AsGeoJSON` per row, then JS string concat. Validation checks (overlap / gap / row count) run first; `runValidation` warnings go to console. |
+| Phase       | Module                     | Memory concern | Notes                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------- | -------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Load        | `loader.ts`                | Low            | File buffer registered directly; no copy                                                                                                                                                                                                                                                                                                                                          |
+| Lines       | `lines.ts`                 | Medium         | Bbox-self-join materializes per-polygon neighbor unions (3–10 geoms each). No global aggregate.                                                                                                                                                                                                                                                                                   |
+| Points      | `points.ts`, `distance.ts` | Low–medium     | Starting distance is derived per-file from `memory_limit` + natural boundary resolution (`distance.ts`), not user-supplied. Segments longer than `distance * MAX_POINTS_PER_SEGMENT` are capped to avoid Voronoi collinearity degeneracy. `MAX_POINTS = 10M` enforces a hard cap with retry-and-double-distance fallback.                                                         |
+| **Voronoi** | `voronoi.ts`               | **High**       | `ST_VoronoiDiagram(ST_Collect(list(geom)))` materialises entire point cloud in GEOS. `_04_tmp2` join uses the `999GB` override. Retry mechanism doubles spacing until it fits.                                                                                                                                                                                                    |
+| **Merge**   | `merge.ts`                 | **High**       | Per-part bbox-prefiltered neighbor-union differencing (`layer_05_tmp1`/`layer_05_tmp2`) computes each fid's Voronoi-cell remainder against nearby originals, then a single whole-table `ST_CoverageClean` pass (`layer_05_tmp3` → `layer_05`) closes floating-point-scale seams left by the independent per-fid `ST_Difference` calls. Bbox-prefiltered joins avoid SPATIAL_JOIN. |
+| Export      | `index.ts`                 | Medium         | `ST_AsGeoJSON` per row, then JS string concat. Validation checks (overlap / gap / row count) run first; `runValidation` warnings go to console.                                                                                                                                                                                                                                   |
 
 The retry loop in `pipeline/index.ts` (up to 10 attempts, doubling distance each time) is the safety valve for Points and Voronoi OOMs. It only covers stages 3–4; an OOM at lines (stage 2) or merge (stage 5) propagates as an unrecoverable error — the user is expected to fall back to the Python `edge-extender` for inputs that don't fit.
 
@@ -157,13 +157,13 @@ The retry loop in `pipeline/index.ts` (up to 10 attempts, doubling distance each
 Confirmed clean end-to-end runs against real portolan-catalog data (see the
 `at-scale-testing` skill for how to pick a file):
 
-| Tool | Dataset | Scale | Result |
-| ---- | ------- | ----- | ------ |
-| `/match` | `bgd` adm3→adm2 | 507 fine / 64 coarse groups | ~5m24s, 0 invalid edges, area conserved |
-| `/extend` | `eth` adm3 | 1,148 features | ~100s, 0 retries |
-| `/clean` | `bgd` adm3 | 507 features (12 MB) | ~35s, 0 overlaps, 0 gaps, 5 slivers |
-| `/clean` | `cod` adm3 | 519 features (4.8 MB) | ~35s, 0 overlaps, 0 gaps, 6 slivers |
-| `/clean` | `eth` adm3 | 1,148 features (9.3 MB) | ~25s, 0 overlaps, 0 gaps, 2 slivers |
+| Tool      | Dataset            | Scale                                      | Result                                                                                             |
+| --------- | ------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `/match`  | `bgd` adm3→adm2    | 507 fine / 64 coarse groups                | ~5m24s, 0 invalid edges, area conserved                                                            |
+| `/extend` | `eth` adm3         | 1,148 features                             | ~100s, 0 retries                                                                                   |
+| `/clean`  | `bgd` adm3         | 507 features (12 MB)                       | ~35s, 0 overlaps, 0 gaps, 5 slivers                                                                |
+| `/clean`  | `cod` adm3         | 519 features (4.8 MB)                      | ~35s, 0 overlaps, 0 gaps, 6 slivers                                                                |
+| `/clean`  | `eth` adm3         | 1,148 features (9.3 MB)                    | ~25s, 0 overlaps, 0 gaps, 2 slivers                                                                |
 | `/change` | `ukr` adm3 v02→v04 | 1,770 A / 1,769 B features (14–15 MB each) | ~45s, 1287 unchanged / 481 modified / 1 merge / 0 created or removed, row totals exactly conserved |
 
 `/match`'s `cod` adm3→adm2 combination hits the 3 GiB WASM ceiling at higher

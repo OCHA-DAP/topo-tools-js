@@ -15,7 +15,7 @@ from the input.
    sibling gate in Topology Cleaner for why this only fires conditionally).
 2. **Boundary lines** (`pipeline/lines.ts`) — extract each polygon's
    boundary, then subtract the union of its bbox-prefiltered neighbors so
-   only the *non-shared* stretch of each boundary remains (shared/touching
+   only the _non-shared_ stretch of each boundary remains (shared/touching
    edges don't need extending).
 3. **Points** (`pipeline/points.ts`), decomposes the remaining boundary
    into real vertex-to-vertex segments and interpolates points along them

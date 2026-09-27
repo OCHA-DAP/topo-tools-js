@@ -7,12 +7,12 @@ Accepted
 ## Context
 
 Topology Cleaner had a last-resort retry on GEOS `TopologyException`:
-`ST_ReducePrecision(geom, 1e-10)` applied to the *entire* input layer, at
+`ST_ReducePrecision(geom, 1e-10)` applied to the _entire_ input layer, at
 four call sites (the main clean in `index.ts`, gap/overlap detection
 retries in `issues.ts`, and the export-verification sweep in `verify.ts`).
 Unlike Edge Extender/Edge Matcher's noding retry (see
 [0001](0001-precision-retry-mitigates-wasm-noding-failures.md)), which only
-ever reduces precision on algorithmically-*derived* geometry, Topology
+ever reduces precision on algorithmically-_derived_ geometry, Topology
 Cleaner's retry reduced precision on `layer_01` itself — the real,
 user-supplied input, and the same table that gets exported. Its blast
 radius was every vertex in the coverage for a defect usually local to a

@@ -33,7 +33,7 @@ shared boundaries from `ST_Boundary` plus `ST_Intersection` plus
    `ST_Touches` against each pair's whole-fid geometry.
 4. For each touching pair, compute the shared segment as
    `ST_LineMerge(ST_Union_Agg(ST_CollectionExtract(ST_Intersection(boundary_part_a,
-   boundary_part_b), 2)))`, filtering out `NULL`/empty results; a
+boundary_part_b), 2)))`, filtering out `NULL`/empty results; a
    corner-only touch has `ST_Touches` true but an empty intersection, and
    produces zero shared rows for that pair. The outer `ST_LineMerge` is
    required even when both sides' vertices exactly coincide along the
@@ -42,7 +42,7 @@ shared boundaries from `ST_Boundary` plus `ST_Intersection` plus
    `docs/adr/0032`).
 5. Union each fid's own shared segments via `ST_Union_Agg`, then compute
    its exterior as `ST_LineMerge(ST_Difference(boundary_part,
-   COALESCE(own_shared_union, empty_multilinestring)))`, dumped to atomic
+COALESCE(own_shared_union, empty_multilinestring)))`, dumped to atomic
    `LineString` rows.
 6. Classify every row: a shared row's depth is the coarsest detected level
    at which its two sides' own code columns first differ (walking

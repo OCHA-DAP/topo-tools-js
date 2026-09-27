@@ -1,5 +1,9 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { buildCoverageCleanInput, hasCoverageViolations, runCoverageClean } from "$lib/db/coverageClean";
+import {
+  buildCoverageCleanInput,
+  hasCoverageViolations,
+  runCoverageClean,
+} from "$lib/db/coverageClean";
 import { validateCleanOutput } from "./validate";
 
 // The topology-cleaner pipeline. Reads the loader-owned `layer_01` (fid, geom)
@@ -66,10 +70,7 @@ export async function buildClean(
 }
 
 // Count rows in a cleaned table (post-explode) for the collapsed-feature warning.
-export async function countRows(
-  conn: AsyncDuckDBConnection,
-  table: string,
-): Promise<number> {
+export async function countRows(conn: AsyncDuckDBConnection, table: string): Promise<number> {
   const r = await conn.query(
     `SELECT COUNT(*) AS n FROM ${table} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)`,
   );

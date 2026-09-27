@@ -1,8 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import {
-  runPackageLines,
-  type PackageLinesResult,
-} from "$lib/tools/package-lines/pipeline/index";
+import { runPackageLines, type PackageLinesResult } from "$lib/tools/package-lines/pipeline/index";
 import {
   runPackagePoints,
   type PackagePointsResult,

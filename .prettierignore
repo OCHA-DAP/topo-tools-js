@@ -1,3 +1,5 @@
 node_modules
 dist
 .astro
+tests/fixtures
+public/data

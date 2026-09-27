@@ -45,7 +45,9 @@ async function computeBounds(
     FROM ${table} WHERE geom IS NOT NULL
   `);
   const { xmin, ymin, xmax, ymax } = r.toArray()[0] as Record<string, number>;
-  return [xmin, ymin, xmax, ymax].every((v) => Number.isFinite(v)) ? [xmin, ymin, xmax, ymax] : null;
+  return [xmin, ymin, xmax, ymax].every((v) => Number.isFinite(v))
+    ? [xmin, ymin, xmax, ymax]
+    : null;
 }
 
 async function buildInputTable(conn: AsyncDuckDBConnection, side: "a" | "b"): Promise<void> {
@@ -133,7 +135,16 @@ export async function runCodeUpdate(
   await conn.query("DROP TABLE IF EXISTS cu_a_input");
   await conn.query("DROP TABLE IF EXISTS cu_b_input");
 
-  await writeOutputs(conn, "cu_b_layer_attr", sideA, sideB, newCodeByFid, rawValByFid, changelog, fmt);
+  await writeOutputs(
+    conn,
+    "cu_b_layer_attr",
+    sideA,
+    sideB,
+    newCodeByFid,
+    rawValByFid,
+    changelog,
+    fmt,
+  );
   if (prevLevel !== null) await conn.query(`DROP TABLE IF EXISTS cu_dsl_${prevLevel}_b`);
   await buildChangelogTable(conn, changelog);
 

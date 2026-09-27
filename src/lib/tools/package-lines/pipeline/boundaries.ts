@@ -23,7 +23,10 @@ function classificationSql(levels: number[], codeColumns: Array<string | null>):
   if (levels.length === 1) return String(levels[0]);
   const cases = levels
     .slice(0, -1)
-    .map((level, i) => `WHEN l."${codeColumns[i]!}" IS DISTINCT FROM r."${codeColumns[i]!}" THEN ${level} `)
+    .map(
+      (level, i) =>
+        `WHEN l."${codeColumns[i]!}" IS DISTINCT FROM r."${codeColumns[i]!}" THEN ${level} `,
+    )
     .join("");
   return `CASE ${cases}ELSE ${levels[levels.length - 1]} END`;
 }
@@ -66,7 +69,12 @@ async function resolveFinestGroupBy(
       ["code", codeColumns[codeColumns.length - 1]],
       ["name", schema.nameField.replace("{n}", String(finest))],
     ]);
-    return { finestGroupBy: [codeColumns[codeColumns.length - 1]], codeColumns, targetSchema: schema, finestGenerics };
+    return {
+      finestGroupBy: [codeColumns[codeColumns.length - 1]],
+      codeColumns,
+      targetSchema: schema,
+      finestGenerics,
+    };
   }
 
   const levelColumns = await detectLevelColumnsOrSingle(conn, table);
@@ -208,7 +216,9 @@ export async function buildBoundaries(
   const finestEntries = [...finestGenerics];
   const aCols = (table: string) =>
     finestEntries
-      .map(([generic, col]) => (col ? `${table}."${col}" AS "a_${generic}"` : `NULL AS "a_${generic}"`))
+      .map(([generic, col]) =>
+        col ? `${table}."${col}" AS "a_${generic}"` : `NULL AS "a_${generic}"`,
+      )
       .join(", ");
   const sharedBCols = finestEntries
     .map(([generic, col]) => (col ? `r."${col}" AS "b_${generic}"` : `NULL AS "b_${generic}"`))

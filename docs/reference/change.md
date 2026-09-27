@@ -93,10 +93,10 @@ prefixed `cw_`) compares two versions of a polygon layer ("Version A" = old,
 
 - `change` MUST produce a tabular changelog with one row per classified
   pair plus one row per unmatched singleton fid, with columns `code_a,
-  name_a, code_b, name_b, relationship_class, match_method, a_in_b
-  (coverage_a, 3dp), b_in_a (coverage_b, 3dp), similarity (iou, 3dp),
-  threshold_match, threshold_unchanged, link_by_code, link_by_name,
-  link_mode`. Rows for a singleton MUST have `NULL` in every column that
+name_a, code_b, name_b, relationship_class, match_method, a_in_b
+(coverage_a, 3dp), b_in_a (coverage_b, 3dp), similarity (iou, 3dp),
+threshold_match, threshold_unchanged, link_by_code, link_by_name,
+link_mode`. Rows for a singleton MUST have `NULL` in every column that
   belongs to the side the fid has no counterpart on.
 - `change` MUST produce a spatial overlay layer tagging every Version-B
   unit, and every Version-A unit classed `removed`, with its cluster ID and

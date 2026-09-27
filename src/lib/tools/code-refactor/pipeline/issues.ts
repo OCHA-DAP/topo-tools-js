@@ -27,7 +27,9 @@ export async function buildCodeIssues(
   for (const [level, codeColumn] of levels) {
     const qCode = quoteIdent(codeColumn);
     const codes = (
-      (await conn.query(`SELECT DISTINCT ${qCode} AS v FROM ${quoteIdent(table)}`)).toArray() as Array<{
+      (
+        await conn.query(`SELECT DISTINCT ${qCode} AS v FROM ${quoteIdent(table)}`)
+      ).toArray() as Array<{
         v: string;
       }>
     ).map((r) => r.v);

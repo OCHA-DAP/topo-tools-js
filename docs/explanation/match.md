@@ -39,7 +39,7 @@ an optional code-based assignment override is available (see below).
    `ge_results`, export it, then attempt a single gated
    `ST_CoverageClean` over the whole assembled batch (catches cross-group
    seams no per-group clean could see) and re-export if it succeeds. Export
-   runs *before* attempting this final clean specifically so a clean
+   runs _before_ attempting this final clean specifically so a clean
    failure can never lose an already-correct result — see
    [`0008`](../adr/0008-wasm-coverageclean-oom-ceiling-mitigated-not-fixed.md).
 

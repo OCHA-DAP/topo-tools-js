@@ -137,7 +137,12 @@ interface SourceConfig {
 
 const SOURCES: Record<ExportSource, SourceConfig> = {
   extend: { table: "layer_05", attrTable: "layer_attr", suffix: "_ee", kind: "spatial" },
-  clean_topology: { table: "tc_clean", attrTable: "layer_attr", suffix: "_cleaned", kind: "spatial" },
+  clean_topology: {
+    table: "tc_clean",
+    attrTable: "layer_attr",
+    suffix: "_cleaned",
+    kind: "spatial",
+  },
   topology_issues: {
     table: "tc_issues",
     attrTable: null,
@@ -188,7 +193,16 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: null,
     suffix: "_issues",
     kind: "spatial",
-    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "fixed", "unit_a", "unit_b"],
+    columns: [
+      "key",
+      "kind",
+      "area_m2",
+      "max_width_m",
+      "thinness_ratio",
+      "fixed",
+      "unit_a",
+      "unit_b",
+    ],
   },
   detect_issues: {
     table: "dt_issues",
@@ -205,13 +219,27 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     kind: "spatial",
     columns: ["key", "kind", "unit_a", "parent_fid", "reason"],
   },
-  mosaic: { table: "st_clean", attrTable: "child_layer_attr", suffix: "_mosaicked", kind: "spatial" },
+  mosaic: {
+    table: "st_clean",
+    attrTable: "child_layer_attr",
+    suffix: "_mosaicked",
+    kind: "spatial",
+  },
   mosaic_issues: {
     table: "ms_issues",
     attrTable: null,
     suffix: "_issues",
     kind: "spatial",
-    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a", "parent_fid", "reason"],
+    columns: [
+      "key",
+      "kind",
+      "area_m2",
+      "max_width_m",
+      "thinness_ratio",
+      "unit_a",
+      "parent_fid",
+      "reason",
+    ],
   },
   schema_map: {
     table: "sm_crosswalk",
@@ -233,15 +261,60 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     suffix: "_filled",
     kind: "spatial",
   },
-  package_polygons_level_0: { table: "pp_geom_0", attrTable: "pp_attr_0", suffix: "_pp_level0", kind: "spatial" },
-  package_polygons_level_1: { table: "pp_geom_1", attrTable: "pp_attr_1", suffix: "_pp_level1", kind: "spatial" },
-  package_polygons_level_2: { table: "pp_geom_2", attrTable: "pp_attr_2", suffix: "_pp_level2", kind: "spatial" },
-  package_polygons_level_3: { table: "pp_geom_3", attrTable: "pp_attr_3", suffix: "_pp_level3", kind: "spatial" },
-  package_polygons_level_4: { table: "pp_geom_4", attrTable: "pp_attr_4", suffix: "_pp_level4", kind: "spatial" },
-  package_polygons_level_5: { table: "pp_geom_5", attrTable: "pp_attr_5", suffix: "_pp_level5", kind: "spatial" },
-  package_polygons_level_6: { table: "pp_geom_6", attrTable: "pp_attr_6", suffix: "_pp_level6", kind: "spatial" },
-  package_polygons_level_7: { table: "pp_geom_7", attrTable: "pp_attr_7", suffix: "_pp_level7", kind: "spatial" },
-  package_points: { table: "pkpt_geom", attrTable: "pkpt_attr", suffix: "_pp_points", kind: "spatial" },
+  package_polygons_level_0: {
+    table: "pp_geom_0",
+    attrTable: "pp_attr_0",
+    suffix: "_pp_level0",
+    kind: "spatial",
+  },
+  package_polygons_level_1: {
+    table: "pp_geom_1",
+    attrTable: "pp_attr_1",
+    suffix: "_pp_level1",
+    kind: "spatial",
+  },
+  package_polygons_level_2: {
+    table: "pp_geom_2",
+    attrTable: "pp_attr_2",
+    suffix: "_pp_level2",
+    kind: "spatial",
+  },
+  package_polygons_level_3: {
+    table: "pp_geom_3",
+    attrTable: "pp_attr_3",
+    suffix: "_pp_level3",
+    kind: "spatial",
+  },
+  package_polygons_level_4: {
+    table: "pp_geom_4",
+    attrTable: "pp_attr_4",
+    suffix: "_pp_level4",
+    kind: "spatial",
+  },
+  package_polygons_level_5: {
+    table: "pp_geom_5",
+    attrTable: "pp_attr_5",
+    suffix: "_pp_level5",
+    kind: "spatial",
+  },
+  package_polygons_level_6: {
+    table: "pp_geom_6",
+    attrTable: "pp_attr_6",
+    suffix: "_pp_level6",
+    kind: "spatial",
+  },
+  package_polygons_level_7: {
+    table: "pp_geom_7",
+    attrTable: "pp_attr_7",
+    suffix: "_pp_level7",
+    kind: "spatial",
+  },
+  package_points: {
+    table: "pkpt_geom",
+    attrTable: "pkpt_attr",
+    suffix: "_pp_points",
+    kind: "spatial",
+  },
   package_lines: { table: "pl_geom", attrTable: "pl_attr", suffix: "_pp_lines", kind: "spatial" },
   code_refactor: { table: "layer_01", attrTable: "layer_attr", suffix: "_coded", kind: "spatial" },
   code_refactor_issues: {
@@ -249,7 +322,15 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: null,
     suffix: "_issues",
     kind: "tabular",
-    tabularColumns: ["kind", "level", "parent_code", "assigned_code", "child_count", "min_width", "reason"],
+    tabularColumns: [
+      "kind",
+      "level",
+      "parent_code",
+      "assigned_code",
+      "child_count",
+      "min_width",
+      "reason",
+    ],
   },
   code_update: {
     table: "cu_b_layer_01",
@@ -510,7 +591,9 @@ async function buildSpatialSelect(
 }
 
 async function buildTabularSelect(source: SourceConfig): Promise<string> {
-  const cols = source.tabularColumns ? source.tabularColumns.map((c) => JSON.stringify(c)).join(", ") : "*";
+  const cols = source.tabularColumns
+    ? source.tabularColumns.map((c) => JSON.stringify(c)).join(", ")
+    : "*";
   const order = source.orderBy ? ` ORDER BY ${source.orderBy}` : "";
   return `SELECT ${cols} FROM ${source.table}${order}`;
 }
@@ -625,7 +708,9 @@ async function exportParquet(
 
   const path = vfsName(format.ext);
   try {
-    await conn.query(`COPY (${select}) TO ${quotePath(path)} (FORMAT PARQUET, COMPRESSION ZSTD, COMPRESSION_LEVEL 15, GEOPARQUET_VERSION 'BOTH')`);
+    await conn.query(
+      `COPY (${select}) TO ${quotePath(path)} (FORMAT PARQUET, COMPRESSION ZSTD, COMPRESSION_LEVEL 15, GEOPARQUET_VERSION 'BOTH')`,
+    );
     const bytes = await db.copyFileToBuffer(path);
     return {
       blob: toBlob(bytes, format.mime),

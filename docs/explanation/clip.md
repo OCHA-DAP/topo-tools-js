@@ -16,7 +16,7 @@ scoping decisions the port required.
    `gatedCoverageClean` on either: `clip` reports on and clips against the
    raw input, and any resulting seams are `stitch`'s job downstream.
 2. **Assign** (`pipeline/assign.ts`, `assignOne`) — assign-one: every
-   parent unit's vote count is the number of *distinct children* it
+   parent unit's vote count is the number of _distinct children_ it
    overlaps, not each child's own overlap area, so one child that
    overshoots deep into a neighboring parent doesn't outvote the many
    children correctly touching the real parent. This differs from

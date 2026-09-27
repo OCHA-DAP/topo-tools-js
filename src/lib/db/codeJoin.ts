@@ -22,9 +22,7 @@ export function resolveMatchColumns(opts: MatchColumnOptions): ResolvedMatchColu
   const { matchColumn, parentMatchColumn, childMatchColumn } = opts;
   if (matchColumn != null) {
     if (parentMatchColumn != null || childMatchColumn != null) {
-      throw new Error(
-        "matchColumn is mutually exclusive with parentMatchColumn/childMatchColumn.",
-      );
+      throw new Error("matchColumn is mutually exclusive with parentMatchColumn/childMatchColumn.");
     }
     return { parentMatchColumn: matchColumn, childMatchColumn: matchColumn };
   }

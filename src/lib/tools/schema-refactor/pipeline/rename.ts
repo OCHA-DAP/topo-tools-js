@@ -3,7 +3,10 @@ import type { CrosswalkRow } from "./crosswalk";
 
 // A null/empty target_column drops that source column; geometry lives in
 // layer_01 and is never touched here.
-export async function renameColumns(conn: AsyncDuckDBConnection, crosswalk: CrosswalkRow[]): Promise<void> {
+export async function renameColumns(
+  conn: AsyncDuckDBConnection,
+  crosswalk: CrosswalkRow[],
+): Promise<void> {
   const selectCols = crosswalk
     .filter((r) => r.targetColumn)
     .map((r) => `${JSON.stringify(r.sourceColumn)} AS ${JSON.stringify(r.targetColumn)}`);

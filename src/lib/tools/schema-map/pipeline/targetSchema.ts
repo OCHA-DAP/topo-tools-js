@@ -11,6 +11,6 @@ export const DEFAULT_TARGET_SCHEMA: TargetSchema = {
 
 export function validateTargetSchema(schema: TargetSchema): void {
   if (!schema.nameField.includes("{n}") || !schema.codeField.includes("{n}")) {
-    throw new Error("Name and code templates must both contain a \"{n}\" placeholder.");
+    throw new Error('Name and code templates must both contain a "{n}" placeholder.');
   }
 }

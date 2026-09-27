@@ -106,5 +106,5 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   degrees using the dataset's own centroid latitude (`cos(latitude)`
   scaling), not a fixed conversion factor.
 - Changing the gap-width slider MUST trigger only a reclean (`buildClean`
-  + `checkFixedIssues` + export-check), reusing the cached input freeze
-  and the cached issues list, never re-running gap/overlap detection.
+  - `checkFixedIssues` + export-check), reusing the cached input freeze
+    and the cached issues list, never re-running gap/overlap detection.

@@ -34,7 +34,7 @@ correctly-partitioned `adm1_pcode`, so a blanket filter demoted both to
 Spatial coherence (`queries.ts`'s `spatiallyCoherent`) corroborates only
 the two specific exploitable paths above, never chain candidacy generally:
 
-- A finer group's edge into the root, justified *only* by the root freebie
+- A finer group's edge into the root, justified _only_ by the root freebie
   (no embedding evidence), additionally requires the finer group to be
   spatially coherent, unless the table has no `geom` column loaded at all
   (`hasGeometryColumn`).

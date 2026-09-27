@@ -136,7 +136,9 @@ export async function runGroups(
       console.log(`[EE-DEBUG] ##### GROUP DONE (success): ${group.label} #####`);
       result = { ...group, status: "done" };
     } catch (e) {
-      console.log(`[EE-DEBUG] ##### GROUP DONE (error): ${group.label}: ${e instanceof Error ? e.message : String(e)} #####`);
+      console.log(
+        `[EE-DEBUG] ##### GROUP DONE (error): ${group.label}: ${e instanceof Error ? e.message : String(e)} #####`,
+      );
       const msg = e instanceof Error ? e.message : String(e);
       const failedStage = e instanceof PipelineError ? e.failedStage : undefined;
       result = { ...group, status: "error", error: msg, failedStage };

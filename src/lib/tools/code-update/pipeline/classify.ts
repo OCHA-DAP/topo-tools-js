@@ -1,7 +1,10 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { computeOverlapPairs } from "$lib/db/overlap";
 import { quoteIdent } from "$lib/db/code";
-import { stageClassify, type ClassifyOptions } from "$lib/tools/polygon-changelog/pipeline/classify";
+import {
+  stageClassify,
+  type ClassifyOptions,
+} from "$lib/tools/polygon-changelog/pipeline/classify";
 
 // Builds cw_{side}_keyed from this level's own dissolved table, so
 // stageClassify's fixed table names are reused unmodified per level.

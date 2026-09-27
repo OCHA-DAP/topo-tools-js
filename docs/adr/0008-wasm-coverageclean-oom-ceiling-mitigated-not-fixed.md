@@ -46,7 +46,7 @@ was rejected on supply-chain-risk grounds.
 
 No lever tested makes `ST_CoverageClean` itself survive at this data scale
 in WASM. Mitigate instead of fix: export the geometry from the
-already-correct `ge_results` table *before* attempting the whole-batch
+already-correct `ge_results` table _before_ attempting the whole-batch
 clean (`match/pipeline/index.ts`), wrapped in try/catch so a clean failure
 falls back to the pre-clean export rather than losing the whole batch. Also
 free every scratch table no longer needed (per-group leftovers via

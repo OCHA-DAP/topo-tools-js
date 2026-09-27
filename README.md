@@ -6,12 +6,12 @@ A browser-only suite of geospatial topology utilities. Each tool runs
 entirely client-side via WebAssembly (DuckDB WASM + MapLibre GL) — no input
 file or derived geometry ever leaves the browser.
 
-| Tool | What it does | Docs |
-| --- | --- | --- |
-| **Topology Cleaner** (`/clean`) | Detects overlaps and gaps in a polygon coverage and cleans them via `ST_CoverageClean`. | [`docs/explanation/clean.md`](docs/explanation/clean.md) |
-| **Edge Extender** (`/extend`) | Extends polygon boundaries outward with a Voronoi diagram to close gaps with neighbors. | [`docs/explanation/extend.md`](docs/explanation/extend.md) |
-| **Edge Matcher** (`/match`) | Assigns a fine polygon layer to its best-overlapping coarse boundary, then extends each group independently. | [`docs/explanation/match.md`](docs/explanation/match.md) |
-| **Changelog** (`/change`) | Compares two versions of a polygon layer and classifies every unit as unchanged, renamed, modified, split, merged, created, or removed. | [`docs/explanation/change.md`](docs/explanation/change.md) |
+| Tool                            | What it does                                                                                                                            | Docs                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Topology Cleaner** (`/clean`) | Detects overlaps and gaps in a polygon coverage and cleans them via `ST_CoverageClean`.                                                 | [`docs/explanation/clean.md`](docs/explanation/clean.md)   |
+| **Edge Extender** (`/extend`)   | Extends polygon boundaries outward with a Voronoi diagram to close gaps with neighbors.                                                 | [`docs/explanation/extend.md`](docs/explanation/extend.md) |
+| **Edge Matcher** (`/match`)     | Assigns a fine polygon layer to its best-overlapping coarse boundary, then extends each group independently.                            | [`docs/explanation/match.md`](docs/explanation/match.md)   |
+| **Changelog** (`/change`)       | Compares two versions of a polygon layer and classifies every unit as unchanged, renamed, modified, split, merged, created, or removed. | [`docs/explanation/change.md`](docs/explanation/change.md) |
 
 ## Development
 

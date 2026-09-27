@@ -69,7 +69,9 @@ async function buildLevelOutput(
     else extraCols = extraCols.filter((c) => nextGeneralizable!.has(c));
   }
 
-  const identitySelect = [...plan.rename.entries()].map(([col, generic]) => `"${col}" AS "${generic}"`);
+  const identitySelect = [...plan.rename.entries()].map(
+    ([col, generic]) => `"${col}" AS "${generic}"`,
+  );
   const extraSelect = extraCols.map((c) => `"${c}"`);
   const selectCols = [...identitySelect, ...extraSelect];
 
@@ -85,7 +87,9 @@ async function buildLevelOutput(
     WHERE NOT ST_Covers(d.geom, p.geom)
   `);
   if (Number(violations.toArray()[0].n) > 0) {
-    throw new Error(`level ${plan.level}: representative point not covered by its own source polygon`);
+    throw new Error(
+      `level ${plan.level}: representative point not covered by its own source polygon`,
+    );
   }
 
   await conn.query(`--sql

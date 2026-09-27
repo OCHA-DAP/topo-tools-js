@@ -46,14 +46,14 @@ Unmatched fids end up as their own singleton component. Matching runs in
 two phases when identity linking (code and/or name) is enabled:
 
 **Phase 1 — Identity.** A pair is a candidate identity match if its code
-and/or name values are equal on both sides *and* unique within each side's
+and/or name values are equal on both sides _and_ unique within each side's
 own keyed table (added in commit `f844472`). Values that repeat within a
 side (e.g. a placeholder like `"No_Pcode"` shared by several polygons) are
 excluded — matching on a non-unique value would union every polygon sharing
 it into one cluster, which is never the intent.
 
 A candidate identity pair is only pre-unioned ahead of spatial matching
-("claimed") if *every other pair connecting either fid above `tauMatch`* is
+("claimed") if _every other pair connecting either fid above `tauMatch`_ is
 itself identity-covered on the far side. This guard is the load-bearing part
 of the algorithm:
 
@@ -62,11 +62,11 @@ of the algorithm:
   both B1 and B2. Without the guard, claiming A↔B1 as an identity pair would
   leave B2 stranded, showing up as a spurious `created` unit instead of a
   correct `split`. Since B2 has no identity match, not all of A's spatial
-  neighbors are identity-covered, so A is *not* claimed — Phase 2 then
+  neighbors are identity-covered, so A is _not_ claimed — Phase 2 then
   clusters A, B1, and B2 together and classifies the whole group as `split`.
 - **What it enables.** When a whole region of shifted units each has a
   clean 1:1 code match to its counterpart, every spatial neighbor of every
-  unit in the region *is* identity-covered, so all of those pairs get
+  unit in the region _is_ identity-covered, so all of those pairs get
   claimed individually. An N:M cluster that spatial-only matching would
   otherwise lump into one `complex` blob decomposes into N separate 1:1
   pairs, each independently classified (typically `relocated` or
@@ -79,17 +79,17 @@ identity-agnostic algorithm.
 Every connected component (cluster) is then classified purely by how many
 A-side (`na`) and B-side (`nb`) fids it contains:
 
-| na | nb | condition | class |
-|----|----|-----------|-------|
-| 1  | 0  | — | `removed` |
-| 0  | 1  | — | `created` |
-| 1  | 1  | identity-only, no spatial `tauMatch` pass | `relocated` |
-| 1  | 1  | spatial pass, `iou >= tauSame`, code/name unchanged | `unchanged` |
-| 1  | 1  | spatial pass, `iou >= tauSame`, code/name differ | `renamed` |
-| 1  | 1  | spatial pass, `iou < tauSame` | `modified` |
-| 1  | >1 | — | `split` |
-| >1 | 1  | — | `merge` |
-| >1 | >1 | — | `complex` |
+| na  | nb  | condition                                           | class       |
+| --- | --- | --------------------------------------------------- | ----------- |
+| 1   | 0   | —                                                   | `removed`   |
+| 0   | 1   | —                                                   | `created`   |
+| 1   | 1   | identity-only, no spatial `tauMatch` pass           | `relocated` |
+| 1   | 1   | spatial pass, `iou >= tauSame`, code/name unchanged | `unchanged` |
+| 1   | 1   | spatial pass, `iou >= tauSame`, code/name differ    | `renamed`   |
+| 1   | 1   | spatial pass, `iou < tauSame`                       | `modified`  |
+| 1   | >1  | —                                                   | `split`     |
+| >1  | 1   | —                                                   | `merge`     |
+| >1  | >1  | —                                                   | `complex`   |
 
 `renamed` only fires when identity linking is enabled. In pure geometry
 mode, code/name are never consulted for classification, only for display in
@@ -117,9 +117,9 @@ for a several-thousand-unit admin layer.
 - **Tabular changelog** (`cw_changelog`, exported as `crosswalk_changelog`,
   CSV or GeoParquet): one row per classified pair, plus one row per
   unmatched singleton. Columns: `code_a, name_a, code_b, name_b,
-  relationship_class, match_method, a_in_b (coverage_a, 3dp), b_in_a
-  (coverage_b, 3dp), similarity (iou, 3dp), threshold_match,
-  threshold_unchanged, link_by_code, link_by_name, link_mode`. The last five
+relationship_class, match_method, a_in_b (coverage_a, 3dp), b_in_a
+(coverage_b, 3dp), similarity (iou, 3dp), threshold_match,
+threshold_unchanged, link_by_code, link_by_name, link_mode`. The last five
   columns echo the run's own parameters into every row — added in commit
   `06c073a` so an identity-mode run is self-documenting from the CSV alone,
   without needing to know what the UI's sliders/toggles were set to when it
@@ -141,7 +141,7 @@ for a several-thousand-unit admin layer.
 `$lib/db/columns.ts` picks a default code column and name column per side by
 regex, first-match-wins, against the attribute table's column names (e.g.
 `pcode`/`iso3`/`gid` patterns for code, `*_name`/`label`/`adm*_en` patterns
-for name). It only supplies the *default* selection shown in the column
+for name). It only supplies the _default_ selection shown in the column
 picker; the user can override either pick per side at any time, and
 changing a selection re-keys that side and re-classifies without reloading
 or re-measuring overlap.

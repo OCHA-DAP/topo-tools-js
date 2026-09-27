@@ -28,7 +28,7 @@ own parent polygon via `clipToBoundary()`'s `ST_Intersection`. Wherever a
 group's own extension slightly undershoots the parent boundary at some
 interior point, GEOS has no choice but to use that group's own vertex there
 instead of the parent's — introducing a location-specific vertex that the
-*adjacent* group (clipping a differently-shaped extension against a
+_adjacent_ group (clipping a differently-shaped extension against a
 different parent polygon) has no way to agree with, even though both
 groups' outputs pass through virtually the same physical point. Same-group
 polygons (built from one shared dissolve pass) are vertex-identical by
@@ -44,7 +44,7 @@ rounding noise); and rebuilding the parent/coarse layer from one globally-
 noded boundary network so every parent polygon shares literal vertex
 identity with its neighbors at the source — validated as geometrically
 faithful (area conserved to float64 precision) but the naive fragment-to-fid
-reassignment made the layer's own invalid-edge count *worse* (163m vs.
+reassignment made the layer's own invalid-edge count _worse_ (163m vs.
 81.5m baseline), not better. `ST_Snap(geom, target, tolerance)` — the
 function this class of fix actually wants — was merged into
 `duckdb-spatial` upstream (PR #829, 2026-06-26) but isn't yet present in
@@ -59,7 +59,7 @@ or overlaps, and the only consumers that notice are strict vertex-exact
 validators (`ST_CoverageInvalidEdges_Agg`, QGIS's Topology Checker) — not a
 correctness problem for GIS use. The one fix idea that could plausibly reach
 zero (a canonical boundary rebuild) needs real unbuilt engineering and made
-a naive first attempt *worse*; the other tested idea tops out at a 28%
+a naive first attempt _worse_; the other tested idea tops out at a 28%
 reduction even at an unacceptably coarse grid. Revisit if `ST_Snap` becomes
 available in the WASM spatial extension build and a user reports an actual
 downstream breakage (not just a validator warning) traceable to this

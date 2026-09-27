@@ -38,7 +38,7 @@ Extract a shared retry helper, `withNodingRetry` (`src/lib/db/precisionRetry.ts`
 exporting a 28-candidate list (`NODING_RETRY_PRECISIONS`, 0.1mm–111mm: every
 1–9× step within `{1e-9, 1e-8, 1e-7}` plus `1e-6`). Callers apply each
 candidate's `ST_ReducePrecision` to whichever table carries the suspected
-pathological vertices — always the algorithmically-*derived* side of an
+pathological vertices — always the algorithmically-_derived_ side of an
 operation (e.g. Voronoi-generated geometry), never real input data — and
 stop at the first candidate that succeeds. The value of the loop is having
 several independent candidates to try, not the specific spacing: a single

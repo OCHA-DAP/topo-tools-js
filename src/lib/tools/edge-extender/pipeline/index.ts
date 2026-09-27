@@ -12,7 +12,10 @@ import { stageVoronoi } from "./voronoi";
 export type ProgressFn = (stage: number, label: string) => void;
 
 export class PipelineError extends Error {
-  constructor(message: string, public readonly failedStage: number) {
+  constructor(
+    message: string,
+    public readonly failedStage: number,
+  ) {
     super(message);
     this.name = "PipelineError";
   }
@@ -147,7 +150,7 @@ export async function runPipeline(
   // Stages 3+4: points → MAX_POINTS check → voronoi, retry with doubling
   let succeeded = false;
   let lastFailedStage = "";
-  let lastDistance = 0;
+  let lastDistance: number;
   try {
     const startDistance = await computeEffectiveDistance(conn);
     lastDistance = startDistance;
@@ -181,13 +184,7 @@ export async function runPipeline(
         lastFailedStage = inVoronoi ? "voronoi" : "points";
         console.warn(`Attempt ${i + 1} failed at ${lastFailedStage} stage (distance=${d}):`, e);
         // Drop only points/voronoi tables; preserve _02a/_02b across retries.
-        for (const t of [
-          "layer_03a",
-          "layer_03b",
-          "layer_04_tmp1",
-          "layer_04_tmp2",
-          "layer_04",
-        ]) {
+        for (const t of ["layer_03a", "layer_03b", "layer_04_tmp1", "layer_04_tmp2", "layer_04"]) {
           await conn.query(`DROP TABLE IF EXISTS ${t}`);
         }
       }

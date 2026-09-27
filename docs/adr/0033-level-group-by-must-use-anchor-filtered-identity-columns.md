@@ -21,7 +21,7 @@ portolan file (`gmb_admin3.parquet`, 115 distinct `adm3_pcode` values, no
 duplicate groups at the finest level) surfaced this: `area_sqkm`,
 `center_lat`, `center_lon`, and a `bbox` struct column were all swept into
 level 3's raw `groupBy`, then excluded from every other level's own
-dissolve (since `package-points`' auto-detect path excludes every *other*
+dissolve (since `package-points`' auto-detect path excludes every _other_
 level's `groupBy`-derived identity set), producing `NULL` instead of the
 real, correctly-summed value at every level above the finest.
 

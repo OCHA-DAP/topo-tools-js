@@ -24,7 +24,7 @@ Extender's own post-clean checks are both warn-only by design), and 0027's
 decision to keep `mosaic` warn-only stands — re-confirmed when fixing this
 mischaracterization, rather than introducing the codebase's first raising
 gate as a side effect of a documentation correction. What 0028 corrects is
-only the *description* of Python's behavior and makes explicit that JS's
+only the _description_ of Python's behavior and makes explicit that JS's
 choice applies to both halves, not just the one Python already relaxed.
 
 ## Decision

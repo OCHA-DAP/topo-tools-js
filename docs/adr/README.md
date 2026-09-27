@@ -4,7 +4,7 @@ Architecture Decision Records: one immutable file per past investigation or
 decision, using Michael Nygard's minimal headers (Title, Status, Context,
 Decision, Consequences).
 
-`docs/adr/` states *why* a specific decision was made, once, and is never
+`docs/adr/` states _why_ a specific decision was made, once, and is never
 rewritten afterward. A reversed decision gets a new ADR whose Status reads
 `Superseded by ADR-00NN`; the old file stays as-is. This is what
 distinguishes it from `docs/explanation/`, which documents current rationale
