@@ -137,6 +137,7 @@
     <section class="step">
       <DropZone
         bind:files
+        urlParam="url"
         disabled={running}
         helpText="Polygon layer in WGS84 — admin boundaries, basins, etc. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />

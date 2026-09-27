@@ -329,6 +329,7 @@
       <h2 class="tc-step-heading">Drop a polygon layer</h2>
       <DropZone
         bind:files
+        urlParam="url"
         disabled={running || loading}
         helpText="Polygon coverage in any supported format — adjacent admin units, basins, etc."
       />

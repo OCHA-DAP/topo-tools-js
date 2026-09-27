@@ -23,6 +23,15 @@ name instead of repeating them.
   (as a `.zip` of its component files), FlatGeobuf, KML, GML, and GPX. A
   dropped `.zip` MUST be expanded and its contents matched against these
   formats before rejecting the input.
+- Every input MAY be loaded from an http(s) URL as well as by drop or
+  browse. The download MUST be fetched directly by the browser, never
+  through a proxy, and MUST go through the same expansion and format
+  matching as a dropped file. A CORS failure, non-2xx status, or HTML
+  response MUST show an actionable message in the drop zone.
+- A successful URL load MUST write that URL to the page's query string
+  under the drop zone's parameter name (`url`, `old`/`new`,
+  `child`/`parent`, `crosswalk`), and a local drop or browse MUST remove
+  it. Opening a page with that parameter MUST load the URL automatically.
 - GeoParquet MUST be loaded via `read_parquet`, not `ST_Read`. Every other
   format MUST be loaded via `ST_Read`.
 - Exporting spatial results MUST offer GeoParquet always, plus whichever
@@ -137,7 +146,7 @@ against an already-coded OLD layer).
   character, `minWidth` positive. No field has a default.
 - `assignNewCodes` MUST rank rows per parent group by their given sort
   columns and format each as `parentCode || delimiter || lpad(tail,
-  width, '0')`, starting from `nextAvailableInteger` for that parent. It
+width, '0')`, starting from `nextAvailableInteger` for that parent. It
   MUST NOT reuse a raw source value as-is.
 - A parent whose live child count exceeds `10 ** minWidth - 1` MUST NOT
   have its already-assigned, lower-numbered children's codes repadded;

@@ -145,6 +145,7 @@
       <h2 class="step-heading">Layer</h2>
       <DropZone
         bind:files
+        urlParam="url"
         disabled={loading || running}
         helpText="Polygon layer. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />

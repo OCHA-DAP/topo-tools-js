@@ -139,6 +139,7 @@
     <section class="dt-step">
       <DropZone
         bind:files
+        urlParam="url"
         disabled={running}
         helpText="Polygon coverage in any supported format — adjacent admin units, basins, etc."
       />

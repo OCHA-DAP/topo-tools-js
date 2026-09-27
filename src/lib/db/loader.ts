@@ -1,6 +1,7 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { unzip } from "fflate";
 import { randomId } from "./id";
+import { SHP_EXTS, SINGLE_EXTS, extOf as ext } from "../utils/formats";
 
 // DuckDB's spatial extension hooks into read_parquet to parse the GeoParquet "geo"
 // key-value metadata entry. Certain files have a field in that JSON that causes
@@ -36,9 +37,6 @@ function removeGeoMetaKey(buffer: Uint8Array): Uint8Array {
   }
   return result;
 }
-
-const SINGLE_EXTS = [".parquet", ".geojson", ".geojsonl", ".gpkg", ".fgb", ".kml", ".gml", ".gpx"];
-const SHP_EXTS = [".shp", ".dbf", ".shx", ".prj", ".cpg"];
 
 // DuckDB's ST_Read always adds its own FID column literally named "OGC_FID"
 // (this is fixed, not configurable via open_options). If the source data
@@ -88,11 +86,6 @@ function loadGeomExpr(geomType: string, quotedCol: string): string {
   if (geomType !== "GEOMETRY")
     return `ST_Force2D(ST_Transform(ST_MakeValid(${quotedCol}), 'EPSG:4326'))`;
   return `ST_Force2D(ST_MakeValid(${quotedCol}))`;
-}
-
-function ext(name: string): string {
-  const i = name.lastIndexOf(".");
-  return i === -1 ? "" : name.slice(i).toLowerCase();
 }
 
 function isIncluded(file: File): boolean {
@@ -293,4 +286,3 @@ export async function loadFile(
     }
   }
 }
-

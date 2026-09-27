@@ -168,6 +168,7 @@
       <h2 class="step-heading">Children layer</h2>
       <DropZone
         bind:files={childFiles}
+        urlParam="child"
         disabled={running}
         helpText="The layer to assign and clip — one already-extended file's worth of units."
       />
@@ -177,6 +178,7 @@
       <h2 class="step-heading">Parent / clip layer</h2>
       <DropZone
         bind:files={parentFiles}
+        urlParam="parent"
         disabled={running}
         helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 children layer."
       />
