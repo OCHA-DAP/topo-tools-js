@@ -37,8 +37,8 @@ interface LevelOutput {
   attrTable: string;
 }
 
-// Called finest-to-coarsest: the generalizable-columns gate seeds from the
-// finest level's own surviving set and only shrinks it going up.
+// Called coarsest-to-finest: the first real level's surviving columns seed the
+// generalizable-columns gate, since a column a coarser dissolve drops can't generalize.
 async function buildLevelOutput(
   conn: AsyncDuckDBConnection,
   sourceTable: string,
@@ -126,16 +126,16 @@ export async function runPackagePoints(
     throw new Error("no admin hierarchy level detected");
   }
   const rootLevel = Math.min(...plans.map((p) => p.level));
-  const sortedDesc = [...plans].sort((a, b) => b.level - a.level);
+  const sortedAsc = [...plans].sort((a, b) => a.level - b.level);
 
   let generalizable: Set<string> | null = null;
   const outputs: LevelOutput[] = [];
-  for (const plan of sortedDesc) {
+  for (const plan of sortedAsc) {
     const result = await buildLevelOutput(
       conn,
       "pkpt_input",
       plan,
-      plan.level === rootLevel,
+      rootInjected && plan.level === rootLevel,
       generalizable,
       depthColumn,
     );

@@ -30,13 +30,13 @@ topo-tools-py's `package-points`.
    tuple count, computes `(ST_MaximumInscribedCircle(geom)).center` per
    row, stamps the depth column, and verifies every point is
    `ST_Covers`-ed by its own source polygon.
-4. **Generalizable-columns gate** - processing runs finest-to-coarsest;
-   `generalizable` seeds from the first non-root level's own surviving
-   column set, and every coarser level's own output is filtered down to
-   that set before renaming. This is how a finest-level-only attribute
-   never leaks into a coarser level as an impossible `NULL`. The root
-   level (if injected) is exempt, since it has nothing coarser to compare
-   against.
+4. **Generalizable-columns gate** - processing runs coarsest-to-finest,
+   as in topo-tools-py; `generalizable` seeds from the coarsest real
+   level's own surviving column set, and every finer level's own output is
+   filtered down to that set before renaming. A column a coarser dissolve
+   drops (e.g. a finest-level-only attribute) would be `NULL` on that
+   level's rows, so it is dropped from every level. The root level (if
+   injected) is exempt, since it has nothing coarser to compare against.
 5. **Rename and combine** - each level's own identity columns are renamed
    to a name shared across every level
    (`schema-map/pipeline/levelColumns.ts`'s `groupFamiliesByLevel`/
