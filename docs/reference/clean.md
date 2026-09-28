@@ -83,9 +83,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   coverage violations; the output's total area falls below a floor set by
   a small baseline tolerance plus headroom sized to the total area of the
   overlaps actually detected; a feature with no connection to any detected
-  gap or overlap collapses to nothing; or any feature's fixed shape is not
-  a valid polygon. A feature that was itself party to a gap or overlap
-  being resolved MAY change area substantially, including losing all of
+  gap or overlap collapses to nothing; any feature's fixed shape is not
+  a valid polygon; or the output has a gap at or below the resolved
+  gap-fill width, when that width is above `0`. A feature that was itself
+  party to a gap or overlap being resolved MAY change area substantially, including losing all of
   it, without triggering rejection. This validation gate is separate from,
   and stricter than, the export check below.
 - `clean` MUST independently re-run gap/overlap detection, plus an
