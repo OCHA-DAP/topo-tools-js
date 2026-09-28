@@ -28,11 +28,15 @@ its table or an imported crosswalk CSV. Ported from topo-tools-py's
    reserved-name (`fid`/`geom`/`geometry`, case-insensitive) `target_column`.
 5. **Rename** (`pipeline/rename.ts`) - one `SELECT` renames every source
    column to its `target_column` and drops any column whose `target_column`
-   is null/empty, writing `sr_result_attr` in topo-tools-py's canonical
-   column order (`canonicalOrder` in `$lib/db/adminColumns.ts`, a port of
-   its `core/admin_columns.py`). A `__row_order` column ranks rows by the
-   deepest level's code; the shared export sorts by it and leaves it out,
-   since this app runs with `preserve_insertion_order = false`. `layer_01`'s
+   is null/empty, writing `sr_result_attr` with columns in crosswalk row
+   order (topo-tools-py ADR 0115: reordering is a row move, in a
+   spreadsheet or in `schema`'s table). `misorderedSiblings` in
+   `$lib/db/adminColumns.ts`, a port of its `core/admin_columns.py`, flags
+   the swapped-sibling case (`adm2_name1` before `adm2_name`) that template
+   ordering existed to prevent. A `__row_order` column ranks rows by the
+   deepest level's code (`canonicalOrder`'s sort column); the shared export
+   sorts by it and leaves it out, since this app runs with
+   `preserve_insertion_order = false`. `layer_01`'s
    geometry is never touched or re-read; the renamed attribute table is
    only joined back to it at export time.
 

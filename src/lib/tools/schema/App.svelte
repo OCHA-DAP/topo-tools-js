@@ -3,6 +3,7 @@
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import { attributesAt, layerBounds, type Bounds } from "$lib/db/layerView";
+  import { canonicalOrder } from "$lib/db/adminColumns";
   import {
     applyCrosswalk,
     checkSavedCrosswalk,
@@ -48,10 +49,12 @@
 
   let inferred = $state.raw<CrosswalkRow[]>([]);
   // Templates the current `inferred` came from; applying orders columns by them too.
-  let inferredSchema = { ...DEFAULT_TARGET_SCHEMA };
+  let inferredSchema = $state.raw({ ...DEFAULT_TARGET_SCHEMA });
   // Per-source checkbox and text box edits; kept across re-inference.
   let keepEdits = $state.raw<Record<string, boolean>>({});
   let nameEdits = $state.raw<Record<string, string>>({});
+  // Source columns in the user's row order; null follows the imported or inferred order.
+  let orderEdit = $state.raw<string[] | null>(null);
   let running = $state(false);
   let error = $state<string | null>(null);
   let applied = $state.raw<SchemaRefactorResult | null>(null);
@@ -193,6 +196,17 @@
   function resetAll(): void {
     keepEdits = {};
     nameEdits = {};
+    orderEdit = null;
+  }
+
+  function moveRow(source: string, toIndex: number): void {
+    const order = rows.map((r) => r.sourceColumn).filter((c) => c !== source);
+    order.splice(Math.max(0, Math.min(toIndex, order.length)), 0, source);
+    orderEdit = order;
+  }
+
+  function sortToDefault(): void {
+    orderEdit = defaultOrder;
   }
 
   function fileStem(file: File): string {
@@ -216,7 +230,14 @@
 
   const rows = $derived.by((): EditableRow[] => {
     const useSaved = saved && !savedMismatch ? saved : null;
-    return inferred.map((r) => {
+    const order = orderEdit ?? (useSaved ? [...useSaved.keys()] : null);
+    const rank = new Map(order?.map((c, i) => [c, i]));
+    const ordered = order
+      ? [...inferred].sort(
+          (a, b) => (rank.get(a.sourceColumn) ?? Infinity) - (rank.get(b.sourceColumn) ?? Infinity),
+        )
+      : inferred;
+    return ordered.map((r) => {
       const source = r.sourceColumn;
       const baseTarget = useSaved ? (useSaved.get(source) ?? null) : r.targetColumn;
       const keep = keepEdits[source] ?? baseTarget !== null;
@@ -226,6 +247,20 @@
       return { ...r, keep, input, targetColumn, baseTarget, edited };
     });
   });
+
+  // Kept rows in template order of their current targets, then dropped rows as they stand.
+  const defaultOrder = $derived.by(() => {
+    const kept = rows.filter((r) => r.targetColumn);
+    const source = new Map(kept.map((r) => [r.targetColumn!, r.sourceColumn]));
+    const { ordered } = canonicalOrder(
+      [...source.keys()],
+      inferredSchema.nameField,
+      inferredSchema.codeField,
+    );
+    const rest = rows.filter((r) => !r.targetColumn).map((r) => r.sourceColumn);
+    return [...ordered.map((t) => source.get(t)!), ...rest];
+  });
+  const inDefaultOrder = $derived(rows.every((r, i) => r.sourceColumn === defaultOrder[i]));
 
   const issues = $derived(rowIssues(rows));
   const renamed = $derived(rows.filter((r) => r.targetColumn && r.targetColumn !== r.sourceColumn));
@@ -318,6 +353,12 @@
           {#if dropped.length > 0}
             <p class="summary-line">Dropped: {dropped.join(", ")}.</p>
           {/if}
+          {#if applied && applied.misorderedSiblings.length > 0}
+            <p class="summary-line warn">
+              Numbered siblings of {applied.misorderedSiblings.join(", ")} are out of order; output
+              columns follow the table order.
+            </p>
+          {/if}
           {#if applied && !applied.sortColumn}
             <p class="summary-line">
               No target matches the code template, so rows keep their input order.
@@ -369,6 +410,10 @@
         onSetName={setName}
         onReset={resetRow}
         onResetAll={resetAll}
+        onMove={moveRow}
+        onSortDefault={sortToDefault}
+        {inDefaultOrder}
+        orderEdited={orderEdit !== null}
       />
     {/snippet}
   </MapTableSplit>
@@ -511,6 +556,10 @@
     color: #6b7280;
     line-height: 1.4;
     margin: 0;
+  }
+
+  .summary-line.warn {
+    color: #a16207;
   }
 
   .privacy {

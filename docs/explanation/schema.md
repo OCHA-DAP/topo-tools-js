@@ -30,7 +30,11 @@ be renamed to.
    writing `sm_crosswalk`.
 3. **Edit** (`App.svelte`): each row's checkbox and target name start from
    the imported crosswalk if one is loaded and matches the layer, else the
-   inferred one, and user edits override either. `rowIssues` flags a checked
+   inferred one, and user edits override either. Row order follows the same
+   precedence, and is the output column order, so a layout travels in the
+   CSV. "Sort to default order" re-applies `canonicalOrder` to the current
+   targets, which also slots a column renamed into a level (`water` to
+   `adm2_type`) between that level's name and code. `rowIssues` flags a checked
    row with no name, plus `targetIssues`'s duplicate and reserved targets
    (beside `validateTargets` in `schema-refactor/pipeline/validate.ts`, so
    both share one rule set).

@@ -42,6 +42,19 @@ apply step (`docs/reference/schema-refactor.md`) on one page.
   MUST NOT be applied or offered for download until every flagged row is
   fixed.
 
+## Ordering
+
+- Table row order MUST be the output column order, and the crosswalk CSV
+  MUST be written in it.
+- Rows MUST start in the imported crosswalk's row order if one is loaded and
+  matches the layer, else in `schema-map`'s order.
+- A row MUST be movable by dragging its grip, and one place at a time with
+  Alt+↑/↓ on the focused grip.
+- "Sort to default order" MUST order kept rows by the templates applied to
+  their current targets (`schema-map`'s level order: deepest first, names,
+  other same-level columns, codes), then dropped rows in their current order.
+- Row order MUST persist across re-inference until "Reset all edits".
+
 ## Applying and outputs
 
 - Every valid crosswalk state MUST be applied automatically with

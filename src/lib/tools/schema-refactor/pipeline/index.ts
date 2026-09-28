@@ -13,6 +13,8 @@ export interface SchemaRefactorResult {
   droppedColumns: string[];
   // Deepest level's code column the rows are sorted by; null keeps input order.
   sortColumn: string | null;
+  // Columns whose numbered siblings don't follow them in numeric order (topo-tools-py warns).
+  misorderedSiblings: string[];
 }
 
 // No topology gate: renaming never touches geometry. The result is layer_01's
@@ -27,7 +29,7 @@ export async function runSchemaRefactor(
   validateColumnsMatch(crosswalkColumns, actual);
   validateTargets(crosswalk);
 
-  const sortColumn = await renameColumns(conn, crosswalk, schema);
+  const { sortColumn, misorderedSiblings } = await renameColumns(conn, crosswalk, schema);
 
   const droppedColumns = crosswalk
     .filter((r) => !r.targetColumn)
@@ -38,5 +40,6 @@ export async function runSchemaRefactor(
     renamedCount: crosswalk.length - droppedColumns.length,
     droppedColumns,
     sortColumn,
+    misorderedSiblings,
   };
 }

@@ -13,6 +13,22 @@ export function fieldPrefix(template: string): string {
   return template.split("{n}")[0];
 }
 
+// A column's index-th numbered sibling, `_`-separated after a trailing digit.
+export function siblingName(column: string, index: number): string {
+  return /\d$/.test(column) ? `${column}_${index}` : `${column}${index}`;
+}
+
+// Each column whose numbered siblings aren't in numeric order after it.
+export function misorderedSiblings(columns: string[]): string[] {
+  const position = new Map(columns.map((c, i) => [c, i]));
+  return columns.filter((base) => {
+    const family = [base, ...columns.map((_, k) => siblingName(base, k + 1))]
+      .filter((c) => position.has(c))
+      .map((c) => position.get(c)!);
+    return family.some((p, i) => i > 0 && p < family[i - 1]);
+  });
+}
+
 // Matches a template's own column and its numbered siblings (`adm2_name1`, `GID_2_1`).
 function familyPattern(template: string): RegExp {
   const i = template.indexOf("{n}");

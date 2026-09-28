@@ -12,6 +12,10 @@
     onSetName,
     onReset,
     onResetAll,
+    onMove,
+    onSortDefault,
+    inDefaultOrder = true,
+    orderEdited = false,
   }: {
     rows?: EditableRow[];
     values?: Record<string, string | null> | null;
@@ -23,11 +27,54 @@
     onSetName: (source: string, name: string) => void;
     onReset: (source: string) => void;
     onResetAll: () => void;
+    onMove: (source: string, toIndex: number) => void;
+    onSortDefault: () => void;
+    inDefaultOrder?: boolean;
+    orderEdited?: boolean;
   } = $props();
+
+  let dragging = $state<string | null>(null);
+  let dropAt = $state<number | null>(null);
+
+  function onDragStart(e: DragEvent, source: string): void {
+    const row = (e.currentTarget as HTMLElement).closest("tr");
+    if (row) e.dataTransfer?.setDragImage(row, 16, 16);
+    e.dataTransfer?.setData("text/plain", source);
+    dragging = source;
+  }
+
+  function onDragOver(e: DragEvent, index: number): void {
+    if (!dragging) return;
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    dropAt = e.clientY < rect.top + rect.height / 2 ? index : index + 1;
+  }
+
+  function onDrop(e: DragEvent): void {
+    e.preventDefault();
+    if (dragging && dropAt !== null) {
+      const from = rows.findIndex((r) => r.sourceColumn === dragging);
+      onMove(dragging, dropAt > from ? dropAt - 1 : dropAt);
+    }
+    onDragEnd();
+  }
+
+  function onDragEnd(): void {
+    dragging = null;
+    dropAt = null;
+  }
+
+  function onGripKey(e: KeyboardEvent, source: string, index: number): void {
+    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    const target = e.currentTarget as HTMLElement;
+    onMove(source, index + (e.key === "ArrowUp" ? -1 : 1));
+    requestAnimationFrame(() => target.focus());
+  }
 
   const hasNotes = $derived(rows.some((r) => r.note));
   const keptCount = $derived(rows.filter((r) => r.keep).length);
-  const anyEdited = $derived(rows.some((r) => r.edited));
+  const anyEdited = $derived(orderEdited || rows.some((r) => r.edited));
 
   function rowClass(r: EditableRow): string {
     if (!r.keep) return "dropped";
@@ -43,6 +90,9 @@
     <p class="rt-empty">{emptyText}</p>
   {:else}
     <div class="rt-toolbar">
+      <button type="button" onclick={onSortDefault} disabled={inDefaultOrder}>
+        Sort to default order
+      </button>
       <button type="button" onclick={onResetAll} disabled={!anyEdited}>Reset all edits</button>
     </div>
     <table>
@@ -65,10 +115,28 @@
         </tr>
       </thead>
       <tbody>
-        {#each rows as r (r.sourceColumn)}
+        {#each rows as r, i (r.sourceColumn)}
           {@const issue = issues.get(r.sourceColumn)}
-          <tr class={rowClass(r)} class:edited={r.edited}>
+          <tr
+            class={rowClass(r)}
+            class:edited={r.edited}
+            class:drag-source={dragging === r.sourceColumn}
+            class:drop-before={dropAt === i}
+            class:drop-after={dropAt === rows.length && i === rows.length - 1}
+            ondragover={(e) => onDragOver(e, i)}
+            ondrop={onDrop}
+          >
             <td class="check">
+              <button
+                type="button"
+                class="grip"
+                draggable="true"
+                title="Drag to reorder (Alt+↑/↓)"
+                aria-label={`Reorder ${r.sourceColumn}`}
+                ondragstart={(e) => onDragStart(e, r.sourceColumn)}
+                ondragend={onDragEnd}
+                onkeydown={(e) => onGripKey(e, r.sourceColumn, i)}>⋮⋮</button
+              >
               <input
                 type="checkbox"
                 aria-label={`Keep ${r.sourceColumn}`}
@@ -258,6 +326,33 @@
   th.check,
   td.check {
     padding-right: 0;
+    white-space: nowrap;
+  }
+  th.check {
+    padding-left: 1.45rem;
+  }
+  .grip {
+    padding: 0 0.15rem;
+    border: none;
+    background: none;
+    color: #9ca3af;
+    font-size: 0.75rem;
+    letter-spacing: -0.15em;
+    cursor: grab;
+    vertical-align: middle;
+  }
+  .grip:hover,
+  .grip:focus-visible {
+    color: #374151;
+  }
+  tr.drag-source {
+    opacity: 0.4;
+  }
+  tr.drop-before td {
+    box-shadow: inset 0 2px #6366f1;
+  }
+  tr.drop-after td {
+    box-shadow: inset 0 -2px #6366f1;
   }
   tr.edited td:first-child {
     box-shadow: inset 3px 0 #6366f1;
