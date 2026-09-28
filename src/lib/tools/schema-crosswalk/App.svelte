@@ -10,6 +10,7 @@
   } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import DemoLink from "$lib/components/DemoLink.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import ResultsTable from "$lib/tools/schema-map/ResultsTable.svelte";
@@ -165,6 +166,7 @@
     <header>
       <a class="back" href={base}>← Topology Tools</a>
       <h1>Schema Crosswalk</h1>
+      <DemoLink slug="schema-crosswalk" />
       <p class="blurb">
         Infer a crosswalk to a target schema, then immediately apply it: one call runs Schema Map
         and Schema Refactor back to back, always mapping fresh.
