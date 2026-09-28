@@ -35,7 +35,7 @@ export async function buildMosaicIssues(
     CREATE OR REPLACE TABLE ms_unassigned AS
     SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
            NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m, NULL::DOUBLE AS thinness_ratio,
-           fid AS unit_a, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason,
+           fid AS unit_a, NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason,
            geom,
            ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
     FROM child_layer_01
@@ -55,7 +55,7 @@ export async function buildMosaicIssues(
     SELECT ${codeKind ? `'${codeKind}-' || a.child_fid` : "NULL::VARCHAR"} AS key,
            ${codeKind ? `'${codeKind}'` : "NULL::VARCHAR"} AS kind,
            NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m, NULL::DOUBLE AS thinness_ratio,
-           a.child_fid AS unit_a, a.parent_fid AS parent_fid, NULL::VARCHAR AS reason,
+           a.child_fid AS unit_a, a.parent_fid AS overlay_fid, NULL::VARCHAR AS reason,
            c.geom,
            ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
     FROM cl_assign a JOIN child_layer_01 c ON c.fid = a.child_fid
@@ -66,16 +66,16 @@ export async function buildMosaicIssues(
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ms_issues AS
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, parent_fid, reason,
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, overlay_fid, reason,
            geom, xmin, ymin, xmax, ymax
     FROM ms_unassigned
     UNION ALL
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, parent_fid, reason,
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, overlay_fid, reason,
            geom, xmin, ymin, xmax, ymax
     FROM ms_code_issues
     UNION ALL
     SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a,
-           NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason,
+           NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason,
            geom, xmin, ymin, xmax, ymax
     FROM st_issues
   `);
@@ -83,14 +83,14 @@ export async function buildMosaicIssues(
 
   const meta = (
     await conn.query(`--sql
-      SELECT key, kind, unit_a, parent_fid, xmin, ymin, xmax, ymax
+      SELECT key, kind, unit_a, overlay_fid, xmin, ymin, xmax, ymax
       FROM ms_issues WHERE kind IN ('unassigned', 'code-mismatch', 'code-fallback')
     `)
   ).toArray() as Array<{
     key: string;
     kind: "unassigned" | "code-mismatch" | "code-fallback";
     unit_a: bigint | number;
-    parent_fid: bigint | number | null;
+    overlay_fid: bigint | number | null;
     xmin: number;
     ymin: number;
     xmax: number;
@@ -105,7 +105,7 @@ export async function buildMosaicIssues(
       maxWidthM: null,
       thinnessRatio: null,
       unitA: Number(r.unit_a),
-      parentFid: r.parent_fid == null ? null : Number(r.parent_fid),
+      parentFid: r.overlay_fid == null ? null : Number(r.overlay_fid),
       reason: null,
       bbox: [r.xmin, r.ymin, r.xmax, r.ymax] as [number, number, number, number],
     })),
@@ -123,7 +123,7 @@ export async function buildMosaicIssues(
   ];
 
   const gj = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, unit_a, parent_fid, ST_AsGeoJSON(geom) AS _geom
+    SELECT key, kind, area_m2, max_width_m, unit_a, overlay_fid, ST_AsGeoJSON(geom) AS _geom
     FROM ms_issues
   `);
   const features = (
@@ -133,7 +133,7 @@ export async function buildMosaicIssues(
       area_m2: number | null;
       max_width_m: number | null;
       unit_a: bigint | number | null;
-      parent_fid: bigint | number | null;
+      overlay_fid: bigint | number | null;
       _geom: string;
     }>
   ).map((r) => ({
@@ -145,7 +145,7 @@ export async function buildMosaicIssues(
       area_m2: r.area_m2,
       max_width_m: r.max_width_m,
       unit_a: r.unit_a == null ? null : Number(r.unit_a),
-      parent_fid: r.parent_fid == null ? null : Number(r.parent_fid),
+      overlay_fid: r.overlay_fid == null ? null : Number(r.overlay_fid),
     },
   }));
 

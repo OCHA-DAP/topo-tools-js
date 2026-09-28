@@ -190,7 +190,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: null,
     suffix: "_issues",
     kind: "spatial",
-    columns: ["key", "kind", "unit_a", "parent_fid", "reason"],
+    columns: ["key", "kind", "unit_a", "overlay_fid", "reason"],
   },
   stitch: { table: "st_clean", attrTable: "layer_attr", suffix: "_stitched", kind: "spatial" },
   stitch_issues: {
@@ -222,7 +222,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: null,
     suffix: "_issues",
     kind: "spatial",
-    columns: ["key", "kind", "unit_a", "parent_fid", "reason"],
+    columns: ["key", "kind", "unit_a", "overlay_fid", "reason"],
   },
   mosaic: {
     table: "st_clean",
@@ -242,7 +242,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
       "max_width_m",
       "thinness_ratio",
       "unit_a",
-      "parent_fid",
+      "overlay_fid",
       "reason",
     ],
   },

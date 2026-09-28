@@ -30,7 +30,7 @@ name instead of repeating them.
   response MUST show an actionable message in the drop zone.
 - A successful URL load MUST write that URL to the page's query string
   under the drop zone's parameter name (`url`, `old`/`new`,
-  `child`/`parent`, `input`/`join`, `crosswalk`), and a local drop or browse
+  `input`/`join`, `input`/`overlay`, `crosswalk`), and a local drop or browse
   MUST remove it. Opening a page with that parameter MUST load the URL
   automatically.
 - GeoParquet MUST be loaded via `read_parquet`, not `ST_Read`. Every other

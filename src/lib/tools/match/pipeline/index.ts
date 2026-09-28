@@ -56,26 +56,26 @@ async function buildIssuesTable(
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_issues AS
     SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
-           fid AS unit_a, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason, geom
+           fid AS unit_a, NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason, geom
     FROM ge_unassigned
     WHERE fid NOT IN (SELECT child_fid FROM ge_assignment)
     UNION ALL
     SELECT 'dropped_group-' || unit_a AS key, 'dropped_group' AS kind,
-           unit_a, parent_fid, reason, geom
+           unit_a, parent_fid AS overlay_fid, reason, geom
     FROM ge_dropped
     UNION ALL
     SELECT 'passthrough-' || ga.child_fid AS key, 'passthrough' AS kind,
-           ga.child_fid AS unit_a, ga.parent_fid, NULL::VARCHAR AS reason, c.geom
+           ga.child_fid AS unit_a, ga.parent_fid AS overlay_fid, NULL::VARCHAR AS reason, c.geom
     FROM ge_assignment ga JOIN child_layer_01 c ON c.fid = ga.child_fid
     WHERE ga.parent_fid = ${PASSTHROUGH_PARENT_FID} AND ga.child_fid IN (SELECT fid FROM ge_results)
     UNION ALL
     SELECT 'code_mismatch-' || a.child_fid AS key, 'code-mismatch' AS kind,
-           a.child_fid AS unit_a, a.parent_fid, NULL::VARCHAR AS reason, c.geom
+           a.child_fid AS unit_a, a.parent_fid AS overlay_fid, NULL::VARCHAR AS reason, c.geom
     FROM ge_assignment a JOIN child_layer_01 c ON c.fid = a.child_fid
     WHERE a.assignment_method = 'code' AND a.spatial_agrees = FALSE
     UNION ALL
     SELECT 'code_fallback-' || a.child_fid AS key, 'code-fallback' AS kind,
-           a.child_fid AS unit_a, a.parent_fid, NULL::VARCHAR AS reason, c.geom
+           a.child_fid AS unit_a, a.parent_fid AS overlay_fid, NULL::VARCHAR AS reason, c.geom
     FROM ge_assignment a JOIN child_layer_01 c ON c.fid = a.child_fid
     WHERE a.assignment_method = 'spatial_fallback'
   `);

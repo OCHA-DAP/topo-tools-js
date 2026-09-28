@@ -165,20 +165,20 @@
     {/if}
 
     <section class="step">
-      <h2 class="step-heading">Children layer</h2>
+      <h2 class="step-heading">Input layer</h2>
       <DropZone
         bind:files={childFiles}
-        urlParam="child"
+        urlParam="input"
         disabled={running}
         helpText="The layer to assign and clip — one already-extended file's worth of units."
       />
     </section>
 
     <section class="step">
-      <h2 class="step-heading">Parent / clip layer</h2>
+      <h2 class="step-heading">Overlay layer</h2>
       <DropZone
         bind:files={parentFiles}
-        urlParam="parent"
+        urlParam="overlay"
         disabled={running}
         helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 children layer."
       />

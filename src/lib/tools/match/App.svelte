@@ -241,20 +241,20 @@
     {/if}
 
     <section class="step">
-      <h2 class="step-heading">Fine layer</h2>
+      <h2 class="step-heading">Input layer</h2>
       <DropZone
         bind:files={childFiles}
-        urlParam="child"
+        urlParam="input"
         disabled={running}
         helpText="The layer to match and extend — any polygon set, any admin level. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />
     </section>
 
     <section class="step">
-      <h2 class="step-heading">Coarse layer</h2>
+      <h2 class="step-heading">Overlay layer</h2>
       <DropZone
         bind:files={parentFiles}
-        urlParam="parent"
+        urlParam="overlay"
         disabled={running}
         helpText="The boundary to match and clip against, one level up or many."
       />
