@@ -1,7 +1,8 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
+import { bboxColumnsSql } from "./bbox";
 import { CLIP_TILE_MIN_VERTICES } from "./constants";
 import { subdivideBoundary } from "./clipTiling";
+import { intersectPairs } from "./overlap";
 import {
   type AssignmentMethod,
   type MatchColumnOptions,
@@ -35,69 +36,64 @@ export async function assignOne(
 ): Promise<AssignOneResult> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_input_parts AS
-    SELECT fid, part_geom, ${bboxColumnsSql("part_geom")}
-    FROM (SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM input_layer_01)
+    SELECT ROW_NUMBER() OVER () AS id, fid, geom, ${bboxColumnsSql("geom")}
+    FROM (SELECT fid, UNNEST(ST_Dump(geom)).geom AS geom FROM input_layer_01)
   `);
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_overlay_parts AS
-    SELECT ROW_NUMBER() OVER () AS part_id, fid, part_geom,
-           ST_NPoints(part_geom) AS n_points, ${bboxColumnsSql("part_geom")}
+    SELECT ROW_NUMBER() OVER () AS part_id, fid, part_geom, ST_NPoints(part_geom) AS n_points
     FROM (SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM overlay_layer_01)
   `);
 
-  // Light overlay feature parts: bbox-prefiltered, area-weighted overlap. A part-pair
-  // that only touches (shared edge/corner, zero overlap area) contributes a
-  // zero-area row here and is filtered out below — a bare ST_Intersects
-  // boolean would otherwise count a touch-only input feature as a vote, unlike
-  // topo-tools-py's assign_one, which only counts shared_area > 0.
+  // Overlay pieces: light parts as-is, heavy parts grid-tiled (the same tiling
+  // clip's own clip step uses) so input features bbox-prefilter against tiles.
   await conn.query(`--sql
-    CREATE OR REPLACE TABLE cl_pairs_raw AS
-    SELECT c.fid AS input_fid, p.fid AS overlay_fid,
-           ST_Area(ST_Intersection(c.part_geom, p.part_geom)) AS shared_area
-    FROM cl_input_parts c
-    JOIN cl_overlay_parts p
-      ON ${bboxOverlapSql("c", "p")} AND ST_Intersects(c.part_geom, p.part_geom)
-    WHERE p.n_points < ${CLIP_TILE_MIN_VERTICES}
+    CREATE OR REPLACE TABLE cl_overlay_pieces AS
+    SELECT fid AS overlay_fid, part_geom AS geom
+    FROM cl_overlay_parts WHERE n_points < ${CLIP_TILE_MIN_VERTICES}
   `);
-
-  // Heavy overlay feature parts: grid-tile first (same tiling clip's own clip step
-  // uses), then bbox-prefilter input features against tiles instead of the raw
-  // possibly-huge part.
   const heavyParts = (
     await conn.query(`--sql
       SELECT part_id, fid FROM cl_overlay_parts WHERE n_points >= ${CLIP_TILE_MIN_VERTICES}
     `)
   ).toArray() as Array<{ part_id: bigint | number; fid: bigint | number }>;
-
-  if (heavyParts.length > 0) {
+  for (const { part_id: partId, fid } of heavyParts) {
     await conn.query(`--sql
-      CREATE OR REPLACE TABLE cl_overlay_tiles (
-        overlay_fid BIGINT, geom GEOMETRY, xmin DOUBLE, xmax DOUBLE, ymin DOUBLE, ymax DOUBLE
-      )
+      CREATE OR REPLACE TABLE cl_heavy_src AS
+      SELECT part_geom AS geom FROM cl_overlay_parts WHERE part_id = ${partId}
     `);
-    for (const { part_id: partId, fid } of heavyParts) {
-      await conn.query(`--sql
-        CREATE OR REPLACE TABLE cl_heavy_src AS
-        SELECT part_geom AS geom FROM cl_overlay_parts WHERE part_id = ${partId}
-      `);
-      await subdivideBoundary(conn, "cl_heavy_src", "geom", "cl_heavy_tiles_raw");
-      await conn.query(`--sql
-        INSERT INTO cl_overlay_tiles
-        SELECT ${fid} AS overlay_fid, geom, ${bboxColumnsSql("geom")} FROM cl_heavy_tiles_raw
-      `);
-    }
-    await conn.query(`--sql
-      INSERT INTO cl_pairs_raw
-      SELECT c.fid AS input_fid, t.overlay_fid AS overlay_fid,
-             ST_Area(ST_Intersection(c.part_geom, t.geom)) AS shared_area
-      FROM cl_input_parts c
-      JOIN cl_overlay_tiles t
-        ON ${bboxOverlapSql("c", "t")} AND ST_Intersects(c.part_geom, t.geom)
-    `);
-    await conn.query("DROP TABLE IF EXISTS cl_heavy_src");
-    await conn.query("DROP TABLE IF EXISTS cl_heavy_tiles_raw");
-    await conn.query("DROP TABLE IF EXISTS cl_overlay_tiles");
+    await subdivideBoundary(conn, "cl_heavy_src", "geom", "cl_heavy_tiles_raw");
+    await conn.query(
+      `INSERT INTO cl_overlay_pieces SELECT ${fid} AS overlay_fid, geom FROM cl_heavy_tiles_raw`,
+    );
   }
+  await conn.query("DROP TABLE IF EXISTS cl_heavy_src");
+  await conn.query("DROP TABLE IF EXISTS cl_heavy_tiles_raw");
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE cl_overlay_pieces AS
+    SELECT ROW_NUMBER() OVER () AS id, overlay_fid, geom, ${bboxColumnsSql("geom")}
+    FROM cl_overlay_pieces
+  `);
+
+  // Area-weighted overlap per piece pair. A touch-only pair (shared edge or
+  // corner) has zero area and is dropped below, matching topo-tools-py's
+  // assign_one, which only counts shared_area > 0.
+  const { snapped } = await intersectPairs(
+    conn,
+    "cl_input_parts",
+    "cl_overlay_pieces",
+    "cl_pairs_geom",
+  );
+  if (snapped > 0) console.warn(`assignOne: ${snapped} pair(s) intersected after snapping`);
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE cl_pairs_raw AS
+    SELECT c.fid AS input_fid, p.overlay_fid, ST_Area(g.geom) AS shared_area
+    FROM cl_pairs_geom g
+    JOIN cl_input_parts c ON c.id = g.a_id
+    JOIN cl_overlay_pieces p ON p.id = g.b_id
+  `);
+  await conn.query("DROP TABLE IF EXISTS cl_pairs_geom");
+  await conn.query("DROP TABLE IF EXISTS cl_overlay_pieces");
 
   // Aggregate part-level areas up to one row per (input feature, overlay feature) — an input feature
   // with multiple parts overlapping the same overlay feature still counts as one vote

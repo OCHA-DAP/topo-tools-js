@@ -25,10 +25,11 @@ working values (reconfirmed at finer grain by a later 155-value sweep, see
 neighbour union with `ST_Snap` before differencing, and a noding failure that
 survives the snap propagates, matching topo-tools-py
 ([`0022`](../adr/0022-noding-precision-retry-removed-for-python-parity.md)).
-`src/lib/db/overlap.ts`'s `computeOverlapPairs` (Edge Matcher, Changelog,
-Code Update, Schema Join) runs its exact `ST_Intersection` set-based first;
-if that throws, it recomputes pair by pair and snaps only the failing pairs
-at `SNAP_TOLERANCE`, which reproduces native areas to ~1e-10 relative
+`src/lib/db/overlap.ts`'s `intersectPairs`, behind `computeOverlapPairs`
+(Edge Matcher, Changelog, Code Update, Schema Join) and assign-one (Clip,
+Mosaic), runs its exact `ST_Intersection` set-based first; if that throws,
+it recomputes pair by pair and snaps only the failing pairs at
+`SNAP_TOLERANCE`, which reproduces native areas to ~1e-10 relative
 ([`0036`](../adr/0036-overlap-pairs-snap-fallback-on-wasm-noding-failure.md)).
 
 This failure class is also non-deterministic across otherwise-identical

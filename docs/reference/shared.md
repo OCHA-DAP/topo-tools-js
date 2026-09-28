@@ -101,17 +101,20 @@ Shared by `extend` (whole-file) and `match` (per-group).
 
 Shared by `match` (input/overlay assignment), `change` (version-to-version
 comparison), `code-update` (per-level classify and reparent), and
-`schema-join` (join assignment).
+`schema-join` (join assignment). Its pairwise intersection (`intersectPairs`)
+is also shared by assign-one (`clip`, `mosaic`).
 
 - Overlap measurement MUST compute exact geometric intersection
   (`ST_Intersection`) for every candidate pair.
 - A pair whose exact intersection throws MUST be retried once as
   `ST_Intersection(ST_Snap(a, b, SNAP_TOLERANCE), b)`. A pair that still
   throws MUST propagate the failure to the caller.
-- `computeOverlapPairs` MUST log the number of snapped pairs to the console
-  when it is non-zero.
-- An intersection piece with area below the sliver threshold (~1cm²) MUST
-  be discarded before it contributes to any pair's shared area.
+- `computeOverlapPairs` and assign-one MUST log the number of snapped pairs
+  to the console when it is non-zero.
+- In `computeOverlapPairs`, an intersection piece with area below the
+  sliver threshold (~1cm²) MUST be discarded before it contributes to any
+  pair's shared area. Assign-one MUST count any pair with shared area above
+  zero.
 - Area and ratio calculations (`coverage_a`, `coverage_b`, `iou`) MUST use
   an equal-area projection, not raw EPSG:4326 degree-area.
 
