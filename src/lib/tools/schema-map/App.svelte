@@ -4,6 +4,7 @@
   import { runSchemaMap, DEFAULT_TARGET_SCHEMA, type CrosswalkRow, type TargetSchema } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import DemoLink from "$lib/components/DemoLink.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import ResultsTable from "./ResultsTable.svelte";
 
@@ -87,6 +88,7 @@
     <header>
       <a class="back" href={base}>← Topology Tools</a>
       <h1>Schema Map</h1>
+      <DemoLink slug="schema-map" />
       <p class="blurb">
         Infer which columns form a nested admin hierarchy from cardinality, containment, and
         embedding alone, never column names or vocabulary, and propose a crosswalk to a target
