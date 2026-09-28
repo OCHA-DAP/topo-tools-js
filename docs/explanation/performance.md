@@ -22,9 +22,11 @@ working values (reconfirmed at finer grain by a later 155-value sweep, see
 [`docs/adr/0006`](../adr/0006-precision-candidate-density-not-increased.md)).
 
 **Mitigations**: Edge Extender's merge step snaps each Voronoi cell onto its
-neighbour union with `ST_Snap` before differencing, and a noding failure that
-survives the snap propagates, matching topo-tools-py
+neighbour union with `ST_Snap` before differencing, and a difference that
+still throws propagates, matching topo-tools-py
 ([`0022`](../adr/0022-noding-precision-retry-removed-for-python-parity.md)).
+Its per-fid dissolve retries a failing fid's union on a 1e-11° grid
+([`0038`](../adr/0038-extend-merge-union-grid-fallback.md)).
 `src/lib/db/overlap.ts`'s `intersectPairs`, behind `computeOverlapPairs`
 (Edge Matcher, Changelog, Code Update, Schema Join), assign-one and the clip
 step (Clip, Mosaic), and the shared overlap check (Detect, Topology Cleaner),

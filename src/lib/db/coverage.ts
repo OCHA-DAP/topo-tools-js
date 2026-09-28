@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
-import { SNAP_TOLERANCE } from "./constants";
+import { NODING_FALLBACK_GRID, SNAP_TOLERANCE } from "./constants";
 import { intersectPairs } from "./overlap";
 
 export async function emptyRegions(
@@ -12,9 +12,6 @@ export async function emptyRegions(
     `CREATE OR REPLACE TABLE ${table} AS SELECT NULL::BIGINT AS n${extra}, NULL::GEOMETRY AS geom WHERE FALSE`,
   );
 }
-
-// Grid the gap fallback snaps to when the exact union throws in WASM GEOS.
-const GAP_FALLBACK_GRID = 1e-11;
 
 function gapHolesSql(targetTable: string, sourceTable: string, geomExpr: string): string {
   return `--sql
@@ -53,13 +50,13 @@ export async function buildGapTable(
     await conn.query(gapHolesSql(targetTable, sourceTable, "geom"));
     return;
   } catch (e) {
-    console.warn(`gap union failed; retrying on a ${GAP_FALLBACK_GRID} grid:`, e);
+    console.warn(`gap union failed; retrying on a ${NODING_FALLBACK_GRID} grid:`, e);
   }
   const holes = `${targetTable}_grid_holes`;
   const source = `${targetTable}_grid_source`;
   try {
     await conn.query(
-      gapHolesSql(holes, sourceTable, `ST_ReducePrecision(geom, ${GAP_FALLBACK_GRID})`),
+      gapHolesSql(holes, sourceTable, `ST_ReducePrecision(geom, ${NODING_FALLBACK_GRID})`),
     );
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ${source} AS
