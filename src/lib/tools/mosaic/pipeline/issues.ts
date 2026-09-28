@@ -1,5 +1,9 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import type { AssignmentMethod } from "$lib/db/codeJoin";
+import {
+  CODE_FALLBACK_REASON,
+  CODE_MISMATCH_REASON,
+  type AssignmentMethod,
+} from "$lib/db/codeJoin";
 import { buildStitchIssues } from "../../stitch/pipeline/issues";
 
 // Combined issues report: dropped input features, leftover stitch gaps, and (when
@@ -19,7 +23,7 @@ export interface MosaicIssueRow {
 
 export interface MosaicIssuesResult {
   rows: MosaicIssueRow[];
-  geojson: string; // FeatureCollection, props {key, kind, area_m2, max_width_m}
+  geojson: string; // FeatureCollection, props {key, kind, area_m2, max_width_m, unit_a, overlay_fid, reason}
 }
 
 export interface AssignmentOutcomeInfo {
@@ -55,7 +59,8 @@ export async function buildMosaicIssues(
     SELECT ${codeKind ? `'${codeKind}-' || a.input_fid` : "NULL::VARCHAR"} AS key,
            ${codeKind ? `'${codeKind}'` : "NULL::VARCHAR"} AS kind,
            NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m, NULL::DOUBLE AS thinness_ratio,
-           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason,
+           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid,
+           ${codeKind === "code-mismatch" ? `'${CODE_MISMATCH_REASON}'` : codeKind === "code-fallback" ? `'${CODE_FALLBACK_REASON}'` : "NULL::VARCHAR"} AS reason,
            c.geom,
            ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
     FROM cl_assign a JOIN input_layer_01 c ON c.fid = a.input_fid
@@ -83,7 +88,7 @@ export async function buildMosaicIssues(
 
   const meta = (
     await conn.query(`--sql
-      SELECT key, kind, unit_a, overlay_fid, xmin, ymin, xmax, ymax
+      SELECT key, kind, unit_a, overlay_fid, reason, xmin, ymin, xmax, ymax
       FROM ms_issues WHERE kind IN ('unassigned', 'code-mismatch', 'code-fallback')
     `)
   ).toArray() as Array<{
@@ -91,6 +96,7 @@ export async function buildMosaicIssues(
     kind: "unassigned" | "code-mismatch" | "code-fallback";
     unit_a: bigint | number;
     overlay_fid: bigint | number | null;
+    reason: string | null;
     xmin: number;
     ymin: number;
     xmax: number;
@@ -106,7 +112,7 @@ export async function buildMosaicIssues(
       thinnessRatio: null,
       unitA: Number(r.unit_a),
       overlayFid: r.overlay_fid == null ? null : Number(r.overlay_fid),
-      reason: null,
+      reason: r.reason,
       bbox: [r.xmin, r.ymin, r.xmax, r.ymax] as [number, number, number, number],
     })),
     ...gapRows.map((r) => ({
@@ -123,7 +129,7 @@ export async function buildMosaicIssues(
   ];
 
   const gj = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, unit_a, overlay_fid, ST_AsGeoJSON(geom) AS _geom
+    SELECT key, kind, area_m2, max_width_m, unit_a, overlay_fid, reason, ST_AsGeoJSON(geom) AS _geom
     FROM ms_issues
   `);
   const features = (
@@ -134,6 +140,7 @@ export async function buildMosaicIssues(
       max_width_m: number | null;
       unit_a: bigint | number | null;
       overlay_fid: bigint | number | null;
+      reason: string | null;
       _geom: string;
     }>
   ).map((r) => ({
@@ -146,6 +153,7 @@ export async function buildMosaicIssues(
       max_width_m: r.max_width_m,
       unit_a: r.unit_a == null ? null : Number(r.unit_a),
       overlay_fid: r.overlay_fid == null ? null : Number(r.overlay_fid),
+      reason: r.reason,
     },
   }));
 

@@ -3,6 +3,10 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 // Optional code-join precedence with spatial fallback, shared by
 // assignOne.ts and match/pipeline/assign.ts (docs/adr/0045).
 
+export const CODE_MISMATCH_REASON =
+  "code join picked a different overlay feature than spatial majority";
+export const CODE_FALLBACK_REASON = "no matching code; fell back to spatial majority";
+
 export interface MatchColumnOptions {
   matchColumn?: string;
   overlayMatchColumn?: string;

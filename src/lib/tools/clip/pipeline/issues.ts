@@ -1,5 +1,9 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import type { AssignmentMethod } from "$lib/db/codeJoin";
+import {
+  CODE_FALLBACK_REASON,
+  CODE_MISMATCH_REASON,
+  type AssignmentMethod,
+} from "$lib/db/codeJoin";
 
 // Clip's first issues report: dropped input features plus code-mismatch/
 // code-fallback rows when a code join was supplied (docs/adr/0045).
@@ -15,7 +19,7 @@ export interface ClipIssueRow {
 
 export interface ClipIssuesResult {
   rows: ClipIssueRow[];
-  geojson: string; // FeatureCollection, props {key, kind, unit_a, overlay_fid}
+  geojson: string; // FeatureCollection, props {key, kind, unit_a, overlay_fid, reason}
 }
 
 export interface AssignmentOutcomeInfo {
@@ -40,7 +44,8 @@ export async function buildClipIssues(
       AND c.fid NOT IN (SELECT input_fid FROM cl_assign)
     UNION ALL
     SELECT 'clip-empty-' || a.input_fid AS key, 'clip-empty' AS kind,
-           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason,
+           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid,
+           'clip intersection with its overlay feature was empty' AS reason,
            c.geom,
            ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
     FROM cl_assign a JOIN input_layer_01 c ON c.fid = a.input_fid
@@ -59,7 +64,8 @@ export async function buildClipIssues(
     CREATE OR REPLACE TABLE cl_code_issues AS
     SELECT ${codeKind ? `'${codeKind}-' || a.input_fid` : "NULL::VARCHAR"} AS key,
            ${codeKind ? `'${codeKind}'` : "NULL::VARCHAR"} AS kind,
-           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason,
+           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid,
+           ${codeKind === "code-mismatch" ? `'${CODE_MISMATCH_REASON}'` : codeKind === "code-fallback" ? `'${CODE_FALLBACK_REASON}'` : "NULL::VARCHAR"} AS reason,
            c.geom,
            ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
     FROM cl_assign a JOIN input_layer_01 c ON c.fid = a.input_fid
@@ -79,13 +85,14 @@ export async function buildClipIssues(
 
   const meta = (
     await conn.query(`--sql
-      SELECT key, kind, unit_a, overlay_fid, xmin, ymin, xmax, ymax FROM cl_issues
+      SELECT key, kind, unit_a, overlay_fid, reason, xmin, ymin, xmax, ymax FROM cl_issues
     `)
   ).toArray() as Array<{
     key: string;
     kind: "unassigned" | "clip-empty" | "code-mismatch" | "code-fallback";
     unit_a: bigint | number;
     overlay_fid: bigint | number | null;
+    reason: string | null;
     xmin: number;
     ymin: number;
     xmax: number;
@@ -97,12 +104,12 @@ export async function buildClipIssues(
     kind: r.kind,
     unitA: Number(r.unit_a),
     overlayFid: r.overlay_fid == null ? null : Number(r.overlay_fid),
-    reason: null,
+    reason: r.reason,
     bbox: [r.xmin, r.ymin, r.xmax, r.ymax],
   }));
 
   const gj = await conn.query(`--sql
-    SELECT key, kind, unit_a, overlay_fid, ST_AsGeoJSON(geom) AS _geom FROM cl_issues
+    SELECT key, kind, unit_a, overlay_fid, reason, ST_AsGeoJSON(geom) AS _geom FROM cl_issues
   `);
   const features = (
     gj.toArray() as Array<{
@@ -110,6 +117,7 @@ export async function buildClipIssues(
       kind: string;
       unit_a: bigint | number;
       overlay_fid: bigint | number | null;
+      reason: string | null;
       _geom: string;
     }>
   ).map((r) => ({
@@ -120,6 +128,7 @@ export async function buildClipIssues(
       kind: r.kind,
       unit_a: Number(r.unit_a),
       overlay_fid: r.overlay_fid == null ? null : Number(r.overlay_fid),
+      reason: r.reason,
     },
   }));
 

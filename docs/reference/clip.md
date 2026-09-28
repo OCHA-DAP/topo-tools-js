@@ -50,7 +50,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `clip` MUST produce an issues report whenever it has at least one row,
   combining every input feature dropped for not overlapping the winning overlay feature
   (`kind='unassigned'`) with every assigned input feature whose clip result came
-  out empty (`kind='clip-empty'`), plus any `code-mismatch`/`code-fallback`
+  out empty (`kind='clip-empty'`, `reason` `clip intersection with its
+  overlay feature was empty`), plus any `code-mismatch`/`code-fallback`
   row from a supplied code-based assignment override (see
   `docs/reference/shared.md`).
 

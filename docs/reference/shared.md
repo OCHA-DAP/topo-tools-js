@@ -144,7 +144,9 @@ Shared by `match`, `mosaic`, and `clip` for overlay assignment.
   `'code'`, `null` when it's `'spatial_fallback'`).
 - A disagreement or fallback MUST surface as an issues row: `kind='code-mismatch'`
   when the code match won but disagreed with the spatial result, or
-  `kind='code-fallback'` when no code match existed. `unitA` MUST hold the
+  `kind='code-fallback'` when no code match existed, with `reason` `code join
+  picked a different overlay feature than spatial majority` or `no matching
+  code; fell back to spatial majority` respectively. `unitA` MUST hold the
   input feature's own fid, `overlayFid` the winning overlay feature's fid.
 - Omitting both parameters MUST leave assignment behavior and output schema
   unchanged for existing callers.

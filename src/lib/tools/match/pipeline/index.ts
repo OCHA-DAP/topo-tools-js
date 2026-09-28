@@ -3,7 +3,11 @@ import { gatedCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean
 import { hasNoiseFloorGap } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
-import type { MatchColumnOptions } from "$lib/db/codeJoin";
+import {
+  CODE_FALLBACK_REASON,
+  CODE_MISMATCH_REASON,
+  type MatchColumnOptions,
+} from "$lib/db/codeJoin";
 import { applyOptionalFill, type ApplyFillOptions } from "$lib/db/fillCompose";
 import { dropInternalTables } from "$lib/tools/edge-extender/pipeline/index";
 import { loadLayers } from "./load";
@@ -70,12 +74,12 @@ async function buildIssuesTable(
     WHERE ga.overlay_fid = ${PASSTHROUGH_OVERLAY_FID} AND ga.input_fid IN (SELECT fid FROM ge_results)
     UNION ALL
     SELECT 'code_mismatch-' || a.input_fid AS key, 'code-mismatch' AS kind,
-           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason, c.geom
+           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, '${CODE_MISMATCH_REASON}' AS reason, c.geom
     FROM ge_assignment a JOIN input_layer_01 c ON c.fid = a.input_fid
     WHERE a.assignment_method = 'code' AND a.spatial_agrees = FALSE
     UNION ALL
     SELECT 'code_fallback-' || a.input_fid AS key, 'code-fallback' AS kind,
-           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason, c.geom
+           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, '${CODE_FALLBACK_REASON}' AS reason, c.geom
     FROM ge_assignment a JOIN input_layer_01 c ON c.fid = a.input_fid
     WHERE a.assignment_method = 'spatial_fallback'
   `);
