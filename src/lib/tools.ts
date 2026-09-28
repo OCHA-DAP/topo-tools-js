@@ -99,7 +99,7 @@ export const tools: Tool[] = [
       "Infer a polygon layer's admin hierarchy crosswalk and immediately apply it, producing both the crosswalk CSV and the renamed layer in one call.",
     iconHref: "/icons/tools/schema-crosswalk.svg",
     demo: {
-      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema-crosswalk/admin2-simplified/nld_admin2.parquet",
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema/admin2-simplified/nld_admin2.parquet",
     },
   },
   {
@@ -108,6 +108,9 @@ export const tools: Tool[] = [
     tagline:
       "Infer a polygon layer's admin hierarchy structurally, from cardinality and containment alone, and propose a crosswalk to a target schema for review.",
     iconHref: "/icons/tools/schema-map.svg",
+    demo: {
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema/admin2-simplified/nld_admin2.parquet",
+    },
   },
   {
     slug: "schema-refactor",
