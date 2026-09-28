@@ -3,8 +3,8 @@ import {
   runSchemaMap,
   type CrosswalkRow,
   type TargetSchema,
-} from "$lib/tools/schema-map/pipeline/index";
-import { writeCrosswalkTable } from "$lib/tools/schema-map/pipeline/outputs";
+} from "./index";
+import { writeCrosswalkTable } from "./outputs";
 import {
   loadCrosswalkCsv,
   parseCrosswalk,
@@ -17,8 +17,8 @@ import {
   validateColumnsMatch,
 } from "$lib/tools/schema-refactor/pipeline/validate";
 
-export type { CrosswalkRow, TargetSchema } from "$lib/tools/schema-map/pipeline/index";
-export { DEFAULT_TARGET_SCHEMA } from "$lib/tools/schema-map/pipeline/index";
+export type { CrosswalkRow, TargetSchema } from "./index";
+export { DEFAULT_TARGET_SCHEMA } from "./index";
 export type { SchemaRefactorResult } from "$lib/tools/schema-refactor/pipeline/index";
 
 // A crosswalk row as shown for editing: `targetColumn` is the effective target (null

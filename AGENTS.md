@@ -74,7 +74,7 @@ Notes:
 
 ## Architecture
 
-**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly, and no data leaves the browser. The root `/` is a landing page that lists tools. Sixteen tools ship today: **Topology Cleaner** at `/clean`, **Edge Extender** at `/extend`, **Changelog** at `/change`, **Edge Matcher** at `/match`, **Stitch** at `/stitch`, **Detect** at `/detect`, **Clip** at `/clip`, **Mosaic** at `/mosaic`, **Package** at `/package`, **Package Polygons** at `/package-polygons`, **Package Points** at `/package-points`, **Package Lines** at `/package-lines`, **Schema Crosswalk** at `/schema` (`/schema-map`, `/schema-refactor`, and `/schema-crosswalk` redirect there), **Schema Fill** at `/schema-fill`, **Code Refactor** at `/code-refactor`, and **Code Update** at `/code-update`; see `docs/explanation/{clean,extend,change,match,stitch,detect,clip,mosaic,package,package-polygons,package-points,package-lines,schema,schema-map,schema-refactor,schema-fill,code,code-refactor,code-update}.md` for what each does and how, and `docs/reference/{clean,extend,change,match,stitch,detect,clip,mosaic,package,package-polygons,package-points,package-lines,schema,schema-map,schema-refactor,schema-fill,code-refactor,code-update}.md` for their behavior contracts.
+**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly, and no data leaves the browser. The root `/` is a landing page that lists tools. Sixteen tools ship today: **Topology Cleaner** at `/clean`, **Edge Extender** at `/extend`, **Changelog** at `/change`, **Edge Matcher** at `/match`, **Stitch** at `/stitch`, **Detect** at `/detect`, **Clip** at `/clip`, **Mosaic** at `/mosaic`, **Package** at `/package`, **Package Polygons** at `/package-polygons`, **Package Points** at `/package-points`, **Package Lines** at `/package-lines`, **Schema Map** at `/schema-map`, **Schema Fill** at `/schema-fill`, **Code Refactor** at `/code-refactor`, and **Code Update** at `/code-update`; see `docs/explanation/{clean,extend,change,match,stitch,detect,clip,mosaic,package,package-polygons,package-points,package-lines,schema-map,schema-refactor,schema-fill,code,code-refactor,code-update}.md` for what each does and how, and `docs/reference/{clean,extend,change,match,stitch,detect,clip,mosaic,package,package-polygons,package-points,package-lines,schema-map,schema-refactor,schema-fill,code-refactor,code-update}.md` for their behavior contracts.
 
 **Stack:** Astro 6 (static site) + Svelte 5 (interactive islands) + DuckDB WASM (spatial SQL engine) + MapLibre GL (map rendering)
 
@@ -101,9 +101,8 @@ Notes:
 - `docs/explanation/package-polygons.md`: per-level group-by dissolve, auto column keep/sum/drop, gap-only issues report
 - `docs/explanation/package-points.md`: one representative point per level, generalizable-columns gate
 - `docs/explanation/package-lines.md`: shared/exterior boundary extraction, coarsest-divergence classification
-- `docs/explanation/schema.md`: one page over infer, in-table edit, and apply; geometry drawn once
-- `docs/explanation/schema-map.md`: `schema`'s inference step, structural admin-hierarchy inference, no name/vocabulary matching
-- `docs/explanation/schema-refactor.md`: `schema`'s apply step, crosswalk-driven column rename/drop, no geometry touch
+- `docs/explanation/schema-map.md`: one page over infer, in-table edit, and apply, geometry drawn once; structural admin-hierarchy inference, no name/vocabulary matching
+- `docs/explanation/schema-refactor.md`: Schema Map's apply step, crosswalk-driven column rename/drop, no geometry touch
 - `docs/explanation/schema-fill.md`: cascades admin-hierarchy column families down, stamps a pre-fill depth column, attribute-only
 - `docs/explanation/code.md`: shared hierarchical-code primitive, cascade/rewrite/detect-format functions
 - `docs/explanation/code-refactor.md`: chained per-level cascade cold-starting a code from root, overflow issues report

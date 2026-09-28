@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EditableRow } from "./pipeline/index";
+  import type { EditableRow } from "./pipeline/editor";
 
   let {
     rows = [],

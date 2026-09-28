@@ -15,7 +15,7 @@
     type CrosswalkRow,
     type EditableRow,
     type SchemaRefactorResult,
-  } from "./pipeline/index";
+  } from "./pipeline/editor";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
@@ -272,8 +272,8 @@
   <aside class="sidebar">
     <header>
       <a class="back" href={base}>← Topology Tools</a>
-      <h1>Schema Crosswalk</h1>
-      <DemoLink slug="schema" />
+      <h1>Schema Map</h1>
+      <DemoLink slug="schema-map" />
       <p class="blurb">
         Infer which columns form the admin hierarchy, from the values alone, and map them to a
         target schema. Tick the columns to keep and edit their targets in the table, then download the renamed layer or the

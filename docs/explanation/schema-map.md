@@ -1,5 +1,64 @@
 # Schema Map
 
+Schema Map (at `/schema-map`) infers a crosswalk from a layer's structure,
+lets the user edit it in a table, and applies it. It is one page over two
+pipeline steps that mirror topo-tools-py's separate commands: inference
+(Inference, below) and `schema-refactor`, which renames and drops
+(`docs/explanation/schema-refactor.md`).
+
+## Why one tool
+
+On the command line, the human review between inference and
+`schema-refactor` happens in a hand-edited CSV, so they are separate
+commands. In the browser the review happens in the table, and a separate
+page per step would only send the user out to a spreadsheet. The CSV stays
+available as an output and an optional input, for sharing a crosswalk or
+re-applying it to another delivery, and it round-trips with topo-tools-py's
+`schema-refactor`.
+
+Unmapped columns default to dropped, as in topo-tools-py, so the same CSV
+yields the same layer in both. Keep and drop are a checkbox per row, separate
+from the target name, so dropping a column never discards the name it would
+be renamed to.
+
+## Pipeline
+
+1. **Load** (shared loader) into `layer_01` and `layer_attr`. The geometry
+   is serialized to GeoJSON once, for the map, and `sampleValues` reads up to
+   three sorted distinct values per column.
+2. **Infer** (`runSchemaMap`) on load and on template edits,
+   writing `sm_crosswalk`.
+3. **Edit** (`App.svelte`): each row's checkbox and target name start from
+   the imported crosswalk if one is loaded and matches the layer, else the
+   inferred one, and user edits override either. Row order follows the same
+   precedence, and is the output column order, so a layout travels in the
+   CSV. "Sort to default order" re-applies `canonicalOrder` to the current
+   targets, which also slots a column renamed into a level (`water` to
+   `adm2_type`) between that level's name and code. `rowIssues` flags a checked
+   row with no name, plus `targetIssues`'s duplicate and reserved targets
+   (beside `validateTargets` in `schema-refactor/pipeline/validate.ts`, so
+   both share one rule set).
+4. **Apply** (`applyCrosswalk`): `schema-refactor`'s `runSchemaRefactor`
+   writes `sr_result_attr`, then `sm_crosswalk` is rewritten with the
+   effective targets so the CSV matches the table. Applying is
+   attribute-only SQL, so it reruns on every edit (debounced), on the same
+   serial task queue as inference and loading.
+5. **Outputs** export from DuckDB: the mapped layer from `layer_01` joined to
+   `sr_result_attr` (export source `schema_refactor`), the CSV from
+   `sm_crosswalk` (export source `schema_map`).
+
+## Memory
+
+Renaming never touches geometry, so the tool builds no mapped-layer GeoJSON.
+The map shows the loaded layer, and a clicked feature's values come from a
+point-in-polygon query (`attributesAt` in `$lib/db/layerView.ts`) against
+`layer_01` joined to `layer_attr`. At buurt scale (14.8k Dutch
+neighbourhoods) this measured 1.25 GB peak JS heap and 0.44 GB after
+garbage collection. Building a second, attribute-carrying GeoJSON for the
+map measured 2.07 GB and 0.83 GB on the same file.
+
+## Inference
+
 `schema-map` structurally infers which columns in a polygon layer's
 attribute table form a nested admin hierarchy (e.g. country -> province ->
 district), and proposes a crosswalk to a target schema for a human to
@@ -17,7 +76,7 @@ Column-name/vocabulary matching was topo-tools-py's original design
 and GRID3 DRC data) and was never ported here; this app has no name-based
 fallback to fall back to.
 
-## Pipeline
+### Pipeline
 
 1. **Load** (`$lib/db/loader`, shared) - the same loader every tool uses;
    `schema-map` reads `layer_attr`'s schema directly, with no group-by or
@@ -48,7 +107,7 @@ fallback to fall back to.
    ordering, written to a `sm_crosswalk` DuckDB table for CSV export via
    `$lib/db/export.ts`.
 
-## Why the edge-validity rule has three branches
+### Why the edge-validity rule has three branches
 
 A chain edge (coarser group -> finer group) needs containment to hold, plus
 one of three justifications: the coarser group is a true constant (nothing
@@ -65,7 +124,7 @@ since two unrelated attributes can satisfy containment by chance in a small
 file and a single embedding-evidence check elsewhere in the same file is
 enough to rule that risk out.
 
-## Why role assignment never defers to a sibling
+### Why role assignment never defers to a sibling
 
 An earlier version defaulted a non-embedding column to `name` whenever
 some other column in its group embedded the parent. This broke twice on
@@ -78,7 +137,7 @@ port's `cod/adm2` fixture (see Verification below) reproduces exactly this
 scenario: `area_sqkm` independently resolves `code` (digit-shaped values),
 leaving the real `adm2_name`/`adm2_pcode` pair to resolve cleanly.
 
-## Why a losing bracket candidate is "supplemental," not always "ambiguous"
+### Why a losing bracket candidate is "supplemental," not always "ambiguous"
 
 A bracketed candidate that passes a one-way function check against a
 level's code column, but isn't itself bijective with it, cannot be a
@@ -90,7 +149,7 @@ independently-defined coarser grouping, not noise, hence a distinct
 candidate failing the function check in both directions has no defensible
 relationship to report at all, and stays `ambiguous`.
 
-## Why a root-prefix restriction protects the chain
+### Why a root-prefix restriction protects the chain
 
 Only an unbroken, fully-populated run of single-value groups starting at
 the coarsest position (`orderGroupsByContainment`'s coarsest-first,
@@ -100,7 +159,7 @@ anywhere else in the ordering, most often a sparse audit-style column that
 happens to have one non-null value, cannot silently justify an
 embedding-free chain link (topo-tools-py's ADR-0100).
 
-## Why the root's embedding-free freebie sometimes needs spatial corroboration
+### Why the root's embedding-free freebie sometimes needs spatial corroboration
 
 Once a `geom` column is loaded, an ungrounded finer group extending
 straight off a constant root is corroborated by checking that its own
@@ -114,7 +173,7 @@ real hierarchy); a blanket version applied everywhere regressed
 correctly-chaining Belgium/Costa Rica data, so it stays scoped to these two
 call sites.
 
-## Temporal columns are excluded by type, not name
+### Temporal columns are excluded by type, not name
 
 A `DATE`/`TIME`/`TIMESTAMP`/`INTERVAL` column is excluded from chain
 candidacy before cardinality sees it (`$lib/db/columnTypes.ts`'s
@@ -123,7 +182,7 @@ candidacy before cardinality sees it (`$lib/db/columnTypes.ts`'s
 digit-heavy but carries no hierarchy meaning. This is a type check, never a
 name check, consistent with the rest of the algorithm.
 
-## Column resolution is one shared function
+### Column resolution is one shared function
 
 `pipeline/inference.ts`'s `resolveColumns` is the whole structural
 resolution pipeline (candidate columns through chain-building through
@@ -132,7 +191,7 @@ wrapper around it. `schema-fill`'s auto-detect path and the `package-*`
 tools' level-detection engine both consume `resolveColumns` directly, so no
 tool's structural understanding of a file can drift from schema-map's own.
 
-## Deferred refinements
+### Deferred refinements
 
 topo-tools-py's matcher also carries `_containment_perfect`/"strong" edges
 with chain-embedding propagation, a bijection joint-evidence threshold with
@@ -143,7 +202,7 @@ known regression on this app's own data, and the root-detection data they'd
 otherwise fold away must stay visible for `package-polygons`'s own
 root-level handling.
 
-## Query shape
+### Query shape
 
 Every relational check (`COUNT(DISTINCT)`, containment, embedding,
 bijection) is its own small, targeted DuckDB query in `pipeline/queries.ts`,
@@ -155,7 +214,7 @@ structure of Python loops around individual `conn.execute()` calls, and
 this app's own `package-polygons` precedent of a query shape that scales with
 column count, not row count.
 
-## Row-order determinism
+### Row-order determinism
 
 This app runs DuckDB WASM with `preserve_insertion_order = false` (see
 `docs/reference/shared.md`), so a plain `SELECT * FROM sm_crosswalk` is not
@@ -164,7 +223,7 @@ an explicit `column_order` column, and `$lib/db/export.ts`'s `schema_map`
 source config selects with `ORDER BY column_order`, mirroring
 topo-tools-py's own explicit `ORDER BY column_order` at CSV-export time.
 
-## Verification
+### Verification
 
 Cross-checked against topo-tools-py's own `schema-map` CLI on three real
 files from the portolan catalog: `cod/latest/adm2/original.parquet` (a

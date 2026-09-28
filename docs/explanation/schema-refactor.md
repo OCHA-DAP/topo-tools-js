@@ -1,8 +1,8 @@
 # Schema Refactor
 
 `schema-refactor` applies a crosswalk to the loaded layer, renaming and
-dropping its columns. It is the apply step of the `schema` tool
-(`docs/explanation/schema.md`), which feeds it either the crosswalk edited in
+dropping its columns. It is the apply step of the Schema Map tool
+(`docs/explanation/schema-map.md`), which feeds it either the crosswalk edited in
 its table or an imported crosswalk CSV. Ported from topo-tools-py's
 `schema-refactor` (`docs/explanation/schema_refactor.md` there).
 
@@ -30,7 +30,7 @@ its table or an imported crosswalk CSV. Ported from topo-tools-py's
    column to its `target_column` and drops any column whose `target_column`
    is null/empty, writing `sr_result_attr` with columns in crosswalk row
    order (topo-tools-py ADR 0115: reordering is a row move, in a
-   spreadsheet or in `schema`'s table). `misorderedSiblings` in
+   spreadsheet or in Schema Map's table). `misorderedSiblings` in
    `$lib/db/adminColumns.ts`, a port of its `core/admin_columns.py`, flags
    the swapped-sibling case (`adm2_name1` before `adm2_name`) that template
    ordering existed to prevent. A `__row_order` column ranks rows by the

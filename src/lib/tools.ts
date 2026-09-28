@@ -93,11 +93,11 @@ export const tools: Tool[] = [
     iconHref: "/icons/tools/package-lines.svg",
   },
   {
-    slug: "schema",
-    name: "Schema Crosswalk",
+    slug: "schema-map",
+    name: "Schema Map",
     tagline:
       "Infer a polygon layer's admin hierarchy crosswalk, review and edit it in place, and apply it to download the renamed layer, the crosswalk CSV, or both.",
-    iconHref: "/icons/tools/schema.svg",
+    iconHref: "/icons/tools/schema-map.svg",
     demo: {
       url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema/admin2-simplified/nld_admin2.parquet",
     },

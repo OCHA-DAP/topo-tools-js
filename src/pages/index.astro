@@ -20,7 +20,7 @@ const pkg = bySlug("package");
 const packagePolygons = bySlug("package-polygons");
 const packagePoints = bySlug("package-points");
 const packageLines = bySlug("package-lines");
-const schemaCrosswalk = bySlug("schema");
+const schemaMap = bySlug("schema-map");
 const schemaFill = bySlug("schema-fill");
 const codeRefactor = bySlug("code-refactor");
 const codeUpdate = bySlug("code-update");
@@ -49,7 +49,7 @@ const codeUpdate = bySlug("code-update");
           summary="Map source columns to admin code and name columns, then apply the crosswalk."
         >
           <GroupBox>
-            <ToolCard tool={schemaCrosswalk} header />
+            <ToolCard tool={schemaMap} header />
             <Disclosure label="Show 1 individual tool">
               <ToolCard tool={schemaFill} variant="secondary" />
             </Disclosure>
