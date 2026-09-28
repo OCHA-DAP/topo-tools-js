@@ -49,5 +49,6 @@ for rules `mosaic` shares with other tools.
   `overlayMatchColumn`/`inputMatchColumn` pair for the code-based
   assignment override (see `docs/adr/0029`).
 - `mosaic` MAY accept a list of overlay feature attribute columns to carry into the
-  output, each joined onto every output row (prefixed `overlay_`) from the
-  single winning overlay feature's own attribute row.
+  output, each joined onto every output row, under its own name, from the
+  single winning overlay feature's own attribute row. A carried column whose
+  name already exists on the input layer MUST raise.

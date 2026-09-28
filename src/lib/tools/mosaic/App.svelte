@@ -262,14 +262,17 @@
     {#if overlayColumns}
       <section class="step">
         <h2 class="step-heading">Carry overlay columns (optional)</h2>
-        <p class="hint">Join the winning overlay feature's own attribute values onto every output row.</p>
+        <p class="hint">
+          Join the winning overlay feature's own attribute values onto every output row. A column the input layer
+          already has can't be carried.
+        </p>
         <div class="carry-cols">
           {#each overlayColumns.all as col (col)}
             <label class="carry-field">
               <input
                 type="checkbox"
                 checked={carryOverlayColumns.includes(col)}
-                disabled={running}
+                disabled={running || inputColumns?.all.includes(col)}
                 onchange={(e) => {
                   const checked = (e.target as HTMLInputElement).checked;
                   carryOverlayColumns = checked

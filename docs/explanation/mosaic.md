@@ -17,7 +17,7 @@ usual `layer_01`). Ported from topo-tools-py's `mosaic`.
 2. **Assign** (`$lib/db/assignOne.ts`), the same assign-one majority vote
    Clip uses, at exactly the same single-input-file scope
    (`docs/adr/0026`, shared by both tools). If overlay columns were
-   requested, they're joined (prefixed `overlay_`) from the winning
+   requested, they're joined under their own names from the winning
    overlay feature's own attribute row onto `input_layer_attr` here, before clipping.
 3. **Clip** (`$lib/db/clipEngine.ts`) — the same tiled clip Clip uses.
    Fails the run if zero output rows result.

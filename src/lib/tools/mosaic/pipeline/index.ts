@@ -90,11 +90,16 @@ export async function runMosaic(
   }
 
   // Ported from topo-tools-py's carry_columns: joins the single winning
-  // overlay feature's own attribute values onto every output row.
+  // overlay feature's own attribute values onto every output row, unprefixed.
   if (carryOverlayColumns.length > 0) {
-    const selectCols = carryOverlayColumns
-      .map((c) => `p.${JSON.stringify(c)} AS ${JSON.stringify(`overlay_${c}`)}`)
-      .join(", ");
+    const clashes = carryOverlayColumns.filter((c) => inputColumns.all.includes(c));
+    if (clashes.length > 0) {
+      throw new PipelineError(
+        `Carried overlay columns already exist on the input layer: ${clashes.join(", ")}`,
+        2,
+      );
+    }
+    const selectCols = carryOverlayColumns.map((c) => `p.${JSON.stringify(c)}`).join(", ");
     await conn.query(`--sql
       CREATE OR REPLACE TABLE input_layer_attr AS
       SELECT c.*, ${selectCols}
