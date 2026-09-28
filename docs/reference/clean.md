@@ -102,9 +102,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 ## Configuration (UI)
 
-- The gap-width control MUST accept meters and MUST be converted to
-  degrees using the dataset's own centroid latitude (`cos(latitude)`
-  scaling), not a fixed conversion factor.
+- The gap-width control MUST accept meters and MUST convert them to
+  degrees with the exact inverse of the factor that converts a detected
+  gap's max width to meters, so every mode's resolved width in degrees
+  (e.g. `minimal`'s `SNAP_TOLERANCE`) reaches `ST_CoverageClean` unchanged.
 - Changing the gap-width slider MUST trigger only a reclean (`buildClean`
   - `checkFixedIssues` + export-check), reusing the cached input freeze
     and the cached issues list, never re-running gap/overlap detection.
