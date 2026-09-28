@@ -1,6 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
+import { bboxColumnsSql } from "./bbox";
 import { subdivideBoundary } from "./clipTiling";
+import { intersectPairs } from "./overlap";
 
 export interface ClipEngineResult {
   outputCount: number;
@@ -26,26 +27,27 @@ export async function clipEngine(
   await subdivideBoundary(conn, "cl_overlay_one", "geom", "cl_btile_raw");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_btile AS
-    SELECT geom, ${bboxColumnsSql("geom")} FROM cl_btile_raw
+    SELECT ROW_NUMBER() OVER () AS id, geom, ${bboxColumnsSql("geom")} FROM cl_btile_raw
   `);
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_input_bbox AS
-    SELECT ch.fid, ch.geom, ${bboxColumnsSql("ch.geom")}
+    SELECT ch.fid AS id, ch.geom, ${bboxColumnsSql("ch.geom")}
     FROM input_layer_01 ch
     JOIN cl_assign a ON a.input_fid = ch.fid
   `);
 
+  const { snapped } = await intersectPairs(conn, "cl_input_bbox", "cl_btile", "cl_clip_pieces");
+  if (snapped > 0) console.warn(`clipEngine: ${snapped} pair(s) intersected after snapping`);
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_clip AS
     SELECT * FROM (
-      SELECT c.fid,
-             ST_Multi(ST_CollectionExtract(ST_Union_Agg(ST_Intersection(c.geom, b.geom)), 3)) AS geom
-      FROM cl_input_bbox c
-      JOIN cl_btile b ON ${bboxOverlapSql("c", "b")}
-      GROUP BY c.fid
+      SELECT a_id AS fid, ST_Multi(ST_CollectionExtract(ST_Union_Agg(geom), 3)) AS geom
+      FROM cl_clip_pieces
+      GROUP BY a_id
     ) WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `);
+  await conn.query("DROP TABLE IF EXISTS cl_clip_pieces");
 
   await conn.query("DROP TABLE IF EXISTS cl_overlay_one");
   await conn.query("DROP TABLE IF EXISTS cl_btile_raw");

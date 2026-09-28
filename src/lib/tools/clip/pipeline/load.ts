@@ -21,6 +21,7 @@ const OWNED_TABLES = [
   "cl_btile_raw",
   "cl_btile",
   "cl_input_bbox",
+  "cl_clip_pieces",
   "cl_clip",
   "cl_unassigned_issues",
   "cl_code_issues",
