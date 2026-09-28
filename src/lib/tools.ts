@@ -99,7 +99,7 @@ export const tools: Tool[] = [
       "Infer a polygon layer's admin hierarchy crosswalk, review and edit it in place, and apply it to download the renamed layer, the crosswalk CSV, or both.",
     iconHref: "/icons/tools/schema-map.svg",
     demo: {
-      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema/admin2-simplified/nld_admin2.parquet",
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema-map/nld_admin2.parquet",
     },
   },
   {
