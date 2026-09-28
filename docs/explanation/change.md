@@ -117,10 +117,11 @@ for a several-thousand-unit admin layer.
 
 - **Tabular changelog** (`cw_changelog`, exported as `crosswalk_changelog`,
   CSV or GeoParquet): one row per classified pair, plus one row per
-  unmatched singleton. Columns: `code_a, name_a, code_b, name_b,
-relationship_class, match_method, a_in_b (coverage_a, 3dp), b_in_a
-(coverage_b, 3dp), similarity (iou, 3dp), threshold_match,
-threshold_unchanged, link_by_code, link_by_name, link_mode`. The last five
+  unmatched singleton. Columns: `code_a`, `name_a`, `code_b`, `name_b`,
+  `relationship_class`, `match_method`, `a_in_b` (coverage_a, 3dp),
+  `b_in_a` (coverage_b, 3dp), `similarity` (iou, 3dp), `threshold_match`,
+  `threshold_same`, `link_by_code`, `link_by_name`, `link_mode`, named as in
+  topo-tools-py. The last five
   columns echo the run's own parameters into every row — added in commit
   `06c073a` so an identity-mode run is self-documenting from the CSV alone,
   without needing to know what the UI's sliders/toggles were set to when it

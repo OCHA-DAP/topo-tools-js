@@ -433,8 +433,8 @@ export async function rebuildChangelog(
       ROUND(p.coverage_a, 3) AS a_in_b,
       ROUND(p.coverage_b, 3) AS b_in_a,
       ROUND(p.iou, 3) AS similarity,
-      ${tauMatch} AS threshold_match,
-      ${tauSame} AS threshold_unchanged,
+      ${tauMatch}::DOUBLE AS threshold_match,
+      ${tauSame}::DOUBLE AS threshold_same,
       ${boolStr(linkByCode)} AS link_by_code,
       ${boolStr(linkByName)} AS link_by_name,
       ${sqlStr(linkMode)} AS link_mode
@@ -449,7 +449,7 @@ export async function rebuildChangelog(
            pc.relationship_class,
            NULL AS match_method,
            NULL AS a_in_b, NULL AS b_in_a, NULL AS similarity,
-           ${tauMatch} AS threshold_match, ${tauSame} AS threshold_unchanged,
+           ${tauMatch}::DOUBLE AS threshold_match, ${tauSame}::DOUBLE AS threshold_same,
            ${boolStr(linkByCode)} AS link_by_code,
            ${boolStr(linkByName)} AS link_by_name,
            ${sqlStr(linkMode)} AS link_mode
@@ -468,7 +468,7 @@ export async function rebuildChangelog(
            pc.relationship_class,
            NULL AS match_method,
            NULL AS a_in_b, NULL AS b_in_a, NULL AS similarity,
-           ${tauMatch} AS threshold_match, ${tauSame} AS threshold_unchanged,
+           ${tauMatch}::DOUBLE AS threshold_match, ${tauSame}::DOUBLE AS threshold_same,
            ${boolStr(linkByCode)} AS link_by_code,
            ${boolStr(linkByName)} AS link_by_name,
            ${sqlStr(linkMode)} AS link_mode
