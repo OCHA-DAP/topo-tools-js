@@ -2,7 +2,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { computeOverlapPairs } from "./overlap";
 
 // Per-child plurality pick: largest shared_area wins, b_fid breaks a tie.
-// Shared by `match` (parent/child assignment) and `code-update` (reparent).
+// Shared by `match`, `code-update` (reparent), and `schema-join`.
 export async function assignBestOverlap(
   conn: AsyncDuckDBConnection,
   childTable: string,

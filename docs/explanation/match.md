@@ -75,11 +75,10 @@ full contract, and `src/lib/db/codeJoin.ts` for the shared implementation
 
 ## Overlap computation
 
-`src/lib/db/overlap.ts`'s `computeOverlapPairs` (shared with the Changelog
-tool) computes overlap via exact `ST_Intersection`. A failure (the WASM-only
-GEOS robustness class documented in
-[`docs/explanation/performance.md`](performance.md#wasm-geos-overlayng-floating-point-divergence))
-propagates to the caller rather than falling back to an approximation.
+`src/lib/db/overlap.ts`'s `computeOverlapPairs` (shared with Changelog, Code
+Update, and Schema Join) computes overlap via exact `ST_Intersection`, with a
+per-pair snap fallback for the WASM-only GEOS robustness failure described in
+[`docs/explanation/performance.md`](performance.md#wasm-geos-overlayng-floating-point-divergence).
 
 ## Optional schema fill
 

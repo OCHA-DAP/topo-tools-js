@@ -22,15 +22,16 @@ Cross-walk".
 
 ## Overlap computation
 
-`$lib/db/overlap.ts` is shared with Edge Matcher's majority-overlap
-assignment, not owned by Changelog alone. It computes overlap via exact
-`ST_Intersection`. DuckDB-WASM's GEOS OverlayNG build can throw "found
-non-noded intersection" on near-coincident, independently-digitized
-boundaries — a WASM-specific floating-point bug, since the same query
-succeeds natively (commit `0672282`) — and that failure now propagates to
-the caller rather than falling back to an approximation; see
-[`docs/adr/0022-noding-precision-retry-removed-for-python-parity.md`](../adr/0022-noding-precision-retry-removed-for-python-parity.md)
-for why the earlier sampling fallback was removed.
+`$lib/db/overlap.ts` is shared with Edge Matcher, Code Update, and Schema
+Join, not owned by Changelog alone. It computes overlap via exact
+`ST_Intersection` in one set-based query. DuckDB-WASM's GEOS OverlayNG build
+can throw "found non-noded intersection" on near-coincident,
+independently-digitized boundaries, a WASM-specific floating-point bug (the
+same query succeeds natively). When that happens the overlap table is
+rebuilt pair by pair, and a pair that still throws is intersected after
+snapping it onto the other side at `SNAP_TOLERANCE` (1e-8°). The snapped
+areas match native exact areas to within ~1e-10 of the unit's area; see
+[`docs/adr/0036`](../adr/0036-overlap-pairs-snap-fallback-on-wasm-noding-failure.md).
 
 Intersection/difference crumbs below `1e-12` deg² (~1cm²) are dropped before
 they contribute to shared area — a cheap pre-filter on raw degree² area,

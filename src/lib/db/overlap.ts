@@ -27,9 +27,46 @@ async function withLooseMemoryLimit<T>(
   }
 }
 
+const INTERSECTION = (a: string, b: string) =>
+  `ST_MakeValid(ST_CollectionExtract(ST_Intersection(${a}, ${b}), 3))`;
+
+// Per-pair rebuild of `overlapTable` after the set-based intersection throws: a pair
+// that still throws is retried with `a` snapped onto `b`. Returns the snapped count.
+async function intersectPairwise(
+  conn: AsyncDuckDBConnection,
+  aBbox: string,
+  bBbox: string,
+  overlapTable: string,
+): Promise<number> {
+  const candidates = (
+    await conn.query(`--sql
+      SELECT a.fid AS a_fid, b.fid AS b_fid FROM ${aBbox} a JOIN ${bBbox} b
+        ON ${bboxOverlapSql("a", "b")} AND ST_Intersects(a.geom, b.geom)
+    `)
+  ).toArray() as Array<{ a_fid: bigint | number; b_fid: bigint | number }>;
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE ${overlapTable} (a_fid BIGINT, b_fid BIGINT, geom GEOMETRY)
+  `);
+  let snapped = 0;
+  for (const { a_fid: aFid, b_fid: bFid } of candidates) {
+    const insert = (aGeom: string) => `--sql
+      INSERT INTO ${overlapTable}
+      SELECT a.fid, b.fid, ${INTERSECTION(aGeom, "b.geom")}
+      FROM ${aBbox} a, ${bBbox} b WHERE a.fid = ${aFid} AND b.fid = ${bFid}
+    `;
+    try {
+      await conn.query(insert("a.geom"));
+    } catch {
+      await conn.query(insert(`ST_Snap(a.geom, b.geom, ${SNAP_TOLERANCE})`));
+      snapped++;
+    }
+  }
+  return snapped;
+}
+
 // Computes, for every intersecting (a_fid, b_fid) pair, the shared area
 // (equal-area EPSG:8857) plus each side's coverage fraction and IoU. Writes
-// `pairsTable`.
+// `pairsTable`, logging how many pairs needed the snapped fallback.
 export async function computeOverlapPairs(
   conn: AsyncDuckDBConnection,
   aTable: string,
@@ -53,15 +90,20 @@ export async function computeOverlapPairs(
   );
 
   await conn.query(`DROP TABLE IF EXISTS ${overlapTable}`);
+  let snapped = 0;
   await withLooseMemoryLimit(conn, async () => {
-    await conn.query(`--sql
-      CREATE TABLE ${overlapTable} AS
-      SELECT a.fid AS a_fid, b.fid AS b_fid,
-             ST_MakeValid(ST_CollectionExtract(ST_Intersection(a.geom, b.geom), 3)) AS geom
-      FROM ${aBbox} a JOIN ${bBbox} b
-        ON ${bboxOverlapSql("a", "b")}
-       AND ST_Intersects(a.geom, b.geom)
-    `);
+    try {
+      await conn.query(`--sql
+        CREATE TABLE ${overlapTable} AS
+        SELECT a.fid AS a_fid, b.fid AS b_fid, ${INTERSECTION("a.geom", "b.geom")} AS geom
+        FROM ${aBbox} a JOIN ${bBbox} b
+          ON ${bboxOverlapSql("a", "b")}
+         AND ST_Intersects(a.geom, b.geom)
+      `);
+    } catch {
+      // WASM GEOS throws "non-noded intersection" on some near-coincident edges.
+      snapped = await intersectPairwise(conn, aBbox, bBbox, overlapTable);
+    }
     await conn.query(
       `DELETE FROM ${overlapTable} WHERE geom IS NULL OR ST_IsEmpty(geom) OR ST_Area(geom) < ${SLIVER}`,
     );
@@ -94,4 +136,6 @@ export async function computeOverlapPairs(
   await conn.query(`DROP TABLE IF EXISTS ${aAreas}`);
   await conn.query(`DROP TABLE IF EXISTS ${bAreas}`);
   await conn.query(`DROP TABLE IF EXISTS ${pairAreas}`);
+  if (snapped > 0)
+    console.warn(`computeOverlapPairs: ${snapped} pair(s) intersected after snapping`);
 }

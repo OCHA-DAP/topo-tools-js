@@ -21,23 +21,15 @@ and separately 111mm also succeeded — no clean threshold, just scattered
 working values (reconfirmed at finer grain by a later 155-value sweep, see
 [`docs/adr/0006`](../adr/0006-precision-candidate-density-not-increased.md)).
 
-**Mitigation pattern used throughout this codebase**: retry with a list of
-precision candidates (`src/lib/db/precisionRetry.ts`'s `withNodingRetry`,
-28 values spanning 0.1mm–111mm), applying `ST_ReducePrecision` only to
-whichever table carries the suspected pathological vertices — always the
-algorithmically-_derived_ side of an operation, never real input data — and
-stopping at the first candidate that succeeds. Consumers: Edge Extender's
-final merge dissolve, Edge Matcher's group-clip step, and
-`clipToBoundary.ts`'s general clip-to-known-boundary helper. Full decision
-history in [`docs/adr/`](../adr/README.md), starting at
-[`0001`](../adr/0001-precision-retry-mitigates-wasm-noding-failures.md).
-
-`src/lib/db/overlap.ts`'s `computeOverlapPairs` (used by Edge Matcher's
-assignment step and the Changelog tool) uses a different mitigation for the
-same underlying class of failure: try an exact `ST_Intersection`-based
-overlap computation first, and on any failure fall back to a point-sampling
-estimate that can't throw the same way (coverage/IoU from point-in-polygon
-counts on a 32×32 grid per polygon, instead of exact geometry).
+**Mitigations**: Edge Extender's merge step snaps each Voronoi cell onto its
+neighbour union with `ST_Snap` before differencing, and a noding failure that
+survives the snap propagates, matching topo-tools-py
+([`0022`](../adr/0022-noding-precision-retry-removed-for-python-parity.md)).
+`src/lib/db/overlap.ts`'s `computeOverlapPairs` (Edge Matcher, Changelog,
+Code Update, Schema Join) runs its exact `ST_Intersection` set-based first;
+if that throws, it recomputes pair by pair and snaps only the failing pairs
+at `SNAP_TOLERANCE`, which reproduces native areas to ~1e-10 relative
+([`0036`](../adr/0036-overlap-pairs-snap-fallback-on-wasm-noding-failure.md)).
 
 This failure class is also non-deterministic across otherwise-identical
 runs of the same batch, likely tied to WASM heap state carried over from

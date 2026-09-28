@@ -98,12 +98,17 @@ Shared by `extend` (whole-file) and `match` (per-group).
 
 ## Overlap measurement (`$lib/db/overlap.ts`)
 
-Shared by `match` (parent/child assignment) and `change` (version-to-version
-comparison).
+Shared by `match` (parent/child assignment), `change` (version-to-version
+comparison), `code-update` (per-level classify and reparent), and
+`schema-join` (parent assignment).
 
 - Overlap measurement MUST compute exact geometric intersection
-  (`ST_Intersection`); a failure MUST propagate to the caller rather than
-  falling back to an approximation.
+  (`ST_Intersection`) for every candidate pair.
+- A pair whose exact intersection throws MUST be retried once as
+  `ST_Intersection(ST_Snap(a, b, SNAP_TOLERANCE), b)`. A pair that still
+  throws MUST propagate the failure to the caller.
+- `computeOverlapPairs` MUST log the number of snapped pairs to the console
+  when it is non-zero.
 - An intersection piece with area below the sliver threshold (~1cm²) MUST
   be discarded before it contributes to any pair's shared area.
 - Area and ratio calculations (`coverage_a`, `coverage_b`, `iou`) MUST use
@@ -111,8 +116,8 @@ comparison).
 
 ### Best-overlap plurality pick (`$lib/db/assignBestOverlap.ts`)
 
-Shared by `match` (parent/child assignment) and `code-update` (per-level
-reparent).
+Shared by `match` (parent/child assignment), `code-update` (per-level
+reparent), and `schema-join` (parent assignment).
 
 - `assignBestOverlap` MUST assign each child to the parent it shares the
   largest overlap area with, breaking a tie by lowest parent fid.
