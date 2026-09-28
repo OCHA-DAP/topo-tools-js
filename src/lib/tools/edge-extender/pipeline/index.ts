@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
-import { checkNoErosion, gapRegionsQuery } from "$lib/db/coverage";
+import { checkNoErosion, buildGapTable } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { stageCleanInput } from "./clean";
 import { computeEffectiveDistance } from "./distance";
@@ -88,7 +88,7 @@ async function runValidation(
   }
 
   try {
-    await conn.query(gapRegionsQuery("ee_validate_gaps", finalTable));
+    await buildGapTable(conn, "ee_validate_gaps", finalTable);
     const r = await conn.query("SELECT COUNT(*) AS n FROM ee_validate_gaps");
     const n = Number((r.toArray()[0] as { n: bigint | number }).n ?? 0);
     if (n > 0) console.warn(`GAPS in ${finalTable}: ${n} regions`);

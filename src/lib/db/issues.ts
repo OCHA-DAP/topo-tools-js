@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { emptyRegions, gapRegionsQuery, overlapRegionsQuery } from "./coverage";
+import { buildGapTable, buildOverlapTable, emptyRegions } from "./coverage";
 import { degSqToM2, degToM } from "./units";
 
 // Shared gap/overlap issues-table assembly, used by topology-cleaner (against
@@ -39,7 +39,7 @@ export async function buildGapRegions(
   sourceTable: string,
 ): Promise<boolean> {
   try {
-    await conn.query(gapRegionsQuery(targetTable, sourceTable));
+    await buildGapTable(conn, targetTable, sourceTable);
     return true;
   } catch (e) {
     console.warn("gap-region detection failed; skipping gaps:", e);
@@ -65,7 +65,7 @@ export async function buildOverlapRegions(
     return true;
   }
   try {
-    await conn.query(overlapRegionsQuery(targetTable, sourceTable));
+    await buildOverlapTable(conn, targetTable, sourceTable);
     return true;
   } catch (e) {
     console.warn("overlap detection failed; skipping overlaps:", e);

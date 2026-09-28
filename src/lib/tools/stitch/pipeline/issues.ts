@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
-import { gapRegionsQuery } from "$lib/db/coverage";
+import { buildGapTable } from "$lib/db/coverage";
 import { degSqToM2, degToM } from "$lib/db/units";
 
 // Gap-only issues report: any interior hole left in sourceTable wider than
@@ -29,7 +29,7 @@ export async function buildStitchIssues(
   conn: AsyncDuckDBConnection,
   sourceTable: string,
 ): Promise<StitchIssuesResult> {
-  await conn.query(gapRegionsQuery("st_gap_regions", sourceTable));
+  await buildGapTable(conn, "st_gap_regions", sourceTable);
 
   const areaFactor = degSqToM2(1).toExponential();
   const widthFactor = degToM(1).toExponential();

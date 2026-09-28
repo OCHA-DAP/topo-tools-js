@@ -27,10 +27,11 @@ read-only tool with no reclean loop. Ported from topo-tools-py's `detect`
    output — there is no cleaned layer, and the report is produced
    unconditionally, even when it has zero rows.
 
-Each detection query degrades to an empty result (logged) on a GEOS
-failure rather than aborting the whole run — one kind's failure doesn't
-block the other, surfaced in the UI as a per-kind "detection failed"
-warning rather than a false "0 defects."
+Both checks first recover from WASM GEOS noding failures the native build
+doesn't hit (see `docs/explanation/performance.md`). A query that still
+fails degrades to an empty result (logged) rather than aborting the whole
+run, so one kind's failure doesn't block the other. The UI shows it as a
+per-kind "detection failed" warning rather than a false "0 defects."
 
 ## Issues table schema
 

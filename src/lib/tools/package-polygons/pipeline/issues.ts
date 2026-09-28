@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
-import { gapRegionsQuery } from "$lib/db/coverage";
+import { buildGapTable } from "$lib/db/coverage";
 import { degSqToM2, degToM } from "$lib/db/units";
 
 // Gap-only issues report per level table, same shape dissolve's own issues
@@ -26,7 +26,7 @@ export async function buildPolygonIssues(
 ): Promise<PolygonIssuesResult> {
   const gapTable = `pp_gap_regions_${level}`;
   const issuesTable = `pp_issues_${level}`;
-  await conn.query(gapRegionsQuery(gapTable, sourceTable));
+  await buildGapTable(conn, gapTable, sourceTable);
 
   const areaFactor = degSqToM2(1).toExponential();
   const widthFactor = degToM(1).toExponential();

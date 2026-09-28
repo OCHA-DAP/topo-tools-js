@@ -72,9 +72,16 @@ name instead of repeating them.
   MUST NOT be treated as a gap check: it reports "no violations" both when
   a real, fully-enclosed gap exists with no overlaps, and when the input
   has collapsed to nothing.
-- The shared gap check MUST detect fully-enclosed interior holes only, in
-  the union of a layer's own geometries. An open, non-enclosed inlet
-  between two polygons MUST NOT be reported as a gap.
+- The shared gap check (`buildGapTable`) MUST detect fully-enclosed interior
+  holes only, in the union of a layer's own geometries. An open,
+  non-enclosed inlet between two polygons MUST NOT be reported as a gap.
+- When the exact union throws, the gap check MUST retry the union on
+  `ST_ReducePrecision(geom, 1e-11)` and MUST drop every resulting hole whose
+  `ST_PointOnSurface` intersects an input polygon. A retry that still throws
+  MUST propagate to the caller.
+- The shared overlap check (`buildOverlapTable`) MUST intersect every pair
+  whose interiors overlap or where one contains the other, through
+  `intersectPairs` (see Overlap measurement).
 - A "clean this derived output" pass MUST first check for a coverage
   violation and skip `ST_CoverageClean` entirely when none is found. Every
   caller that wants this behavior MUST go through `gatedCoverageClean`
@@ -102,15 +109,17 @@ Shared by `extend` (whole-file) and `match` (per-group).
 Shared by `match` (input/overlay assignment), `change` (version-to-version
 comparison), `code-update` (per-level classify and reparent), and
 `schema-join` (join assignment). Its pairwise intersection (`intersectPairs`)
-is also shared by assign-one and the clip step (`clip`, `mosaic`).
+is also shared by assign-one and the clip step (`clip`, `mosaic`) and the
+shared overlap check (`detect`, `clean`).
 
 - Overlap measurement MUST compute exact geometric intersection
   (`ST_Intersection`) for every candidate pair.
 - A pair whose exact intersection throws MUST be retried once as
   `ST_Intersection(ST_Snap(a, b, SNAP_TOLERANCE), b)`. A pair that still
   throws MUST propagate the failure to the caller.
-- `computeOverlapPairs`, assign-one and the clip step MUST log the number of
-  snapped pairs to the console when it is non-zero.
+- `computeOverlapPairs`, assign-one, the clip step and the shared overlap
+  check MUST log the number of snapped pairs to the console when it is
+  non-zero.
 - In `computeOverlapPairs`, an intersection piece with area below the
   sliver threshold (~1cm²) MUST be discarded before it contributes to any
   pair's shared area. Assign-one MUST count any pair with shared area above
@@ -147,10 +156,11 @@ Shared by `match`, `mosaic`, and `clip` for overlay assignment.
   `'code'`, `null` when it's `'spatial_fallback'`).
 - A disagreement or fallback MUST surface as an issues row: `kind='code-mismatch'`
   when the code match won but disagreed with the spatial result, or
-  `kind='code-fallback'` when no code match existed, with `reason` `code join
-  picked a different overlay feature than spatial majority` or `no matching
-  code; fell back to spatial majority` respectively. `unitA` MUST hold the
-  input feature's own fid, `overlayFid` the winning overlay feature's fid.
+  `kind='code-fallback'` when no code match existed, with `reason`
+  `code join picked a different overlay feature than spatial majority` or
+  `no matching code; fell back to spatial majority` respectively. `unitA`
+  MUST hold the input feature's own fid, `overlayFid` the winning overlay
+  feature's fid.
 - Omitting both parameters MUST leave assignment behavior and output schema
   unchanged for existing callers.
 

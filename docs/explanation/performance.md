@@ -27,10 +27,17 @@ survives the snap propagates, matching topo-tools-py
 ([`0022`](../adr/0022-noding-precision-retry-removed-for-python-parity.md)).
 `src/lib/db/overlap.ts`'s `intersectPairs`, behind `computeOverlapPairs`
 (Edge Matcher, Changelog, Code Update, Schema Join), assign-one and the clip
-step (Clip, Mosaic), runs its exact `ST_Intersection` set-based first; if
-that throws, it recomputes pair by pair and snaps only the failing pairs at
-`SNAP_TOLERANCE`, which reproduces native areas to ~1e-10 relative
-([`0036`](../adr/0036-overlap-pairs-snap-fallback-on-wasm-noding-failure.md)).
+step (Clip, Mosaic), and the shared overlap check (Detect, Topology Cleaner),
+runs its exact `ST_Intersection` set-based first; if that throws, it
+recomputes pair by pair and snaps only the failing pairs at `SNAP_TOLERANCE`,
+which reproduces native areas to ~1e-10 relative
+([`0036`](../adr/0036-overlap-pairs-snap-fallback-on-wasm-noding-failure.md),
+[`0037`](../adr/0037-snap-and-grid-fallbacks-extended-past-overlap-pairs.md)).
+The shared gap check has no pair to snap, since its failure is in one
+whole-layer union: it retries the union on a 1e-11° grid, three orders of
+magnitude below `SNAP_TOLERANCE`, and drops each hole an input polygon
+covers, since those are slits the grid opened between edges that were
+shared in the original.
 
 This failure class is also non-deterministic across otherwise-identical
 runs of the same batch, likely tied to WASM heap state carried over from

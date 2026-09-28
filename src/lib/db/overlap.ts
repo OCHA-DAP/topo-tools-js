@@ -37,11 +37,12 @@ async function intersectPairwise(
   aTable: string,
   bTable: string,
   outTable: string,
+  pairPredicate: string,
 ): Promise<number> {
   const candidates = (
     await conn.query(`--sql
       SELECT a.id AS a_id, b.id AS b_id FROM ${aTable} a JOIN ${bTable} b
-        ON ${bboxOverlapSql("a", "b")} AND ST_Intersects(a.geom, b.geom)
+        ON ${bboxOverlapSql("a", "b")} AND ${pairPredicate}
     `)
   ).toArray() as Array<{ a_id: bigint | number; b_id: bigint | number }>;
   await conn.query(`CREATE OR REPLACE TABLE ${outTable} (a_id BIGINT, b_id BIGINT, geom GEOMETRY)`);
@@ -62,13 +63,14 @@ async function intersectPairwise(
   return snapped;
 }
 
-// Writes `outTable` (a_id, b_id, geom), the polygonal intersection of every
-// intersecting pair; both tables need unique `id`, `geom` and bbox columns.
+// Writes `outTable` (a_id, b_id, geom), the polygonal intersection of every pair
+// matching `pairPredicate`; both tables need unique `id`, `geom` and bbox columns.
 export async function intersectPairs(
   conn: AsyncDuckDBConnection,
   aTable: string,
   bTable: string,
   outTable: string,
+  pairPredicate = "ST_Intersects(a.geom, b.geom)",
 ): Promise<{ snapped: number }> {
   await conn.query(`DROP TABLE IF EXISTS ${outTable}`);
   let snapped = 0;
@@ -79,11 +81,11 @@ export async function intersectPairs(
         SELECT a.id AS a_id, b.id AS b_id, ${INTERSECTION("a.geom", "b.geom")} AS geom
         FROM ${aTable} a JOIN ${bTable} b
           ON ${bboxOverlapSql("a", "b")}
-         AND ST_Intersects(a.geom, b.geom)
+         AND ${pairPredicate}
       `);
     } catch {
       // WASM GEOS throws "non-noded intersection" on some near-coincident edges.
-      snapped = await intersectPairwise(conn, aTable, bTable, outTable);
+      snapped = await intersectPairwise(conn, aTable, bTable, outTable, pairPredicate);
     }
   });
   return { snapped };

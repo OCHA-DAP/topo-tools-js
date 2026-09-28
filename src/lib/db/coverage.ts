@@ -1,6 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
 import { SNAP_TOLERANCE } from "./constants";
+import { intersectPairs } from "./overlap";
 
 export async function emptyRegions(
   conn: AsyncDuckDBConnection,
@@ -12,17 +13,15 @@ export async function emptyRegions(
   );
 }
 
-// Gap regions = enclosed areas not covered by any polygon in the source table.
-// Computed directly: union all polygons → interior rings of the union ARE the
-// gaps → convert each ring back to a polygon via difference against the filled
-// exterior. Independent of ST_CoverageClean, so works even when the coverage
-// has overlaps or degenerate edges that would trip the cleaner.
-export function gapRegionsQuery(targetTable: string, sourceTable: string): string {
+// Grid the gap fallback snaps to when the exact union throws in WASM GEOS.
+const GAP_FALLBACK_GRID = 1e-11;
+
+function gapHolesSql(targetTable: string, sourceTable: string, geomExpr: string): string {
   return `--sql
     CREATE OR REPLACE TABLE ${targetTable} AS
     WITH
     union_cte AS (
-      SELECT ST_Union_Agg(geom) AS u
+      SELECT ST_Union_Agg(${geomExpr}) AS u
       FROM ${sourceTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
     ),
     parts AS (
@@ -41,6 +40,54 @@ export function gapRegionsQuery(targetTable: string, sourceTable: string): strin
   `;
 }
 
+// Gap regions = interior rings of the union of sourceTable's polygons, written
+// to targetTable (n, geom). When the exact union throws, the union is retried
+// on a fine grid and a hole whose interior point an input polygon covers is a
+// grid artifact, dropped.
+export async function buildGapTable(
+  conn: AsyncDuckDBConnection,
+  targetTable: string,
+  sourceTable: string,
+): Promise<void> {
+  try {
+    await conn.query(gapHolesSql(targetTable, sourceTable, "geom"));
+    return;
+  } catch (e) {
+    console.warn(`gap union failed; retrying on a ${GAP_FALLBACK_GRID} grid:`, e);
+  }
+  const holes = `${targetTable}_grid_holes`;
+  const source = `${targetTable}_grid_source`;
+  try {
+    await conn.query(
+      gapHolesSql(holes, sourceTable, `ST_ReducePrecision(geom, ${GAP_FALLBACK_GRID})`),
+    );
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${source} AS
+      SELECT geom, ${bboxColumnsSql()} FROM ${sourceTable}
+      WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${targetTable} AS
+      WITH pts AS (
+        SELECT n, geom, ST_PointOnSurface(geom) AS p FROM ${holes}
+      ),
+      probes AS (
+        SELECT n, p, ST_X(p) AS xmin, ST_X(p) AS xmax, ST_Y(p) AS ymin, ST_Y(p) AS ymax
+        FROM pts
+      ),
+      covered AS (
+        SELECT DISTINCT h.n FROM probes h JOIN ${source} s
+          ON ${bboxOverlapSql("h", "s")} AND ST_Intersects(s.geom, h.p)
+      )
+      SELECT row_number() OVER (ORDER BY n) AS n, geom
+      FROM pts WHERE n NOT IN (SELECT n FROM covered)
+    `);
+  } finally {
+    await conn.query(`DROP TABLE IF EXISTS ${holes}`);
+    await conn.query(`DROP TABLE IF EXISTS ${source}`);
+  }
+}
+
 // True if sourceTable's coverage has an interior hole at or below maxWidth
 // (degrees) — mirrors topo-tools-py's has_gaps(gap_maximum_width=...).
 // sourceTable is expected to already have been cleaned with a matching
@@ -54,7 +101,7 @@ export async function hasNoiseFloorGap(
 ): Promise<boolean> {
   const scratch = `${sourceTable}_noise_gap_check`;
   try {
-    await conn.query(gapRegionsQuery(scratch, sourceTable));
+    await buildGapTable(conn, scratch, sourceTable);
     const r = await conn.query(`--sql
       SELECT EXISTS (
         SELECT 1 FROM ${scratch}
@@ -92,32 +139,37 @@ export async function checkNoErosion(
   }
 }
 
-// Overlap regions = polygonal pairwise intersections of polygons in the source
-// table, via a bbox-prefiltered join (PIECEWISE_MERGE_JOIN, not the
-// WASM-OOMing SPATIAL_JOIN). ST_Overlaps/ST_Contains, not ST_Intersects,
-// which would also match every ordinary touching-edge pair and flood the
-// join at admin-boundary scale.
-export function overlapRegionsQuery(targetTable: string, sourceTable: string): string {
-  return `--sql
-    CREATE OR REPLACE TABLE ${targetTable} AS
-    WITH bboxed AS (
-      SELECT fid, geom, ${bboxColumnsSql()}
-      FROM ${sourceTable}
-    ),
-    pairs AS (
-      SELECT a.fid AS fa, b.fid AS fb,
-             ST_MakeValid(ST_CollectionExtract(ST_Intersection(a.geom, b.geom), 3)) AS geom
-      FROM bboxed a JOIN bboxed b
-        ON a.fid < b.fid
-        AND ${bboxOverlapSql("a", "b")}
-        AND (
-          ST_Overlaps(a.geom, b.geom)
-          OR ST_Contains(a.geom, b.geom)
-          OR ST_Contains(b.geom, a.geom)
-        )
-    )
-    SELECT row_number() OVER () AS n, fa, fb, geom
-    FROM pairs
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-  `;
+// Overlap regions = polygonal pairwise intersections of sourceTable's polygons,
+// written to targetTable (n, fa, fb, geom). ST_Overlaps/ST_Contains, not
+// ST_Intersects, which would also match every ordinary touching-edge pair.
+export async function buildOverlapTable(
+  conn: AsyncDuckDBConnection,
+  targetTable: string,
+  sourceTable: string,
+): Promise<void> {
+  const bboxed = `${targetTable}_bbox`;
+  const pieces = `${targetTable}_pieces`;
+  await conn.query(
+    `CREATE OR REPLACE TABLE ${bboxed} AS SELECT fid AS id, geom, ${bboxColumnsSql()} FROM ${sourceTable}`,
+  );
+  try {
+    const { snapped } = await intersectPairs(
+      conn,
+      bboxed,
+      bboxed,
+      pieces,
+      `a.id < b.id AND (ST_Overlaps(a.geom, b.geom) OR ST_Contains(a.geom, b.geom) OR ST_Contains(b.geom, a.geom))`,
+    );
+    if (snapped > 0)
+      console.warn(`buildOverlapTable: ${snapped} pair(s) intersected after snapping`);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${targetTable} AS
+      SELECT row_number() OVER () AS n, a_id AS fa, b_id AS fb, geom
+      FROM ${pieces}
+      WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+    `);
+  } finally {
+    await conn.query(`DROP TABLE IF EXISTS ${bboxed}`);
+    await conn.query(`DROP TABLE IF EXISTS ${pieces}`);
+  }
 }

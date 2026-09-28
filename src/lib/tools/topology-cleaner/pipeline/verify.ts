@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { gapRegionsQuery, overlapRegionsQuery } from "$lib/db/coverage";
+import { buildGapTable, buildOverlapTable } from "$lib/db/coverage";
 
 export interface ExportCheck {
   rowCount: number;
@@ -13,11 +13,11 @@ export interface ExportCheck {
 
 async function countRegions(
   conn: AsyncDuckDBConnection,
-  queryFn: (target: string, source: string) => string,
+  build: (conn: AsyncDuckDBConnection, target: string, source: string) => Promise<void>,
   scratchTable: string,
 ): Promise<{ count: number; failed: boolean }> {
   try {
-    await conn.query(queryFn(scratchTable, "tc_clean"));
+    await build(conn, scratchTable, "tc_clean");
   } catch (e) {
     console.warn(`export check: ${scratchTable} failed:`, e);
     return { count: 0, failed: true };
@@ -51,8 +51,8 @@ export async function verifyExport(conn: AsyncDuckDBConnection): Promise<ExportC
     invalidCheckFailed = true;
   }
 
-  const gaps = await countRegions(conn, gapRegionsQuery, "tc_verify_gaps");
-  const overlaps = await countRegions(conn, overlapRegionsQuery, "tc_verify_overlaps");
+  const gaps = await countRegions(conn, buildGapTable, "tc_verify_gaps");
+  const overlaps = await countRegions(conn, buildOverlapTable, "tc_verify_overlaps");
 
   return {
     rowCount,
