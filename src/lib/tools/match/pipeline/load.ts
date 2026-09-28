@@ -3,16 +3,16 @@ import { loadFile } from "$lib/db/loader";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
 
 // Tables this tool owns, dropped defensively before every run so re-running
-// with different inputs in the same session starts clean. child_*/parent_*
+// with different inputs in the same session starts clean. input_*/overlay_*
 // are also dropped internally by loadFile itself, but listed here too for a
 // complete, self-documenting sweep.
 const OWNED_TABLES = [
-  "child_raw_layer",
-  "child_layer_01",
-  "child_layer_attr",
-  "parent_raw_layer",
-  "parent_layer_01",
-  "parent_layer_attr",
+  "input_raw_layer",
+  "input_layer_01",
+  "input_layer_attr",
+  "overlay_raw_layer",
+  "overlay_layer_01",
+  "overlay_layer_attr",
   "ge_pairs",
   "ge_assignment",
   "ge_unassigned",
@@ -31,18 +31,18 @@ export async function dropPriorRun(conn: AsyncDuckDBConnection): Promise<void> {
 export async function loadLayers(
   db: AsyncDuckDB,
   conn: AsyncDuckDBConnection,
-  childFiles: File[],
-  parentFiles: File[],
+  inputFiles: File[],
+  overlayFiles: File[],
 ): Promise<void> {
   await dropPriorRun(conn);
-  await loadFile(db, conn, childFiles, { prefix: "child_" });
-  await loadFile(db, conn, parentFiles, { prefix: "parent_" });
+  await loadFile(db, conn, inputFiles, { prefix: "input_" });
+  await loadFile(db, conn, overlayFiles, { prefix: "overlay_" });
 
   // Clean both input layers up front, gated so untouched inputs pay only the
-  // cheap invalid-edges check. The parent is never cleaned elsewhere in this
-  // pipeline, and the child's per-group clean (edge-extender's
+  // cheap invalid-edges check. The overlay feature is never cleaned elsewhere in this
+  // pipeline, and the input feature's per-group clean (edge-extender's
   // stageCleanInput) can't see defects between units assigned to different
   // groups, so both need their own whole-layer pass here.
-  await gatedCoverageClean(conn, "parent_layer_01");
-  await gatedCoverageClean(conn, "child_layer_01");
+  await gatedCoverageClean(conn, "overlay_layer_01");
+  await gatedCoverageClean(conn, "input_layer_01");
 }

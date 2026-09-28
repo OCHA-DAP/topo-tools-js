@@ -116,7 +116,7 @@ export async function assignLevel(
     : new Map<number, string>();
   const childToParentFid =
     prevLevel !== null
-      ? await fetchIntMap(conn, `cu_reparent_${n}_assign`, "child_fid", "parent_fid")
+      ? await fetchIntMap(conn, `cu_reparent_${n}_assign`, "input_fid", "overlay_fid")
       : new Map<number, number>();
 
   function newParentCode(bFid: number): string {

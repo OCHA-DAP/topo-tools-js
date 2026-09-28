@@ -6,9 +6,9 @@ import {
   CLIP_TILE_TARGET_VERTICES,
 } from "./constants";
 
-// Solve a tile size from this parent's own vertex density, not a fixed
+// Solve a tile size from this overlay feature's own vertex density, not a fixed
 // constant. Calibrated (topo-tools-py) so a real worst case (South Africa,
-// 281k vertices) lands at ~1 degree cells; sparser or simpler parents get
+// 281k vertices) lands at ~1 degree cells; sparser or simpler overlay features get
 // coarser cells, denser ones finer.
 function adaptiveCellSize(vertexCount: number, width: number, height: number): number {
   const bboxArea = Math.max(width, 1e-9) * Math.max(height, 1e-9);

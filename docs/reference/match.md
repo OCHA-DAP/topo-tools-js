@@ -6,31 +6,31 @@ with other tools.
 
 ## Inputs
 
-- `match` MUST load the child (fine) layer and the parent (coarse) layer
+- `match` MUST load the input (fine) layer and the overlay (coarse) layer
   independently via the shared loader (see `docs/reference/shared.md`).
 - `match` MUST run a gated whole-layer `gatedCoverageClean` pass over both
-  the parent layer and the child layer immediately after loading, at
+  the overlay layer and the input layer immediately after loading, at
   default settings (`SNAP_TOLERANCE` snap, no gap-fill), before assignment — a defect
-  between two child units later assigned to different groups would
+  between two input features later assigned to different groups would
   otherwise be invisible to any later per-group check.
 
-## Assigning children to parents
+## Assigning input features to overlay features
 
-- `match` MUST compute area-overlap pairs between every child and every
-  bounding-box-nearby parent, via the shared overlap measurement contract
+- `match` MUST compute area-overlap pairs between every input feature and every
+  bounding-box-nearby overlay feature, via the shared overlap measurement contract
   (`docs/reference/shared.md`).
-- `match` MUST assign each child to the single parent it shares the
+- `match` MUST assign each input feature to the single overlay feature it shares the
   largest overlap area with (plurality, not necessarily more than half the
-  child's own area).
-- A tie between two candidate parents for the same child MUST be broken by
-  the lower parent fid.
-- A child with zero overlap with any parent MUST be recorded as
+  input feature's own area).
+- A tie between two candidate overlay features for the same input feature MUST be broken by
+  the lower overlay feature fid.
+- An input feature with zero overlap with any overlay feature MUST be recorded as
   unassigned, not silently dropped and not treated as fatal to the run.
 - When the opt-in passthrough flag is set (see Configuration), every
-  unassigned child MUST instead be tagged with a sentinel parent id and
+  unassigned input feature MUST instead be tagged with a sentinel overlay feature id and
   processed as its own group (see Per-group extension), landing in the
   output unclipped rather than only in the issues export.
-- `match` MAY accept a code-based assignment override, evaluated per child;
+- `match` MAY accept a code-based assignment override, evaluated per input feature;
   see `docs/reference/shared.md`'s "Code-based assignment override" section
   and `docs/adr/0029`. `code-mismatch`/`code-fallback` issues rows join
   `match`'s existing failed-group/unassigned issues rows in the same
@@ -38,24 +38,24 @@ with other tools.
 
 ## Per-group extension
 
-- `match` MUST group assigned children by their parent, including a group
-  of exactly one child, and MUST process only non-empty groups.
+- `match` MUST group assigned input features by their overlay feature, including a group
+  of exactly one input feature, and MUST process only non-empty groups.
 - For each group, `match` MUST populate `extend`'s pipeline with that
-  group's own child subset and run it unmodified (see
+  group's own input feature subset and run it unmodified (see
   `docs/reference/extend.md`), with its own final `gatedCoverageClean` pass
   skipped (that pass is deferred to a single whole-batch pass after every
   group has run, see Assembly below).
 - `match` MUST run the shared no-erosion guard (`docs/reference/shared.md`)
   against each group's extended result before clipping, comparing it to
-  that group's own pre-extension child subset, and MUST treat a violation
+  that group's own pre-extension input feature subset, and MUST treat a violation
   as a hard failure of that group.
 - `match` MUST clip each group's extended result to that group's own known
-  parent polygon (an exact-boundary clip, not another extension pass),
+  overlay feature polygon (an exact-boundary clip, not another extension pass),
   except for the passthrough pseudo-group (see Configuration), which is
   never clipped.
 - A group whose extension or clip fails MUST be recorded as a failed group
-  and skipped, without aborting the run. Every child belonging to a failed
-  group MUST be recorded with the parent fid and the failure reason, for
+  and skipped, without aborting the run. Every input feature belonging to a failed
+  group MUST be recorded with the overlay feature fid and the failure reason, for
   reporting and export purposes.
 
 ## Assembly
@@ -74,19 +74,19 @@ with other tools.
 ## Outputs
 
 - `match` MUST export the assembled, clipped result, plus a separate
-  combined export of every unassigned child and every child belonging to a
+  combined export of every unassigned input feature and every input feature belonging to a
   failed group, each tagged with which kind it is, available independently
   of the main result export.
 - `match` MUST report, per group, whether it succeeded or failed, and MUST
-  report the total count of unassigned children and the total count of
-  children excluded via a failed group.
+  report the total count of unassigned input features and the total count of
+  input features excluded via a failed group.
 - `match` MUST report the assembled result's bounding box for map fit,
   whenever the bounds are finite.
 
 ## Configuration
 
-- `match` MUST process exactly one child file and one parent file per run.
+- `match` MUST process exactly one input file and one overlay file per run.
 - `match` MAY accept a `matchColumn` name or a
-  `parentMatchColumn`/`childMatchColumn` pair for the code-based
+  `overlayMatchColumn`/`inputMatchColumn` pair for the code-based
   assignment override; both are optional, and omitting them runs
   assignment, per-group extension, and final cleanup exactly as before.

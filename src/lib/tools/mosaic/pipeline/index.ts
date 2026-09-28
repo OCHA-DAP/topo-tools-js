@@ -25,16 +25,16 @@ export class PipelineError extends Error {
 }
 
 export interface MosaicResult {
-  childGeoJSON: string;
-  parentOutlineGeoJSON: string;
+  inputGeoJSON: string;
+  overlayOutlineGeoJSON: string;
   mosaicGeoJSON: string;
   bounds: [number, number, number, number] | null;
-  parentFid: number;
+  overlayFid: number;
   issues: MosaicIssueRow[];
   issuesGeoJSON: string;
   hadResidualOverlaps: boolean;
-  childColumns: ColumnGuess;
-  parentColumns: ColumnGuess;
+  inputColumns: ColumnGuess;
+  overlayColumns: ColumnGuess;
 }
 
 async function computeBounds(
@@ -58,30 +58,30 @@ async function computeBounds(
   return null;
 }
 
-// A thin orchestrator chaining assign-one -> clip -> stitch, for a children
+// A thin orchestrator chaining assign-one -> clip -> stitch, for an input
 // layer that is already a finished Edge Extender output being fit into a
-// new/different parent (skips re-running Voronoi extension entirely).
+// new/different overlay feature (skips re-running Voronoi extension entirely).
 // Ported from topo-tools-py's mosaic; see docs/explanation/mosaic.md for
-// the single-children-file scoping this shares with clip (docs/adr/0026).
+// the single-input-file scoping this shares with clip (docs/adr/0026).
 export async function runMosaic(
   db: AsyncDuckDB,
   conn: AsyncDuckDBConnection,
-  childFiles: File[],
-  parentFiles: File[],
+  inputFiles: File[],
+  overlayFiles: File[],
   onProgress: ProgressFn,
   matchColumns: MatchColumnOptions = {},
-  carryParentColumns: string[] = [],
+  carryOverlayColumns: string[] = [],
   fillOptions?: ApplyFillOptions,
 ): Promise<MosaicResult> {
   onProgress(1, "Loading input");
-  await loadLayers(db, conn, childFiles, parentFiles);
-  const childGeoJSON = await tableToGeoJSON(conn, "child_layer_01", null);
-  const parentOutlineGeoJSON = await tableToGeoJSON(conn, "parent_layer_01", null);
-  const bounds = await computeBounds(conn, "child_layer_01");
-  const childColumns = await detectColumns(conn, "child_layer_attr");
-  const parentColumns = await detectColumns(conn, "parent_layer_attr");
+  await loadLayers(db, conn, inputFiles, overlayFiles);
+  const inputGeoJSON = await tableToGeoJSON(conn, "input_layer_01", null);
+  const overlayOutlineGeoJSON = await tableToGeoJSON(conn, "overlay_layer_01", null);
+  const bounds = await computeBounds(conn, "input_layer_01");
+  const inputColumns = await detectColumns(conn, "input_layer_attr");
+  const overlayColumns = await detectColumns(conn, "overlay_layer_attr");
 
-  onProgress(2, "Assigning to parent unit");
+  onProgress(2, "Assigning to overlay feature");
   let assign;
   try {
     assign = await assignOne(conn, matchColumns);
@@ -90,22 +90,22 @@ export async function runMosaic(
   }
 
   // Ported from topo-tools-py's carry_columns: joins the single winning
-  // parent's own attribute values onto every output row.
-  if (carryParentColumns.length > 0) {
-    const selectCols = carryParentColumns
-      .map((c) => `p.${JSON.stringify(c)} AS ${JSON.stringify(`parent_${c}`)}`)
+  // overlay feature's own attribute values onto every output row.
+  if (carryOverlayColumns.length > 0) {
+    const selectCols = carryOverlayColumns
+      .map((c) => `p.${JSON.stringify(c)} AS ${JSON.stringify(`overlay_${c}`)}`)
       .join(", ");
     await conn.query(`--sql
-      CREATE OR REPLACE TABLE child_layer_attr AS
+      CREATE OR REPLACE TABLE input_layer_attr AS
       SELECT c.*, ${selectCols}
-      FROM child_layer_attr c, (SELECT * FROM parent_layer_attr WHERE fid = ${assign.parentFid}) p
+      FROM input_layer_attr c, (SELECT * FROM overlay_layer_attr WHERE fid = ${assign.overlayFid}) p
     `);
   }
 
-  onProgress(3, "Clipping to parent boundary");
+  onProgress(3, "Clipping to overlay boundary");
   let engineResult;
   try {
-    engineResult = await clipEngine(conn, assign.parentFid);
+    engineResult = await clipEngine(conn, assign.overlayFid);
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 3);
   }
@@ -127,7 +127,7 @@ export async function runMosaic(
         else if (stage === 4) onProgress(5, label);
       },
       "cl_clip",
-      "child_layer_attr",
+      "input_layer_attr",
       fillOptions,
     );
   } catch (e) {
@@ -141,15 +141,15 @@ export async function runMosaic(
   });
 
   return {
-    childGeoJSON,
-    parentOutlineGeoJSON,
+    inputGeoJSON,
+    overlayOutlineGeoJSON,
     mosaicGeoJSON: stitch.stitchedGeoJSON,
     bounds,
-    parentFid: assign.parentFid,
+    overlayFid: assign.overlayFid,
     issues: rows,
     issuesGeoJSON: geojson,
     hadResidualOverlaps: stitch.hadResidualOverlaps,
-    childColumns,
-    parentColumns,
+    inputColumns,
+    overlayColumns,
   };
 }

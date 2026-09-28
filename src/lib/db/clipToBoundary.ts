@@ -3,7 +3,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 // Clips `sourceTable` (fid, geom) against a single, already-known boundary
 // polygon, writing (fid, geom) to `targetTable`. `boundarySql` must select
 // exactly one row with a `geom` column, e.g.
-// `SELECT geom FROM parent_layer_01 WHERE fid = 5`.
+// `SELECT geom FROM overlay_layer_01 WHERE fid = 5`.
 export async function clipToBoundary(
   conn: AsyncDuckDBConnection,
   sourceTable: string,

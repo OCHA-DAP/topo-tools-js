@@ -23,18 +23,18 @@ export class PipelineError extends Error {
 }
 
 export interface ClipResult {
-  childGeoJSON: string;
-  parentOutlineGeoJSON: string;
+  inputGeoJSON: string;
+  overlayOutlineGeoJSON: string;
   clippedGeoJSON: string;
   bounds: [number, number, number, number] | null;
-  parentFid: number;
+  overlayFid: number;
   assignedCount: number;
-  droppedAssignCount: number; // children that didn't overlap the winner parent, dropped before clipping
-  emptyClipCount: number; // assigned children whose clipped result was empty, dropped after clipping
+  droppedAssignCount: number; // input features that didn't overlap the winner overlay feature, dropped before clipping
+  emptyClipCount: number; // assigned input features whose clipped result was empty, dropped after clipping
   issues: ClipIssueRow[];
   issuesGeoJSON: string;
-  childColumns: ColumnGuess;
-  parentColumns: ColumnGuess;
+  inputColumns: ColumnGuess;
+  overlayColumns: ColumnGuess;
 }
 
 async function computeBounds(
@@ -58,29 +58,29 @@ async function computeBounds(
   return null;
 }
 
-// Assigns every child in the uploaded children layer to the one parent unit
+// Assigns every input feature in the uploaded input layer to the one overlay feature
 // that wins a majority vote by count (assign-one, see pipeline/assign.ts),
-// then clips each assigned child to exactly that parent's geometry
+// then clips each assigned input feature to exactly that overlay feature's geometry
 // (pipeline/engine.ts). Ported from topo-tools-py's clip; see
 // docs/explanation/clip.md for the scoping difference from Python's general
-// multi-file/multi-parent CLI contract.
+// multi-file/multi-overlay feature CLI contract.
 export async function runClip(
   db: AsyncDuckDB,
   conn: AsyncDuckDBConnection,
-  childFiles: File[],
-  parentFiles: File[],
+  inputFiles: File[],
+  overlayFiles: File[],
   onProgress: ProgressFn,
   matchColumns: MatchColumnOptions = {},
 ): Promise<ClipResult> {
   onProgress(1, "Loading input");
-  await loadLayers(db, conn, childFiles, parentFiles);
-  const childGeoJSON = await tableToGeoJSON(conn, "child_layer_01", null);
-  const parentOutlineGeoJSON = await tableToGeoJSON(conn, "parent_layer_01", null);
-  const bounds = await computeBounds(conn, "child_layer_01");
-  const childColumns = await detectColumns(conn, "child_layer_attr");
-  const parentColumns = await detectColumns(conn, "parent_layer_attr");
+  await loadLayers(db, conn, inputFiles, overlayFiles);
+  const inputGeoJSON = await tableToGeoJSON(conn, "input_layer_01", null);
+  const overlayOutlineGeoJSON = await tableToGeoJSON(conn, "overlay_layer_01", null);
+  const bounds = await computeBounds(conn, "input_layer_01");
+  const inputColumns = await detectColumns(conn, "input_layer_attr");
+  const overlayColumns = await detectColumns(conn, "overlay_layer_attr");
 
-  onProgress(2, "Assigning to parent unit");
+  onProgress(2, "Assigning to overlay feature");
   let assign;
   try {
     assign = await assignOne(conn, matchColumns);
@@ -88,10 +88,10 @@ export async function runClip(
     throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
   }
 
-  onProgress(3, "Clipping to parent boundary");
+  onProgress(3, "Clipping to overlay boundary");
   let engineResult;
   try {
-    engineResult = await clipEngine(conn, assign.parentFid);
+    engineResult = await clipEngine(conn, assign.overlayFid);
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 3);
   }
@@ -99,7 +99,7 @@ export async function runClip(
     throw new PipelineError("Clipping produced no output rows.", 3);
   }
 
-  const clippedGeoJSON = await tableToGeoJSON(conn, "cl_clip", "child_layer_attr");
+  const clippedGeoJSON = await tableToGeoJSON(conn, "cl_clip", "input_layer_attr");
 
   const { rows: issues, geojson: issuesGeoJSON } = await buildClipIssues(conn, {
     assignmentMethod: assign.assignmentMethod,
@@ -107,17 +107,17 @@ export async function runClip(
   });
 
   return {
-    childGeoJSON,
-    parentOutlineGeoJSON,
+    inputGeoJSON,
+    overlayOutlineGeoJSON,
     clippedGeoJSON,
     bounds,
-    parentFid: assign.parentFid,
+    overlayFid: assign.overlayFid,
     assignedCount: assign.assignedCount,
     droppedAssignCount: assign.droppedCount,
     emptyClipCount: engineResult.emptyCount,
     issues,
     issuesGeoJSON,
-    childColumns,
-    parentColumns,
+    inputColumns,
+    overlayColumns,
   };
 }

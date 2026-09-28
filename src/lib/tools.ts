@@ -54,14 +54,14 @@ export const tools: Tool[] = [
     slug: "clip",
     name: "Clip",
     tagline:
-      "Assign a children layer to its one best-overlapping parent unit by majority vote, then clip every child to that boundary.",
+      "Assign an input layer to its one best-overlapping overlay feature by majority vote, then clip every input feature to that boundary.",
     iconHref: "/icons/tools/clip.svg",
   },
   {
     slug: "mosaic",
     name: "Mosaic",
     tagline:
-      "Fit an already-extended children layer into a new parent boundary. Assign, clip, and close seams in one pass, no re-extension.",
+      "Fit an already-extended input layer into a new overlay boundary. Assign, clip, and close seams in one pass, no re-extension.",
     iconHref: "/icons/tools/mosaic.svg",
   },
   {

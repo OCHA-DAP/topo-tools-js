@@ -1,9 +1,9 @@
 # Edge Matcher
 
-Assigns every polygon in a fine ("child") layer to the coarse ("parent")
-polygon it overlaps most, groups children by their assigned parent, then
+Assigns every polygon in a fine (input) layer to the coarse (overlay)
+polygon it overlaps most, groups input features by their assigned overlay feature, then
 runs Edge Extender's pipeline independently within each group so the
-group's result meets its own parent boundary exactly. Automatic by default;
+group's result meets its own overlay feature boundary exactly. Automatic by default;
 an optional code-based assignment override is available (see below).
 
 ## Pipeline
@@ -14,26 +14,26 @@ an optional code-based assignment override is available (see below).
    Real source data commonly carries pre-existing seam imprecision that this
    pipeline's later per-group clip step has no way to fix downstream.
 2. **Assign** (`pipeline/assign.ts`), computes area-overlap pairs between
-   every child and nearby parent (`src/lib/db/overlap.ts`, shared with the
-   Changelog tool), then assigns each child to the parent with the largest
-   shared area (plurality, not necessarily >50%). Children with zero parent
+   every input feature and nearby overlay feature (`src/lib/db/overlap.ts`, shared with the
+   Changelog tool), then assigns each input feature to the overlay feature with the largest
+   shared area (plurality, not necessarily >50%). Input features with zero overlay feature
    overlap go to `ge_unassigned` instead of being silently dropped. With
-   the opt-in passthrough toggle, those same children are also inserted
-   into `ge_assignment` under a sentinel `PASSTHROUGH_PARENT_FID` (`-1`,
+   the opt-in passthrough toggle, those same input features are also inserted
+   into `ge_assignment` under a sentinel `PASSTHROUGH_OVERLAY_FID` (`-1`,
    `pipeline/groups.ts`), turning them into their own pseudo-group instead
    of only being reported as excluded.
-3. **Per-group extend** (`pipeline/groups.ts`), for each non-empty parent
+3. **Per-group extend** (`pipeline/groups.ts`), for each non-empty overlay feature
    group (including the passthrough pseudo-group, when present), populates
-   `layer_01`/`layer_attr` with that group's child subset and runs Edge
+   `layer_01`/`layer_attr` with that group's input feature subset and runs Edge
    Extender's pipeline unmodified (`skipOutputClean: true`, since cleaning
    per-group here would be redundant, see
    [`0004`](../adr/0004-consolidate-coverageclean-to-single-final-call.md)).
    The extended result is checked against its own pre-extension subset by
    the shared no-erosion guard (`docs/reference/shared.md`) as a hard
-   failure, then clipped against the known parent geometry
+   failure, then clipped against the known overlay feature geometry
    (`src/lib/db/clipToBoundary.ts`), except the passthrough group, which
-   has no real parent boundary and lands in `ge_results` unclipped. A
-   failing group's children are recorded in `ge_dropped` (with the parent
+   has no real overlay feature boundary and lands in `ge_results` unclipped. A
+   failing group's input features are recorded in `ge_dropped` (with the overlay feature
    fid and error message) rather than aborting the whole batch.
 4. **Assemble** (`pipeline/index.ts`) — join clipped group results into
    `ge_results`, export it, then attempt a single gated
@@ -45,13 +45,13 @@ an optional code-based assignment override is available (see below).
 
 ## Issues export
 
-`ge_unassigned` (children with no parent overlap) and `ge_dropped` (children
+`ge_unassigned` (input features with no overlay feature overlap) and `ge_dropped` (input features
 whose whole group's extension failed) are combined into one `ge_issues`
 table, each row tagged with a `kind` (`unassigned` or `dropped_group`) and,
-for dropped groups, the parent fid and the error that caused the drop. When
-the passthrough toggle is on and a formerly-unassigned child made it through
+for dropped groups, the overlay feature fid and the error that caused the drop. When
+the passthrough toggle is on and a formerly-unassigned input feature made it through
 its pseudo-group into `ge_results`, it's also surfaced as a `passthrough`
-row, so a user can see which of the reported unassigned children were
+row, so a user can see which of the reported unassigned input features were
 actually included (unclipped) rather than dropped. This is exportable on
 demand as `match_issues` and is the only way to recover the geometry of any
 of these kinds, the UI's group list only shows dropped groups as status
@@ -60,11 +60,11 @@ text.
 ## Code-based assignment override (optional)
 
 Given a `matchColumn` (same column name on both layers) or a
-`parentMatchColumn`/`childMatchColumn` pair, `pipeline/assign.ts`'s
+`overlayMatchColumn`/`inputMatchColumn` pair, `pipeline/assign.ts`'s
 `computeAssignment` also computes an exact code join, restricted to
-`(child, parent)` pairs that already spatially overlap, alongside the
+`(input feature, overlay feature)` pairs that already spatially overlap, alongside the
 plurality vote above. The code result wins whenever one exists, even on
-disagreement; a child whose code has no overlapping-parent match falls back
+disagreement; an input feature whose code has no overlapping overlay match falls back
 to the spatial result. Both outcomes are recorded on `ge_assignment`
 (`assignment_method`, `spatial_agrees`) and surfaced as `ge_issues` rows
 (`kind='code-mismatch'`/`'code-fallback'`), alongside the existing
@@ -92,7 +92,7 @@ no-op on output when disabled.
 ## Cross-group boundary seams
 
 Because each group's extension is clipped independently against its own
-parent, adjacent groups' clipped edges can end up sampling the same
+overlay feature, adjacent groups' clipped edges can end up sampling the same
 physical boundary line at different vertex densities — a real but
 zero-area-cost defect that strict vertex-exact validators (QGIS's Topology
 Checker, `ST_CoverageInvalidEdges_Agg`) flag as "gaps" even though total

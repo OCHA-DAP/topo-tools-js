@@ -216,7 +216,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     kind: "spatial",
     columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a", "unit_b"],
   },
-  clip: { table: "cl_clip", attrTable: "child_layer_attr", suffix: "_clipped", kind: "spatial" },
+  clip: { table: "cl_clip", attrTable: "input_layer_attr", suffix: "_clipped", kind: "spatial" },
   clip_issues: {
     table: "cl_issues",
     attrTable: null,
@@ -226,7 +226,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
   },
   mosaic: {
     table: "st_clean",
-    attrTable: "child_layer_attr",
+    attrTable: "input_layer_attr",
     suffix: "_mosaicked",
     kind: "spatial",
   },

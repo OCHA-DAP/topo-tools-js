@@ -9,10 +9,10 @@
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
-  const STAGE_LABELS = ["Loading input", "Assigning to parent unit", "Clipping to parent boundary"];
+  const STAGE_LABELS = ["Loading input", "Assigning to overlay feature", "Clipping to overlay boundary"];
 
-  let childFiles = $state<File[]>([]);
-  let parentFiles = $state<File[]>([]);
+  let inputFiles = $state<File[]>([]);
+  let overlayFiles = $state<File[]>([]);
   let running = $state(false);
   let currentStage = $state(0); // 0=idle, 1-3=active stage, 4=done
   let errorStage = $state(0);
@@ -21,9 +21,9 @@
 
   let resultGeoJSON = $state<string | null>(null);
   let originalGeoJSON = $state<string | null>(null);
-  let parentOutlineGeoJSON = $state<string | null>(null);
+  let overlayOutlineGeoJSON = $state<string | null>(null);
   let resultBounds = $state<[number, number, number, number] | null>(null);
-  let parentFid = $state<number | null>(null);
+  let overlayFid = $state<number | null>(null);
   let assignedCount = $state(0);
   let droppedAssignCount = $state(0);
   let emptyClipCount = $state(0);
@@ -32,10 +32,10 @@
 
   // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
   // first auto-run never changes behavior.
-  let childColumns = $state<ColumnGuess | null>(null);
-  let parentColumns = $state<ColumnGuess | null>(null);
-  let childMatchColumn = $state<string | null>(null);
-  let parentMatchColumn = $state<string | null>(null);
+  let inputColumns = $state<ColumnGuess | null>(null);
+  let overlayColumns = $state<ColumnGuess | null>(null);
+  let inputMatchColumn = $state<string | null>(null);
+  let overlayMatchColumn = $state<string | null>(null);
 
   let clearMap: (() => void) | undefined;
 
@@ -44,26 +44,26 @@
   });
 
   $effect(() => {
-    const c = childFiles;
-    const p = parentFiles;
+    const c = inputFiles;
+    const p = overlayFiles;
     if (c.length > 0 && p.length > 0 && duckdbState.ready) {
       untrack(() => {
         if (running) return;
-        childColumns = null;
-        parentColumns = null;
-        childMatchColumn = null;
-        parentMatchColumn = null;
+        inputColumns = null;
+        overlayColumns = null;
+        inputMatchColumn = null;
+        overlayMatchColumn = null;
         handleRun();
       });
     }
   });
 
   $effect(() => {
-    const _c = childMatchColumn;
-    const _p = parentMatchColumn;
+    const _c = inputMatchColumn;
+    const _p = overlayMatchColumn;
     untrack(() => {
       if (!resultGeoJSON || running) return;
-      if ((childMatchColumn == null) !== (parentMatchColumn == null)) return;
+      if ((inputMatchColumn == null) !== (overlayMatchColumn == null)) return;
       handleRun();
     });
   });
@@ -74,9 +74,9 @@
     running = true;
     resultGeoJSON = null;
     originalGeoJSON = null;
-    parentOutlineGeoJSON = null;
+    overlayOutlineGeoJSON = null;
     resultBounds = null;
-    parentFid = null;
+    overlayFid = null;
     assignedCount = 0;
     droppedAssignCount = 0;
     emptyClipCount = 0;
@@ -90,27 +90,27 @@
       const result = await runClip(
         duckdbState.db!,
         duckdbState.conn!,
-        childFiles,
-        parentFiles,
+        inputFiles,
+        overlayFiles,
         (stage, label) => {
           currentStage = stage;
           stageLabel = label;
         },
-        { parentMatchColumn: parentMatchColumn ?? undefined, childMatchColumn: childMatchColumn ?? undefined },
+        { overlayMatchColumn: overlayMatchColumn ?? undefined, inputMatchColumn: inputMatchColumn ?? undefined },
       );
 
       resultGeoJSON = result.clippedGeoJSON;
-      originalGeoJSON = result.childGeoJSON;
-      parentOutlineGeoJSON = result.parentOutlineGeoJSON;
+      originalGeoJSON = result.inputGeoJSON;
+      overlayOutlineGeoJSON = result.overlayOutlineGeoJSON;
       resultBounds = result.bounds;
-      parentFid = result.parentFid;
+      overlayFid = result.overlayFid;
       assignedCount = result.assignedCount;
       droppedAssignCount = result.droppedAssignCount;
       emptyClipCount = result.emptyClipCount;
       issues = result.issues;
       issuesGeoJSON = result.issuesGeoJSON;
-      childColumns = result.childColumns;
-      parentColumns = result.parentColumns;
+      inputColumns = result.inputColumns;
+      overlayColumns = result.overlayColumns;
       currentStage = 4;
       stageLabel = "Done";
     } catch (e) {
@@ -150,10 +150,10 @@
       <a class="back" href={base}>← Topology Tools</a>
       <h1>Clip</h1>
       <p class="blurb">
-        Force a children layer onto the one parent unit it overlaps most (by majority vote across
-        every child), then clip every child to exactly that parent's boundary. Built for
+        Force an input layer onto the one overlay feature it overlaps most (by majority vote across
+        every input), then clip every input to exactly that overlay's boundary. Built for
         already-extended, overshooting geometry — e.g. one country's units after Edge Extender —
-        where a per-child assignment could be fooled by border overshoot.
+        where a per-input assignment could be fooled by border overshoot.
       </p>
     </header>
 
@@ -167,7 +167,7 @@
     <section class="step">
       <h2 class="step-heading">Input layer</h2>
       <DropZone
-        bind:files={childFiles}
+        bind:files={inputFiles}
         urlParam="input"
         disabled={running}
         helpText="The layer to assign and clip — one already-extended file's worth of units."
@@ -177,33 +177,33 @@
     <section class="step">
       <h2 class="step-heading">Overlay layer</h2>
       <DropZone
-        bind:files={parentFiles}
+        bind:files={overlayFiles}
         urlParam="overlay"
         disabled={running}
-        helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 children layer."
+        helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 input layer."
       />
     </section>
 
-    {#if childColumns && parentColumns}
+    {#if inputColumns && overlayColumns}
       <section class="step">
         <h2 class="step-heading">Code join (optional)</h2>
         <p class="hint">
-          Wins over the majority-vote parent wherever the codes agree on a parent the file
+          Wins over the majority-vote overlay feature wherever the codes agree on an overlay feature the file
           overlaps at all, falls back to the majority vote when no code match exists.
         </p>
         <div class="match-cols">
           <label class="match-field">
-            <span>Child code</span>
-            <select bind:value={childMatchColumn} disabled={running}>
+            <span>Input code</span>
+            <select bind:value={inputMatchColumn} disabled={running}>
               <option value={null}>(none)</option>
-              {#each childColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+              {#each inputColumns.all as col (col)}<option value={col}>{col}</option>{/each}
             </select>
           </label>
           <label class="match-field">
-            <span>Parent code</span>
-            <select bind:value={parentMatchColumn} disabled={running}>
+            <span>Overlay code</span>
+            <select bind:value={overlayMatchColumn} disabled={running}>
               <option value={null}>(none)</option>
-              {#each parentColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+              {#each overlayColumns.all as col (col)}<option value={col}>{col}</option>{/each}
             </select>
           </label>
         </div>
@@ -232,13 +232,13 @@
       <div class="error-panel">{error}</div>
     {/if}
 
-    {#if resultGeoJSON && parentFid !== null}
+    {#if resultGeoJSON && overlayFid !== null}
       <section class="step">
-        <p class="info-line">Assigned to parent unit fid {parentFid} — {assignedCount} of {assignedCount + droppedAssignCount} children agreed.</p>
+        <p class="info-line">Assigned to overlay feature fid {overlayFid} — {assignedCount} of {assignedCount + droppedAssignCount} input features agreed.</p>
         {#if droppedAssignCount > 0}
           <p class="warn-line">
-            {droppedAssignCount} child{droppedAssignCount === 1 ? "" : "ren"} dropped — didn't overlap
-            the winning parent unit.
+            {droppedAssignCount} input feature{droppedAssignCount === 1 ? "" : "s"} dropped — didn't overlap
+            the winning overlay unit.
           </p>
         {/if}
         {#if emptyClipCount > 0}
@@ -248,16 +248,16 @@
         {/if}
         {#if codeMismatchCount > 0}
           <p class="warn-line">
-            Code match disagreed with the majority-vote parent for {codeMismatchCount} child{codeMismatchCount ===
-            1
+            Code match disagreed with the majority-vote overlay feature for {codeMismatchCount} input feature{codeMismatchCount ===
+             1
               ? ""
-              : "ren"}; the code match won.
+              : "s"}; the code match won.
           </p>
         {/if}
         {#if codeFallbackCount > 0}
           <p class="warn-line">
-            No overlapping code match for {codeFallbackCount} child{codeFallbackCount === 1 ? "" : "ren"};
-            fell back to the majority-vote parent.
+            No overlapping code match for {codeFallbackCount} input feature{codeFallbackCount === 1 ? "" : "s"};
+            fell back to the majority-vote overlay.
           </p>
         {/if}
       </section>
@@ -266,14 +266,14 @@
     {#if resultGeoJSON}
       <DownloadMenu
         primaryLabel="Download GeoJSON"
-        filenameStem={fileStem(childFiles[0])}
+        filenameStem={fileStem(inputFiles[0])}
         cachedGeoJSON={resultGeoJSON}
         exportSource="clip"
       />
       {#if issues.length > 0 && issuesGeoJSON}
         <DownloadMenu
           primaryLabel="Download Issues"
-          filenameStem={fileStem(childFiles[0])}
+          filenameStem={fileStem(inputFiles[0])}
           cachedGeoJSON={issuesGeoJSON}
           exportSource="clip_issues"
           variant="secondary"
@@ -287,7 +287,7 @@
   <div class="map-container">
     <MapView
       geojson={resultGeoJSON}
-      originalGeojson={originalGeoJSON ?? parentOutlineGeoJSON}
+      originalGeojson={originalGeoJSON ?? overlayOutlineGeoJSON}
       bounds={resultBounds}
       processing={running}
       registerClear={(fn: () => void) => {

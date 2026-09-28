@@ -99,9 +99,9 @@ Shared by `extend` (whole-file) and `match` (per-group).
 
 ## Overlap measurement (`$lib/db/overlap.ts`)
 
-Shared by `match` (parent/child assignment), `change` (version-to-version
+Shared by `match` (input/overlay assignment), `change` (version-to-version
 comparison), `code-update` (per-level classify and reparent), and
-`schema-join` (parent assignment).
+`schema-join` (join assignment).
 
 - Overlap measurement MUST compute exact geometric intersection
   (`ST_Intersection`) for every candidate pair.
@@ -117,26 +117,27 @@ comparison), `code-update` (per-level classify and reparent), and
 
 ### Best-overlap plurality pick (`$lib/db/assignBestOverlap.ts`)
 
-Shared by `match` (parent/child assignment), `code-update` (per-level
-reparent), and `schema-join` (parent assignment).
+Shared by `match` (input/overlay assignment), `code-update` (per-level
+reparent), and `schema-join` (join assignment).
 
-- `assignBestOverlap` MUST assign each child to the parent it shares the
-  largest overlap area with, breaking a tie by lowest parent fid.
-- A child with zero overlapping parents MUST be absent from the output
-  table entirely, not assigned a null parent.
+- `assignBestOverlap` MUST assign each input feature (`input_fid`) to the
+  overlay feature (`overlay_fid`) it shares the largest overlap area with,
+  breaking a tie by lowest overlay fid.
+- An input feature with zero overlapping overlay features MUST be absent
+  from the output table entirely, not assigned a null overlay.
 
 ## Code-based assignment override (`$lib/db/codeJoin.ts`)
 
-Shared by `match`, `mosaic`, and `clip` for parent assignment.
+Shared by `match`, `mosaic`, and `clip` for overlay assignment.
 
 - Callers MAY supply a `matchColumn` name (same column on both layers) or a
-  `parentMatchColumn`/`childMatchColumn` pair (different names), mutually
+  `overlayMatchColumn`/`inputMatchColumn` pair (different names), mutually
   exclusive with each other. Supplying only one of the pair MUST raise.
-- When supplied, an exact code join, restricted to `(child, parent)` pairs
+- When supplied, an exact code join, restricted to `(input, overlay)` pairs
   that already spatially overlap, MUST win over the default
   spatial-majority-vote assignment wherever a code match exists, even when
-  it disagrees with the spatial result. A child (or, for assign-one, a
-  whole file) whose code has no overlapping-parent match MUST fall back to
+  it disagrees with the spatial result. An input feature (or, for assign-one,
+  a whole file) whose code has no overlapping-overlay match MUST fall back to
   the spatial result (see `docs/adr/0029`).
 - The outcome MUST be recorded as `assignmentMethod: 'code' | 'spatial_fallback'`
   and `spatialAgrees: boolean | null` (`true`/`false` when the method is
@@ -144,7 +145,7 @@ Shared by `match`, `mosaic`, and `clip` for parent assignment.
 - A disagreement or fallback MUST surface as an issues row: `kind='code-mismatch'`
   when the code match won but disagreed with the spatial result, or
   `kind='code-fallback'` when no code match existed. `unitA` MUST hold the
-  child's own fid, `parentFid` the winning parent's fid.
+  input feature's own fid, `overlayFid` the winning overlay feature's fid.
 - Omitting both parameters MUST leave assignment behavior and output schema
   unchanged for existing callers.
 

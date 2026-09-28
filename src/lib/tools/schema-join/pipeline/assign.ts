@@ -7,7 +7,7 @@ export async function assignJoinFeatures(conn: AsyncDuckDBConnection): Promise<v
   await assignBestOverlap(conn, "input_layer_01", "join_layer_01", "sj_pairs", "sj_best");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE sj_assign AS
-    SELECT child_fid AS input_fid, parent_fid AS join_fid FROM sj_best
+    SELECT input_fid, overlay_fid AS join_fid FROM sj_best
   `);
   await conn.query(`--sql
     CREATE OR REPLACE TABLE sj_share AS

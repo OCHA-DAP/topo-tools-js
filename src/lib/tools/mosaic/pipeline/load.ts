@@ -2,23 +2,23 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { loadFile } from "$lib/db/loader";
 
 const OWNED_TABLES = [
-  "child_raw_layer",
-  "child_layer_01",
-  "child_layer_attr",
-  "parent_raw_layer",
-  "parent_layer_01",
-  "parent_layer_attr",
-  "cl_child_parts",
-  "cl_parent_parts",
-  "cl_parent_tiles",
+  "input_raw_layer",
+  "input_layer_01",
+  "input_layer_attr",
+  "overlay_raw_layer",
+  "overlay_layer_01",
+  "overlay_layer_attr",
+  "cl_input_parts",
+  "cl_overlay_parts",
+  "cl_overlay_tiles",
   "cl_heavy_src",
   "cl_heavy_tiles_raw",
   "cl_pairs",
   "cl_assign",
-  "cl_parent_one",
+  "cl_overlay_one",
   "cl_btile_raw",
   "cl_btile",
-  "cl_child_bbox",
+  "cl_input_bbox",
   "cl_clip",
   "st_clean",
   "st_gap_regions",
@@ -41,10 +41,10 @@ export async function dropPriorRun(conn: AsyncDuckDBConnection): Promise<void> {
 export async function loadLayers(
   db: AsyncDuckDB,
   conn: AsyncDuckDBConnection,
-  childFiles: File[],
-  parentFiles: File[],
+  inputFiles: File[],
+  overlayFiles: File[],
 ): Promise<void> {
   await dropPriorRun(conn);
-  await loadFile(db, conn, childFiles, { prefix: "child_" });
-  await loadFile(db, conn, parentFiles, { prefix: "parent_" });
+  await loadFile(db, conn, inputFiles, { prefix: "input_" });
+  await loadFile(db, conn, overlayFiles, { prefix: "overlay_" });
 }

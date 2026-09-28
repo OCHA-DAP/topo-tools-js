@@ -2,7 +2,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import type { AssignmentMethod } from "$lib/db/codeJoin";
 import { buildStitchIssues } from "../../stitch/pipeline/issues";
 
-// Combined issues report: dropped children, leftover stitch gaps, and (when
+// Combined issues report: dropped input features, leftover stitch gaps, and (when
 // a code join was supplied) code-mismatch/code-fallback rows (docs/adr/0045).
 
 export interface MosaicIssueRow {
@@ -12,7 +12,7 @@ export interface MosaicIssueRow {
   maxWidthM: number | null;
   thinnessRatio: number | null;
   unitA: number | null;
-  parentFid?: number | null;
+  overlayFid?: number | null;
   reason?: string | null;
   bbox: [number, number, number, number];
 }
@@ -38,12 +38,12 @@ export async function buildMosaicIssues(
            fid AS unit_a, NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason,
            geom,
            ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
-    FROM child_layer_01
+    FROM input_layer_01
     WHERE fid NOT IN (SELECT fid FROM cl_clip)
   `);
 
-  // Every assigned child shares the single run-wide assignment_method
-  // (assign-one is per-file, not per-child; see docs/adr/0045).
+  // Every assigned input feature shares the single run-wide assignment_method
+  // (assign-one is per-file, not per-input-feature; see docs/adr/0045).
   const codeKind: "code-mismatch" | "code-fallback" | null =
     assignment.assignmentMethod === "code" && assignment.spatialAgrees === false
       ? "code-mismatch"
@@ -52,13 +52,13 @@ export async function buildMosaicIssues(
         : null;
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ms_code_issues AS
-    SELECT ${codeKind ? `'${codeKind}-' || a.child_fid` : "NULL::VARCHAR"} AS key,
+    SELECT ${codeKind ? `'${codeKind}-' || a.input_fid` : "NULL::VARCHAR"} AS key,
            ${codeKind ? `'${codeKind}'` : "NULL::VARCHAR"} AS kind,
            NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m, NULL::DOUBLE AS thinness_ratio,
-           a.child_fid AS unit_a, a.parent_fid AS overlay_fid, NULL::VARCHAR AS reason,
+           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason,
            c.geom,
            ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
-    FROM cl_assign a JOIN child_layer_01 c ON c.fid = a.child_fid
+    FROM cl_assign a JOIN input_layer_01 c ON c.fid = a.input_fid
     WHERE ${codeKind ? "TRUE" : "FALSE"}
   `);
 
@@ -105,7 +105,7 @@ export async function buildMosaicIssues(
       maxWidthM: null,
       thinnessRatio: null,
       unitA: Number(r.unit_a),
-      parentFid: r.overlay_fid == null ? null : Number(r.overlay_fid),
+      overlayFid: r.overlay_fid == null ? null : Number(r.overlay_fid),
       reason: null,
       bbox: [r.xmin, r.ymin, r.xmax, r.ymax] as [number, number, number, number],
     })),
@@ -116,7 +116,7 @@ export async function buildMosaicIssues(
       maxWidthM: r.maxWidthM,
       thinnessRatio: r.thinnessRatio,
       unitA: null,
-      parentFid: null,
+      overlayFid: null,
       reason: null,
       bbox: r.bbox,
     })),
