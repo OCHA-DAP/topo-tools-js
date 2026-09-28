@@ -118,6 +118,9 @@ const KNOWN_DRIVERS: Record<string, DriverMeta> = {
   },
 };
 
+// An attrTable column that sets export row order and is itself left out.
+export const ROW_ORDER_COLUMN = "__row_order";
+
 interface SourceConfig {
   table: string;
   attrTable: string | null;
@@ -581,13 +584,16 @@ async function buildSpatialSelect(
     t.startsWith("MAP") ||
     t.includes("[]");
   const attrExprs = attrSchema
-    .filter((r) => r.column_name !== "fid")
+    .filter((r) => r.column_name !== "fid" && r.column_name !== ROW_ORDER_COLUMN)
     .map((r) => {
       const col = JSON.stringify(r.column_name);
       return isIncompatible(r.column_type) ? `CAST(b.${col} AS VARCHAR) AS ${col}` : `b.${col}`;
     });
   const cols = attrExprs.length > 0 ? ", " + attrExprs.join(", ") : "";
-  return `SELECT ${geomExpr}${cols} FROM ${source.table} AS a LEFT JOIN ${source.attrTable} AS b ON a.fid = b.fid WHERE a.geom IS NOT NULL`;
+  const order = attrSchema.some((r) => r.column_name === ROW_ORDER_COLUMN)
+    ? ` ORDER BY b.${ROW_ORDER_COLUMN}`
+    : "";
+  return `SELECT ${geomExpr}${cols} FROM ${source.table} AS a LEFT JOIN ${source.attrTable} AS b ON a.fid = b.fid WHERE a.geom IS NOT NULL${order}`;
 }
 
 async function buildTabularSelect(source: SourceConfig): Promise<string> {

@@ -93,31 +93,14 @@ export const tools: Tool[] = [
     iconHref: "/icons/tools/package-lines.svg",
   },
   {
-    slug: "schema-crosswalk",
+    slug: "schema",
     name: "Schema Crosswalk",
     tagline:
-      "Infer a polygon layer's admin hierarchy crosswalk and immediately apply it, producing both the crosswalk CSV and the renamed layer in one call.",
-    iconHref: "/icons/tools/schema-crosswalk.svg",
+      "Infer a polygon layer's admin hierarchy crosswalk, review and edit it in place, and apply it to download the renamed layer, the crosswalk CSV, or both.",
+    iconHref: "/icons/tools/schema.svg",
     demo: {
       url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema/admin2-simplified/nld_admin2.parquet",
     },
-  },
-  {
-    slug: "schema-map",
-    name: "Schema Map",
-    tagline:
-      "Infer a polygon layer's admin hierarchy structurally, from cardinality and containment alone, and propose a crosswalk to a target schema for review.",
-    iconHref: "/icons/tools/schema-map.svg",
-    demo: {
-      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema/admin2-simplified/nld_admin2.parquet",
-    },
-  },
-  {
-    slug: "schema-refactor",
-    name: "Schema Refactor",
-    tagline:
-      "Apply a crosswalk CSV, from Schema Map or hand-edited, to rename or drop a polygon layer's columns. Geometry passes through unchanged.",
-    iconHref: "/icons/tools/schema-refactor.svg",
   },
   {
     slug: "schema-fill",

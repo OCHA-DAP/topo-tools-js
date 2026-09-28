@@ -1,11 +1,5 @@
 ---
-import Layout from "../layouts/Layout.astro";
-import App from "$lib/tools/schema-refactor/App.svelte";
+import Redirect from "$lib/components/Redirect.astro";
 ---
 
-<Layout
-  title="Schema Refactor: apply a crosswalk to rename columns in your browser"
-  description="Browser-only tool that applies a crosswalk CSV (from Schema Map, or hand-edited) to rename or drop a polygon layer's columns. Geometry passes through unchanged."
->
-  <App client:load />
-</Layout>
+<Redirect to="schema" />

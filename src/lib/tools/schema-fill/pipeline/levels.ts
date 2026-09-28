@@ -1,13 +1,8 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import type { TargetSchema } from "$lib/tools/schema-map/pipeline/targetSchema";
+import { escapeRegExp, fieldPrefix } from "$lib/db/adminColumns";
 
-export function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function fieldPrefix(template: string): string {
-  return template.split("{n}")[0];
-}
+export { escapeRegExp, fieldPrefix };
 
 export function levelPrefix(schema: TargetSchema): string {
   return fieldPrefix(schema.codeField);

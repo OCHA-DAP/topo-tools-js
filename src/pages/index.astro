@@ -20,9 +20,7 @@ const pkg = bySlug("package");
 const packagePolygons = bySlug("package-polygons");
 const packagePoints = bySlug("package-points");
 const packageLines = bySlug("package-lines");
-const schemaCrosswalk = bySlug("schema-crosswalk");
-const schemaMap = bySlug("schema-map");
-const schemaRefactor = bySlug("schema-refactor");
+const schemaCrosswalk = bySlug("schema");
 const schemaFill = bySlug("schema-fill");
 const codeRefactor = bySlug("code-refactor");
 const codeUpdate = bySlug("code-update");
@@ -52,9 +50,7 @@ const codeUpdate = bySlug("code-update");
         >
           <GroupBox>
             <ToolCard tool={schemaCrosswalk} header />
-            <Disclosure label="Show 3 individual tools">
-              <ToolCard tool={schemaMap} variant="secondary" />
-              <ToolCard tool={schemaRefactor} variant="secondary" />
+            <Disclosure label="Show 1 individual tool">
               <ToolCard tool={schemaFill} variant="secondary" />
             </Disclosure>
           </GroupBox>
