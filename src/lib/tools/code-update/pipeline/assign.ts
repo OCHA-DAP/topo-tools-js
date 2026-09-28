@@ -44,7 +44,9 @@ async function fetchStrMap(
   valCol: string,
 ): Promise<Map<number, string>> {
   const rows = (
-    await conn.query(`SELECT ${quoteIdent(keyCol)} AS k, ${quoteIdent(valCol)} AS v FROM ${quoteIdent(table)}`)
+    await conn.query(
+      `SELECT ${quoteIdent(keyCol)} AS k, ${quoteIdent(valCol)} AS v FROM ${quoteIdent(table)}`,
+    )
   ).toArray() as Array<{ k: number | bigint; v: string }>;
   const out = new Map<number, string>();
   for (const r of rows) out.set(Number(r.k), r.v);
@@ -58,7 +60,9 @@ async function fetchIntMap(
   valCol: string,
 ): Promise<Map<number, number>> {
   const rows = (
-    await conn.query(`SELECT ${quoteIdent(keyCol)} AS k, ${quoteIdent(valCol)} AS v FROM ${quoteIdent(table)}`)
+    await conn.query(
+      `SELECT ${quoteIdent(keyCol)} AS k, ${quoteIdent(valCol)} AS v FROM ${quoteIdent(table)}`,
+    )
   ).toArray() as Array<{ k: number | bigint; v: number | bigint }>;
   const out = new Map<number, number>();
   for (const r of rows) out.set(Number(r.k), Number(r.v));
@@ -66,7 +70,10 @@ async function fetchIntMap(
 }
 
 // Collapses every linked pair's own match_method to one value, joined if mixed.
-function reduceMatchMethods(pairs: Array<[number, number]>, lookup: Map<string, string>): string | null {
+function reduceMatchMethods(
+  pairs: Array<[number, number]>,
+  lookup: Map<string, string>,
+): string | null {
   const methods = new Set<string>();
   for (const [a, b] of pairs) {
     const m = lookup.get(`${a}:${b}`);
@@ -100,9 +107,13 @@ export async function assignLevel(
   const codeColA = sideA.columns.get(n)!;
   const oldCodeByFid = await fetchStrMap(conn, `cu_dsl_${n}_a`, "fid", codeColA);
   const nameColA = sideA.names.get(n) ?? null;
-  const oldNameByFid = nameColA ? await fetchStrMap(conn, `cu_dsl_${n}_a`, "fid", nameColA) : new Map<number, string>();
+  const oldNameByFid = nameColA
+    ? await fetchStrMap(conn, `cu_dsl_${n}_a`, "fid", nameColA)
+    : new Map<number, string>();
   const nameColB = sideB.names.get(n) ?? null;
-  const newNameByFid = nameColB ? await fetchStrMap(conn, `cu_dsl_${n}_b`, "fid", nameColB) : new Map<number, string>();
+  const newNameByFid = nameColB
+    ? await fetchStrMap(conn, `cu_dsl_${n}_b`, "fid", nameColB)
+    : new Map<number, string>();
   const childToParentFid =
     prevLevel !== null
       ? await fetchIntMap(conn, `cu_reparent_${n}_assign`, "child_fid", "parent_fid")
@@ -116,7 +127,9 @@ export async function assignLevel(
     }
     const code = newCodeByFid.get(prevLevel)!.get(parentFid);
     if (code === undefined) {
-      throw new Error(`level ${n}: no assigned code for parent fid ${parentFid} at level ${prevLevel}`);
+      throw new Error(
+        `level ${n}: no assigned code for parent fid ${parentFid} at level ${prevLevel}`,
+      );
     }
     return code;
   }
@@ -125,11 +138,17 @@ export async function assignLevel(
     await conn.query("SELECT a_fid, b_fid, match_method FROM cw_pairs_classified")
   ).toArray() as Array<{ a_fid: number | bigint; b_fid: number | bigint; match_method: string }>;
   const pairMethod = new Map<string, string>();
-  for (const r of pairMethodRows) pairMethod.set(`${Number(r.a_fid)}:${Number(r.b_fid)}`, r.match_method);
+  for (const r of pairMethodRows)
+    pairMethod.set(`${Number(r.a_fid)}:${Number(r.b_fid)}`, r.match_method);
 
   const bRows = (
     await conn.query("SELECT side, fid, cluster_id, relationship_class FROM cw_polygon_class")
-  ).toArray() as Array<{ side: string; fid: number | bigint; cluster_id: number | bigint; relationship_class: string }>;
+  ).toArray() as Array<{
+    side: string;
+    fid: number | bigint;
+    cluster_id: number | bigint;
+    relationship_class: string;
+  }>;
   const clusters = new Map<number, { a: number[]; b: number[]; cls: string }>();
   for (const r of bRows) {
     const cid = Number(r.cluster_id);
@@ -294,7 +313,9 @@ export async function assignLevel(
     await conn.query(
       `CREATE OR REPLACE TEMP TABLE ${quoteIdent(staging)} (fid_key VARCHAR, code_val VARCHAR, parent_code VARCHAR)`,
     );
-    const values = newBatch.map(([k, p]) => `(${sqlStr(k)}, ${sqlStr(k)}, ${sqlStr(p)})`).join(", ");
+    const values = newBatch
+      .map(([k, p]) => `(${sqlStr(k)}, ${sqlStr(k)}, ${sqlStr(p)})`)
+      .join(", ");
     await conn.query(`INSERT INTO ${quoteIdent(staging)} VALUES ${values}`);
     await assignNewCodes(conn, staging, {
       idColumn: "fid_key",

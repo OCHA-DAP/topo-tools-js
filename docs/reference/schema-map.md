@@ -18,14 +18,14 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   columns) from candidacy.
 - `schema-map` MUST exclude a noise column: case-insensitive exact match
   against `objectid, globalid, fid, shape_leng, shape_length,
-  shape__length, shape_area, shape__area, ogc_fid, ogc_fid_orig,
-  fid_orig`; OR the column name with a trailing `_\d+` GDAL
+shape__length, shape_area, shape__area, ogc_fid, ogc_fid_orig,
+fid_orig`; OR the column name with a trailing `_\d+` GDAL
   collision suffix stripped matches that list; OR, when the full column
   name is exactly 10 characters (the DBF field-name limit), the
   suffix-stripped name is a case-insensitive prefix of an entry in that
   list.
 - `schema-map` MUST exclude an all-null candidate column (`COUNT(DISTINCT)
-  = 0`) from level-group formation and chain building, since two all-null
+= 0`) from level-group formation and chain building, since two all-null
   columns are vacuously bijective with no real evidence. It MUST still
   remain eligible for bracketing and MUST still appear in the output.
 
@@ -59,8 +59,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   with no compound/embedded codes anywhere).
 - `schema-map` MUST resolve the hierarchy as the longest path through this
   edge DAG (dynamic programming: `best_len[finer] = max(best_len[coarser]
-  + 1)` over valid edges), breaking ties by, in order: longer path length,
-  larger companion-group size, then higher (finer) `COUNT(DISTINCT)`.
+  - 1)`over valid edges), breaking ties by, in order: longer path length,
+larger companion-group size, then higher (finer)`COUNT(DISTINCT)`.
 
 ## Role assignment
 
@@ -81,7 +81,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   bare rendered name; each subsequent column in the same role at the same
   level MUST get the rendered name suffixed `1`, `2`, ...
 - `unique_count` for a level-assigned column MUST be `COUNT(DISTINCT
-  (parent_level_code_column, this_column))` when the level has a resolved
+(parent_level_code_column, this_column))` when the level has a resolved
   parent, or the column's own `COUNT(DISTINCT)` when it is the coarsest
   resolved level.
 
@@ -89,7 +89,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 - A candidate column not absorbed into the chain MUST be bracketed to the
   sole chain level `k` where `chain_level[k-1].count < column.count <=
-  chain_level[k].count` (the position below the coarsest level counts as
+chain_level[k].count` (the position below the coarsest level counts as
   0). A column whose count falls in no such range MUST fall through to
   the unmatched fallback.
 - `schema-map` MUST skip bracketing entirely for a level whose own chain
@@ -104,7 +104,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   MUST resolve into the `name` role using the same numbered-target scheme
   as chain role assignment.
 - A candidate that fails the winner check MUST get `note = "ambiguous,
-  level {k}"` and an empty `target_column`.
+level {k}"` and an empty `target_column`.
 
 ## Fallback
 
@@ -115,7 +115,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 ## Outputs
 
 - `schema-map` MUST produce a crosswalk with columns `source_column,
-  target_column, unique_count, note`, downloadable as CSV.
+target_column, unique_count, note`, downloadable as CSV.
 - Rows MUST sort finest-resolved-level first (i.e. chain rank descending);
   within a level, a `name`-role row MUST sort before a `code`-role row;
   unresolved rows (no level) MUST sort last, in original source-column

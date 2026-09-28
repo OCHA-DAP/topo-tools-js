@@ -6,7 +6,7 @@ Superseded by [0022](0022-noding-precision-retry-removed-for-python-parity.md)
 
 ## Context
 
-Smoke-testing plain Edge Extender on the *whole* 76-feature Panama adm2
+Smoke-testing plain Edge Extender on the _whole_ 76-feature Panama adm2
 dataset as a single monolithic pass (not per-group, as Edge Matcher calls
 it) exhausted all 28 precision candidates from
 [0001](0001-precision-retry-mitigates-wasm-noding-failures.md) and still

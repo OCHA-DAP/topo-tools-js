@@ -175,7 +175,7 @@ no-embedding-anywhere fallback), and `mdg/latest/adm4/original.parquet` (a
 full 5-level chain, 17,465 rows). All three produced identical
 `source_column`/`target_column`/`unique_count`/`note` values and row order
 to the Python CLI's output, modulo one cosmetic CSV-writer difference:
-DuckDB's `COPY ... (FORMAT CSV, HEADER)` quotes an empty *string* as `""`
+DuckDB's `COPY ... (FORMAT CSV, HEADER)` quotes an empty _string_ as `""`
 to distinguish it from a NULL, where Python's `csv` module writes both
 identically as a bare empty field. Both represent the same value once
 parsed.

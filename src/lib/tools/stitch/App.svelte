@@ -160,6 +160,7 @@
     <section class="step">
       <DropZone
         bind:files
+        urlParam="url"
         disabled={running}
         helpText="Already-tiled polygon layer in WGS84. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />

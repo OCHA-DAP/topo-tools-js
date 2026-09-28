@@ -204,6 +204,7 @@
           <label class="zone-label">OLD (already coded)</label>
           <DropZone
             bind:files={filesA}
+            urlParam="old"
             disabled={running || loadingSide === "a"}
             helpText="Polygon layer with an existing hierarchical code."
           />
@@ -212,6 +213,7 @@
           <label class="zone-label">NEW (uncoded candidate)</label>
           <DropZone
             bind:files={filesB}
+            urlParam="new"
             disabled={running || loadingSide === "b"}
             helpText="Polygon layer to reconcile against OLD, same coverage area."
           />

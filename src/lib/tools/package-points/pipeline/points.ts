@@ -41,7 +41,10 @@ export async function resolvePointLevelPlans(
     for (const level of levels) {
       const code = schema.codeField.replace("{n}", String(level));
       const name = schema.nameField.replace("{n}", String(level));
-      identity.set(level, [code, name].filter((c) => cols.has(c)));
+      identity.set(
+        level,
+        [code, name].filter((c) => cols.has(c)),
+      );
       const rename = new Map<string, string>();
       if (cols.has(code)) rename.set(code, "code");
       if (cols.has(name)) rename.set(name, "name");
@@ -57,12 +60,7 @@ export async function resolvePointLevelPlans(
   }
 
   const levelColumns = await detectLevelColumnsOrSingle(conn, attrTable);
-  let root = null;
-  try {
-    root = await detectRootLevel(conn, attrTable, levelColumns);
-  } catch {
-    root = null;
-  }
+  const root = await detectRootLevel(conn, attrTable, levelColumns).catch(() => null);
   let rootInjected = false;
   if (root !== null && !levelColumns.has(0)) {
     levelColumns.set(0, root);
@@ -80,7 +78,9 @@ export async function resolvePointLevelPlans(
     const identitySet = new Set(cols.identityColumns);
     const groupBy = cols.groupBy.filter((c) => identitySet.has(c));
     if (groupBy.length === 0 && cols.groupBy.length > 0) {
-      throw new Error(`level ${level} has no anchor-conforming code column to group by in ${attrTable}`);
+      throw new Error(
+        `level ${level} has no anchor-conforming code column to group by in ${attrTable}`,
+      );
     }
     const exclude = levels
       .filter((l) => l !== level)

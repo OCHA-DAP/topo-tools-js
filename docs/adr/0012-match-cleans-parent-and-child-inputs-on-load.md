@@ -14,7 +14,7 @@ the child (Zone) layer, independent of anything Edge Matcher's own pipeline
 introduces. The parent layer was never cleaned anywhere in the pipeline
 before; the child layer was only ever cleaned per-group, after splitting
 (`edge-extender/pipeline/clean.ts`'s `stageCleanInput`), which misses
-defects between child units assigned to *different* groups.
+defects between child units assigned to _different_ groups.
 
 ## Decision
 

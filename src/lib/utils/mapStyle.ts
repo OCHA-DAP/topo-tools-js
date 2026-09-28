@@ -1,8 +1,4 @@
-import type {
-  FilterSpecification,
-  LayerSpecification,
-  StyleSpecification,
-} from "maplibre-gl";
+import type { FilterSpecification, LayerSpecification, StyleSpecification } from "maplibre-gl";
 
 // v6 requires bundlers to set the worker URL explicitly — import.meta.url
 // auto-detection doesn't reliably resolve inside a bundler's module graph.

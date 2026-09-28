@@ -171,6 +171,7 @@
       <h2 class="step-heading">Layer</h2>
       <DropZone
         bind:files={layerFiles}
+        urlParam="url"
         disabled={layerLoading || running}
         helpText="Polygon layer. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />
@@ -182,6 +183,7 @@
       <h2 class="step-heading">Crosswalk CSV</h2>
       <DropZone
         bind:files={crosswalkFiles}
+        urlParam="crosswalk"
         disabled={crosswalkLoading || running}
         accept="csv"
         helpText="source_column, target_column, from Schema Map or hand-edited."

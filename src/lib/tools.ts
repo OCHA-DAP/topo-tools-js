@@ -3,6 +3,8 @@ export interface Tool {
   name: string;
   tagline: string;
   iconHref: string;
+  /** Demo input URL per DropZone `urlParam`. */
+  demo?: Record<string, string>;
 }
 
 export const tools: Tool[] = [
@@ -96,6 +98,9 @@ export const tools: Tool[] = [
     tagline:
       "Infer a polygon layer's admin hierarchy crosswalk and immediately apply it, producing both the crosswalk CSV and the renamed layer in one call.",
     iconHref: "/icons/tools/schema-crosswalk.svg",
+    demo: {
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema-crosswalk/admin2-simplified/nld_admin2.parquet",
+    },
   },
   {
     slug: "schema-map",

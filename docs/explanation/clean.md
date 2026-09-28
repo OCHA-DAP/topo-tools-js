@@ -32,7 +32,7 @@ as Minimal / Thin / All / Manual modes.
    otherwise it runs `ST_CoverageClean(geoms, snap=SNAP_TOLERANCE, gap)` at
    the requested gap width.
 4. **Verify export** (`pipeline/verify.ts`) — independently re-runs the same
-   gap/overlap detection and an `ST_IsValid` sweep against the *exported*
+   gap/overlap detection and an `ST_IsValid` sweep against the _exported_
    table (`tc_clean`), not just the pre-clean input, catching anything the
    clean itself might have introduced. Runs automatically after every
    clean/reclean.
@@ -41,6 +41,7 @@ as Minimal / Thin / All / Manual modes.
 
 The gap-width slider (meters, converted to degrees via a latitude-aware
 factor in `pipeline/units.ts`) has four UI modes:
+
 - **Minimal** (default) — fills only gaps at or below `SNAP_TOLERANCE`
   (floating-point-noise scale), at exactly that width. No shape heuristic.
   Matches topo-tools-py's own default (ADR-0033/0034 there).
@@ -77,6 +78,7 @@ alone would miss by OGC definition) without that flood.
 
 Two safeguards that exist in Edge Extender/Edge Matcher were tried here and
 then removed after direct measurement:
+
 - A precision-reduction retry on GEOS overlay failure, which (unlike Edge
   Extender's retry) would have reduced precision on real input geometry
   itself, silently rewriting the exported result — removed, see

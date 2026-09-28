@@ -25,7 +25,9 @@ export async function stageOverlayDifferences(conn: AsyncDuckDBConnection): Prom
                CASE WHEN p.pgeom IS NULL THEN a.geom ELSE ST_Difference(a.geom, p.pgeom) END), 3) AS geom
       FROM cw_a_keyed a LEFT JOIN partners p ON p.a_fid = a.fid
     `);
-    await conn.query(`DELETE FROM cw_a_only WHERE geom IS NULL OR ST_IsEmpty(geom) OR ST_Area(geom) < ${SLIVER}`);
+    await conn.query(
+      `DELETE FROM cw_a_only WHERE geom IS NULL OR ST_IsEmpty(geom) OR ST_Area(geom) < ${SLIVER}`,
+    );
 
     await conn.query(`--sql
       CREATE TABLE cw_b_only AS
@@ -39,7 +41,9 @@ export async function stageOverlayDifferences(conn: AsyncDuckDBConnection): Prom
                CASE WHEN p.pgeom IS NULL THEN b.geom ELSE ST_Difference(b.geom, p.pgeom) END), 3) AS geom
       FROM cw_b_keyed b LEFT JOIN partners p ON p.b_fid = b.fid
     `);
-    await conn.query(`DELETE FROM cw_b_only WHERE geom IS NULL OR ST_IsEmpty(geom) OR ST_Area(geom) < ${SLIVER}`);
+    await conn.query(
+      `DELETE FROM cw_b_only WHERE geom IS NULL OR ST_IsEmpty(geom) OR ST_Area(geom) < ${SLIVER}`,
+    );
   } finally {
     await conn.query(`SET memory_limit = '${prevMem}'`);
   }

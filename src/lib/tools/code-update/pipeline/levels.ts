@@ -33,7 +33,9 @@ async function resolveSide(
   }
 
   const raw = await detectLevelColumnsOrSingle(conn, table);
-  const coded = [...raw.entries()].sort((a, b) => a[0] - b[0]).filter(([, cols]) => cols.groupBy.length > 0);
+  const coded = [...raw.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .filter(([, cols]) => cols.groupBy.length > 0);
   if (coded.length === 0) {
     throw new Error(`no admin hierarchy level detected in ${table}`);
   }

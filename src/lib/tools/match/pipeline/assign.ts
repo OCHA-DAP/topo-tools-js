@@ -93,7 +93,10 @@ export async function computeAssignment(
   // rather than letting it sit through the rest of the pipeline.
   await conn.query("DROP TABLE IF EXISTS ge_pairs");
 
-  const codeRow = codeStats.toArray()[0] as { mismatch: bigint | number; fallback: bigint | number };
+  const codeRow = codeStats.toArray()[0] as {
+    mismatch: bigint | number;
+    fallback: bigint | number;
+  };
   return {
     assignedCount: Number((assigned.toArray()[0] as { n: bigint | number }).n),
     unassignedCount: Number((unassigned.toArray()[0] as { n: bigint | number }).n),

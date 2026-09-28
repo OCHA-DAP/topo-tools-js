@@ -31,7 +31,10 @@ const targets = [
   [512, "icon-maskable-512.png", 64], // ~12.5% safe-zone padding
 ];
 for (const [size, name, safeZone] of targets) {
-  const buf = await sharp(Buffer.from(svg(safeZone))).resize(size, size).png().toBuffer();
+  const buf = await sharp(Buffer.from(svg(safeZone)))
+    .resize(size, size)
+    .png()
+    .toBuffer();
   await writeFile(resolve(OUT, name), buf);
   console.log(`wrote ${name} (${(buf.length / 1024).toFixed(1)} KB)`);
 }

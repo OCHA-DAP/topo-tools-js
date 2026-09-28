@@ -7,8 +7,8 @@ keywords:
 - **SHOULD** / **SHOULD NOT**: expected default behavior.
 - **MAY**: explicitly allowed, not required.
 
-`docs/reference/` states *what* each tool currently does, verified directly
-against source. It does not explain *why* (rationale, rejected alternatives,
+`docs/reference/` states _what_ each tool currently does, verified directly
+against source. It does not explain _why_ (rationale, rejected alternatives,
 and benchmark data live in `docs/explanation/`).
 
 One file per tool (`clean.md`, `extend.md`, `match.md`, `change.md`). A rule

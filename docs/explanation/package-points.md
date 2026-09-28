@@ -21,7 +21,7 @@ topo-tools-py's `package-points`.
    it as a synthetic level 0 when found (`rootInjected`). Each level's
    `groupBy` is filtered to the anchor-conforming subset of its
    `identityColumns` (see `docs/adr/0033`), and `exclude` is every
-   *other* level's own `identityColumns` (not just finer ones, since an
+   _other_ level's own `identityColumns` (not just finer ones, since an
    ancestor never survives under its own numbered name here either).
 3. **Per-level dissolve and point extraction**
    (`pipeline/index.ts`'s `buildLevelOutput`) - dissolves via
@@ -54,4 +54,3 @@ between two islands for a multi-part one. `ST_MaximumInscribedCircle`'s
 `center` is always interior to the polygon (the center of the largest
 circle that fits inside it), the standard technique for keeping a
 web-map label anchored on its own territory.
-

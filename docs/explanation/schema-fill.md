@@ -30,7 +30,7 @@ same information from cardinality, containment, and embedding alone.
    `levelColumns.ts`'s `groupFamiliesByLevel` on the auto-detect path), then
    for each family pins every row to its own real depth: a column at the
    level a row's own hierarchy genuinely reaches, including a legitimate
-   `NULL` there, is left untouched; only a column at a level *deeper* than
+   `NULL` there, is left untouched; only a column at a level _deeper_ than
    the row's own real depth falls back to its nearest non-`NULL` shallower
    sibling. Appends the depth column, stamped by a deepest-first `CASE` over
    the family's _pre-fill_ code columns.
@@ -39,7 +39,7 @@ same information from cardinality, containment, and embedding alone.
 
 ## Why a depth pin, not an unconditional coalesce
 
-An unconditional `COALESCE` over every shallower level backfills *any* `NULL`
+An unconditional `COALESCE` over every shallower level backfills _any_ `NULL`
 at level `k`, including one that's a row's genuine, correctly-recorded value
 because that row's own hierarchy stops exactly at `k`. That's indistinguishable,
 column-by-column, from a `NULL` that only exists because the row is coarser

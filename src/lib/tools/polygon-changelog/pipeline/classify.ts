@@ -83,10 +83,7 @@ const str = (v: unknown): string | null => (v == null ? null : String(v));
 
 // Values that appear exactly once per side — a value shared by multiple
 // polygons can't identify one unit, and matching on it would falsely union them all.
-function uniqueValues(
-  rows: Array<Record<string, unknown>>,
-  col: string,
-): Set<string> {
+function uniqueValues(rows: Array<Record<string, unknown>>, col: string): Set<string> {
   const counts = new Map<string, number>();
   for (const r of rows) {
     const v = str(r[col]);

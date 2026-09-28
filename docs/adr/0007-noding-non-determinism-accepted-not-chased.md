@@ -7,7 +7,7 @@ Superseded by [0022](0022-noding-precision-retry-removed-for-python-parity.md)
 ## Context
 
 Across two otherwise-identical runs with different candidate-list
-densities, the *set* of groups that failed before retry differed: with a
+densities, the _set_ of groups that failed before retry differed: with a
 narrow list (`[1e-8, 1e-7, 1e-6]`), Dolega and Chepigana failed while La
 Pintada passed; with the full 28-value list, Dolega and Chepigana passed
 while La Pintada failed. Per-fid isolated tests are deterministic (same

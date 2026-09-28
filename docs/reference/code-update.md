@@ -66,15 +66,15 @@ shares with `code-refactor`.
 Applied per level, ascending, using the level's own already-re-derived
 parent codes:
 
-| `relationship_class` | outcome |
-|---|---|
-| `unchanged`, `renamed` | code retained: `rewriteChildCode()` reattaches the OLD code's own tail onto the unit's (possibly new) parent prefix |
-| `modified`, `relocated` | new code assigned under the re-derived parent; `predecessor_code` is the one linked OLD code |
-| `created` | new code assigned; `predecessor_code` is `NULL` |
-| `split` (1 OLD to N NEW) | each NEW unit gets its own new code; all share one `predecessor_code`, the one OLD code |
-| `merge` (N OLD to 1 NEW) | the one NEW unit gets one new code; `predecessor_code` is `NULL` on that geometry row |
+| `relationship_class`       | outcome                                                                                                                            |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `unchanged`, `renamed`     | code retained: `rewriteChildCode()` reattaches the OLD code's own tail onto the unit's (possibly new) parent prefix                |
+| `modified`, `relocated`    | new code assigned under the re-derived parent; `predecessor_code` is the one linked OLD code                                       |
+| `created`                  | new code assigned; `predecessor_code` is `NULL`                                                                                    |
+| `split` (1 OLD to N NEW)   | each NEW unit gets its own new code; all share one `predecessor_code`, the one OLD code                                            |
+| `merge` (N OLD to 1 NEW)   | the one NEW unit gets one new code; `predecessor_code` is `NULL` on that geometry row                                              |
 | `complex` (N OLD to M NEW) | each NEW unit gets its own new code, one shared next-available scope per level; `predecessor_code` is `NULL` on every geometry row |
-| `removed` | no NEW-side output row; the OLD code is excluded from output and from this run's own next-available computation |
+| `removed`                  | no NEW-side output row; the OLD code is excluded from output and from this run's own next-available computation                    |
 
 - A parent's next available integer MUST be derived only from codes
   currently retained (`unchanged`/`renamed`) this same run, at this same

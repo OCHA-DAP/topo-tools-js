@@ -244,6 +244,7 @@
       <h2 class="step-heading">Fine layer</h2>
       <DropZone
         bind:files={childFiles}
+        urlParam="child"
         disabled={running}
         helpText="The layer to match and extend — any polygon set, any admin level. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />
@@ -253,6 +254,7 @@
       <h2 class="step-heading">Coarse layer</h2>
       <DropZone
         bind:files={parentFiles}
+        urlParam="parent"
         disabled={running}
         helpText="The boundary to match and clip against, one level up or many."
       />

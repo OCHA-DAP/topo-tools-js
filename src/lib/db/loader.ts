@@ -1,6 +1,7 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { unzip } from "fflate";
 import { randomId } from "./id";
+import { SHP_EXTS, SINGLE_EXTS, extOf as ext } from "../utils/formats";
 
 // DuckDB's spatial extension hooks into read_parquet to parse the GeoParquet "geo"
 // key-value metadata entry. Certain files have a field in that JSON that causes
@@ -36,9 +37,6 @@ function removeGeoMetaKey(buffer: Uint8Array): Uint8Array {
   }
   return result;
 }
-
-const SINGLE_EXTS = [".parquet", ".geojson", ".geojsonl", ".gpkg", ".fgb", ".kml", ".gml", ".gpx"];
-const SHP_EXTS = [".shp", ".dbf", ".shx", ".prj", ".cpg"];
 
 // DuckDB's ST_Read always adds its own FID column literally named "OGC_FID"
 // (this is fixed, not configurable via open_options). If the source data
@@ -80,7 +78,7 @@ function renameCollidingOgcFid(text: string): string {
 
 // Normalized geometry expression: fid + MakeValid + Force2D + optional Transform.
 // ST_Read tags geometry with source CRS; single-arg ST_Transform infers it.
-// Parquet geometries are untagged EPSG:4326 — skip transform.
+// read_parquet tags geometry with the GeoParquet CRS; untagged GEOMETRY is taken as EPSG:4326.
 // BLOB means WKB from a GeoParquet file whose "geo" key was stripped; parse explicitly.
 // MakeValid is applied to the source before Transform so invalid input never reaches the projection.
 function loadGeomExpr(geomType: string, quotedCol: string): string {
@@ -88,11 +86,6 @@ function loadGeomExpr(geomType: string, quotedCol: string): string {
   if (geomType !== "GEOMETRY")
     return `ST_Force2D(ST_Transform(ST_MakeValid(${quotedCol}), 'EPSG:4326'))`;
   return `ST_Force2D(ST_MakeValid(${quotedCol}))`;
-}
-
-function ext(name: string): string {
-  const i = name.lastIndexOf(".");
-  return i === -1 ? "" : name.slice(i).toLowerCase();
 }
 
 function isIncluded(file: File): boolean {
@@ -184,8 +177,7 @@ export async function loadFile(
   if (group.parquet) {
     const file = group.parquet;
     const registeredName = `${prefix}${uid}_${file.name}`;
-    const buffer = removeGeoMetaKey(new Uint8Array(await file.arrayBuffer()));
-    await db.registerFileBuffer(registeredName, buffer);
+    await db.registerFileBuffer(registeredName, new Uint8Array(await file.arrayBuffer()));
     registered.push(registeredName);
     filePath = registeredName;
     isParquet = true;
@@ -231,12 +223,24 @@ export async function loadFile(
     ? `, open_options=['LIST_ALL_TABLES=NO']`
     : "";
   const readFn = isParquet ? `read_parquet(${sqlPath})` : `ST_Read(${sqlPath}${gpkgOpts})`;
-  await conn.query(`
-    CREATE OR REPLACE TABLE ${rawName} AS
-    SELECT *, row_number() OVER () AS fid FROM ${readFn}
-  `);
+  const createRaw = (fn: string) =>
+    conn.query(`
+      CREATE OR REPLACE TABLE ${rawName} AS
+      SELECT *, row_number() OVER () AS fid FROM ${fn}
+    `);
+  try {
+    await createRaw(readFn);
+  } catch (err) {
+    if (!group.parquet || !/stoi|no conversion/i.test(String(err))) throw err;
+    // registerFileBuffer transfers (detaches) the first buffer, so re-read the file.
+    const buffer = removeGeoMetaKey(new Uint8Array(await group.parquet.arrayBuffer()));
+    const strippedName = `${prefix}${uid}_nogeo_${group.parquet.name}`;
+    await db.registerFileBuffer(strippedName, buffer);
+    registered.push(strippedName);
+    await createRaw(`read_parquet('${strippedName.replace(/'/g, "''")}')`);
+  }
 
-  // Detect geometry column and _bbox columns to exclude
+  // Detect geometry column and bbox / *_bbox covering columns to exclude
   const desc = await conn.query(`DESCRIBE ${rawName}`);
   const schema = desc.toArray() as Array<{
     column_name: string;
@@ -261,7 +265,8 @@ export async function loadFile(
       (r) =>
         r.column_type.startsWith("GEOMETRY") ||
         (r.column_type === "BLOB" && r.column_name === geomCol) ||
-        (r.column_name.endsWith("_bbox") && r.column_type.startsWith("STRUCT")),
+        ((r.column_name === "bbox" || r.column_name.endsWith("_bbox")) &&
+          r.column_type.startsWith("STRUCT")),
     )
     .map((r) => JSON.stringify(r.column_name));
   const excludeSQL = excludeCols.join(", ");
@@ -292,5 +297,25 @@ export async function loadFile(
       // best-effort
     }
   }
-}
 
+  const [extent] = (
+    await conn.query(`
+      SELECT ST_XMin(e) AS xmin, ST_XMax(e) AS xmax, ST_YMin(e) AS ymin, ST_YMax(e) AS ymax
+      FROM (SELECT ST_Extent_Agg(geom) AS e FROM ${geomName})
+    `)
+  ).toArray() as Array<{
+    xmin: number | null;
+    xmax: number | null;
+    ymin: number | null;
+    ymax: number | null;
+  }>;
+  if (
+    extent &&
+    extent.xmin !== null &&
+    (extent.xmin < -180 || extent.xmax! > 180 || extent.ymin! < -90 || extent.ymax! > 90)
+  ) {
+    throw new Error(
+      "Coordinates fall outside longitude/latitude range, so the layer looks projected but has no usable CRS. Re-export it with its CRS, or reproject it to EPSG:4326.",
+    );
+  }
+}

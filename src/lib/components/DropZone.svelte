@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { unzip } from "fflate";
+  import { CSV_EXTS, SHP_EXTS, SINGLE_EXTS, extOf } from "$lib/utils/formats";
+  import { FetchLayerError, fetchLayer, parseHttpUrl } from "$lib/utils/fetchLayer";
 
   let {
     files = $bindable<File[]>([]),
@@ -7,33 +10,31 @@
     helpText = "GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)",
     disabledMessage,
     accept = "geodata",
+    urlParam,
   }: {
     files?: File[];
     disabled?: boolean;
     helpText?: string;
     disabledMessage?: string;
     accept?: "geodata" | "csv";
+    urlParam?: string;
   } = $props();
 
-  const SINGLE_EXTS = [
-    ".parquet",
-    ".geojson",
-    ".geojsonl",
-    ".gpkg",
-    ".fgb",
-    ".kml",
-    ".gml",
-    ".gpx",
-  ];
-  const SHP_EXTS = [".shp", ".dbf", ".shx", ".prj", ".cpg"];
-  const CSV_EXTS = [".csv"];
-
   let dragging = $state(false);
+  let urlText = $state("");
+  let fetching = $state(false);
+  let progress = $state<{ name: string; loaded: number; total: number | null }>({
+    name: "",
+    loaded: 0,
+    total: null,
+  });
+  let urlError = $state("");
+  let sourceHost = $state("");
+  let loadedUrl: URL | null = null;
+  let controller: AbortController | null = null;
 
-  function extOf(name: string): string {
-    const i = name.lastIndexOf(".");
-    return i === -1 ? "" : name.slice(i).toLowerCase();
-  }
+  const busy = $derived(disabled || fetching);
+  const urlValid = $derived(parseHttpUrl(urlText) !== null);
 
   function isIncluded(file: File): boolean {
     const e = extOf(file.name);
@@ -157,8 +158,90 @@
     return [];
   }
 
+  function syncUrlParam(url: URL | null) {
+    if (!urlParam) return;
+    const page = new URL(location.href);
+    if (url) page.searchParams.set(urlParam, url.href);
+    else page.searchParams.delete(urlParam);
+    history.replaceState(history.state, "", page);
+  }
+
+  function setLocalFiles(fileList: File[]) {
+    files = fileList;
+    sourceHost = "";
+    loadedUrl = null;
+    urlError = "";
+    syncUrlParam(null);
+  }
+
+  function formatMB(bytes: number): string {
+    return (bytes / 1e6).toFixed(1);
+  }
+
+  async function loadFromUrl(text: string) {
+    const url = parseHttpUrl(text);
+    if (!url || fetching) return;
+    controller = new AbortController();
+    fetching = true;
+    urlError = "";
+    progress = {
+      name: url.pathname.split("/").pop() || url.host,
+      loaded: 0,
+      total: null,
+    };
+    try {
+      const file = await fetchLayer(url, {
+        signal: controller.signal,
+        accept,
+        onProgress: (loaded, total) => {
+          progress.loaded = loaded;
+          progress.total = total;
+        },
+      });
+      const loaded = filterAndSort(await expandZips([file]));
+      if (loaded.length === 0) {
+        throw new FetchLayerError("No supported file found in the downloaded archive.");
+      }
+      files = loaded;
+      sourceHost = url.host;
+      loadedUrl = url;
+      syncUrlParam(url);
+    } catch (e) {
+      syncUrlParam(loadedUrl);
+      if (!controller.signal.aborted) {
+        urlError =
+          e instanceof FetchLayerError ? e.message : "Couldn't read the downloaded file.";
+        if (!(e instanceof FetchLayerError)) console.error("Failed to load URL:", e);
+      }
+    } finally {
+      fetching = false;
+      controller = null;
+    }
+  }
+
+  function handleUrlSubmit(event: SubmitEvent) {
+    event.preventDefault();
+    loadFromUrl(urlText);
+  }
+
+  function handleUrlPaste(event: ClipboardEvent) {
+    const text = event.clipboardData?.getData("text") ?? "";
+    if (!parseHttpUrl(text)) return;
+    event.preventDefault();
+    urlText = text.trim();
+    loadFromUrl(urlText);
+  }
+
+  onMount(() => {
+    const initial = urlParam && new URLSearchParams(location.search).get(urlParam);
+    if (initial) {
+      urlText = initial;
+      loadFromUrl(initial);
+    }
+  });
+
   function handleDragOver(event: DragEvent) {
-    if (disabled) return;
+    if (busy) return;
     event.preventDefault();
     dragging = true;
   }
@@ -170,7 +253,7 @@
 
   async function handleDrop(event: DragEvent) {
     event.preventDefault();
-    if (disabled) return;
+    if (busy) return;
     dragging = false;
     const items = Array.from(event.dataTransfer?.items ?? []);
     const entries = items
@@ -185,7 +268,17 @@
         // but not the FileSystem Entries API
         allFiles = Array.from(event.dataTransfer?.files ?? []);
       }
-      files = filterAndSort(await expandZips(allFiles));
+      if (allFiles.length === 0) {
+        const link = (event.dataTransfer?.getData("text/uri-list") ?? "")
+          .split(/\r?\n/)
+          .find((l) => l && !l.startsWith("#"));
+        if (link && parseHttpUrl(link)) {
+          urlText = link.trim();
+          await loadFromUrl(urlText);
+        }
+        return;
+      }
+      setLocalFiles(filterAndSort(await expandZips(allFiles)));
     } catch (e) {
       console.error("Failed to read dropped files:", e);
     }
@@ -193,7 +286,7 @@
 
   async function handleBrowse(event: Event) {
     const input = event.target as HTMLInputElement;
-    files = filterAndSort(await expandZips(Array.from(input.files ?? [])));
+    setLocalFiles(filterAndSort(await expandZips(Array.from(input.files ?? []))));
   }
 </script>
 
@@ -218,16 +311,45 @@
         : [...SINGLE_EXTS, ".json", ...SHP_EXTS, ".zip"].join(",")}
       multiple
       onchange={handleBrowse}
-      {disabled}
+      disabled={busy}
       class="file-input"
     />
     <span class="browse-link">or browse</span>
   </label>
+
+  {#if fetching}
+    <p class="url-status" aria-live="polite">
+      Downloading {progress.name}… {formatMB(progress.loaded)}{progress.total
+        ? ` / ${formatMB(progress.total)}`
+        : ""} MB
+      <button type="button" class="cancel-link" onclick={() => controller?.abort()}>
+        Cancel
+      </button>
+    </p>
+  {:else}
+    <form class="url-row" onsubmit={handleUrlSubmit}>
+      <input
+        type="url"
+        class="url-input"
+        placeholder="or paste a URL…"
+        aria-label="Layer URL"
+        bind:value={urlText}
+        onpaste={handleUrlPaste}
+        {disabled}
+      />
+      <button type="submit" class="url-load" disabled={disabled || !urlValid}>Load</button>
+    </form>
+  {/if}
+  {#if urlError}
+    <p class="url-error" role="alert">{urlError}</p>
+  {/if}
+
   <p class="hint">{helpText}</p>
 
   {#if files.length > 0}
     <p class="file-list">
       <span class="filenames">{summarize(files)}</span>
+      {#if sourceHost}<span class="source-host">from {sourceHost}</span>{/if}
     </p>
   {/if}
 </div>
@@ -292,5 +414,64 @@
     font-family: monospace;
     color: #111;
     word-break: break-all;
+  }
+  .source-host {
+    margin-left: 0.4rem;
+    color: #6b7280;
+  }
+  .url-row {
+    display: flex;
+    gap: 0.4rem;
+    max-width: 28rem;
+    margin: 0.6rem auto 0;
+  }
+  .url-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    background: #fff;
+  }
+  .url-input:focus {
+    outline: 2px solid #1d4ed8;
+    outline-offset: -1px;
+    border-color: #1d4ed8;
+  }
+  .url-load {
+    padding: 0.3rem 0.8rem;
+    font-size: 0.85rem;
+    border: 1px solid #1d4ed8;
+    border-radius: 4px;
+    background: #1d4ed8;
+    color: #fff;
+    cursor: pointer;
+  }
+  .url-load:disabled {
+    border-color: #d1d5db;
+    background: #e5e7eb;
+    color: #9ca3af;
+    cursor: default;
+  }
+  .url-status {
+    margin: 0.6rem 0 0;
+    font-size: 0.85rem;
+    color: #374151;
+  }
+  .cancel-link {
+    margin-left: 0.4rem;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 0.85rem;
+    color: #1d4ed8;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .url-error {
+    margin: 0.4rem 0 0;
+    font-size: 0.8rem;
+    color: #b91c1c;
   }
 </style>

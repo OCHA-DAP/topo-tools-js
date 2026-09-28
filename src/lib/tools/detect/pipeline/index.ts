@@ -69,19 +69,38 @@ export async function runDetect(
   onProgress(3, "Finding gaps & overlaps");
   const hasViolations = await hasCoverageViolations(conn, "layer_01");
   const gapOk = await buildGapRegions(conn, "dt_gap_regions", "layer_01");
-  const overlapOk = await buildOverlapRegions(conn, "dt_overlap_regions", "layer_01", hasViolations);
+  const overlapOk = await buildOverlapRegions(
+    conn,
+    "dt_overlap_regions",
+    "layer_01",
+    hasViolations,
+  );
   const failedKinds = new Set<IssueKind>();
   if (!gapOk) failedKinds.add("gap");
   if (!overlapOk) failedKinds.add("overlap");
 
   onProgress(4, "Assembling issues report");
   try {
-    const { rows, geojson, failedKinds: finalFailedKinds } = await assembleIssues(
+    const {
+      rows,
+      geojson,
+      failedKinds: finalFailedKinds,
+    } = await assembleIssues(
       conn,
-      { issuesTable: "dt_issues", gapRegionsTable: "dt_gap_regions", overlapRegionsTable: "dt_overlap_regions" },
+      {
+        issuesTable: "dt_issues",
+        gapRegionsTable: "dt_gap_regions",
+        overlapRegionsTable: "dt_overlap_regions",
+      },
       failedKinds,
     );
-    return { originalGeoJSON, bounds, issues: rows, issuesGeoJSON: geojson, failedKinds: finalFailedKinds };
+    return {
+      originalGeoJSON,
+      bounds,
+      issues: rows,
+      issuesGeoJSON: geojson,
+      failedKinds: finalFailedKinds,
+    };
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 4);
   }

@@ -13,7 +13,7 @@ export class UnionFind {
   }
 
   find(x: string): string {
-    let p = this.parent.get(x);
+    const p = this.parent.get(x);
     if (p === undefined) {
       this.add(x);
       return x;

@@ -14,14 +14,18 @@ export interface SchemaRefactorResult {
   droppedColumns: string[];
 }
 
-async function computeBounds(conn: AsyncDuckDBConnection): Promise<[number, number, number, number] | null> {
+async function computeBounds(
+  conn: AsyncDuckDBConnection,
+): Promise<[number, number, number, number] | null> {
   const r = await conn.query(`--sql
     SELECT MIN(ST_XMin(geom)) AS xmin, MIN(ST_YMin(geom)) AS ymin,
            MAX(ST_XMax(geom)) AS xmax, MAX(ST_YMax(geom)) AS ymax
     FROM layer_01 WHERE geom IS NOT NULL
   `);
   const { xmin, ymin, xmax, ymax } = r.toArray()[0] as Record<string, number>;
-  return [xmin, ymin, xmax, ymax].every((v) => Number.isFinite(v)) ? [xmin, ymin, xmax, ymax] : null;
+  return [xmin, ymin, xmax, ymax].every((v) => Number.isFinite(v))
+    ? [xmin, ymin, xmax, ymax]
+    : null;
 }
 
 // No topology gate: renaming never touches geometry, layer_01 passes through

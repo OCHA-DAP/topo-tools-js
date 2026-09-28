@@ -56,7 +56,9 @@ export async function parseCrosswalk(conn: AsyncDuckDBConnection): Promise<Cross
   const sourceColumns = crosswalk.map((r) => r.sourceColumn);
   const dupes = [...new Set(sourceColumns.filter((c, i) => sourceColumns.indexOf(c) !== i))].sort();
   if (dupes.length > 0) {
-    throw new Error(`crosswalk lists the same source_column more than once: ${JSON.stringify(dupes)}`);
+    throw new Error(
+      `crosswalk lists the same source_column more than once: ${JSON.stringify(dupes)}`,
+    );
   }
   return crosswalk;
 }

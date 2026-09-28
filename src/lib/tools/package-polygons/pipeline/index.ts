@@ -140,7 +140,9 @@ export async function runPackagePolygons(
       const attrCols = [...plan.groupBy, ...keptColumns, ...summedColumns]
         .map((c) => `"${c}"`)
         .join(", ");
-      await conn.query(`CREATE OR REPLACE TABLE ${geomTable} AS SELECT fid, geom FROM ${dissolveTable}`);
+      await conn.query(
+        `CREATE OR REPLACE TABLE ${geomTable} AS SELECT fid, geom FROM ${dissolveTable}`,
+      );
       await conn.query(
         `CREATE OR REPLACE TABLE ${attrTable} AS SELECT fid, ${attrCols} FROM ${dissolveTable}`,
       );

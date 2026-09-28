@@ -55,7 +55,11 @@ export async function buildIssues(
 ): Promise<IssuesResult> {
   return assembleIssues(
     conn,
-    { issuesTable: "tc_issues", gapRegionsTable: "tc_gap_regions", overlapRegionsTable: "tc_overlap_regions" },
+    {
+      issuesTable: "tc_issues",
+      gapRegionsTable: "tc_gap_regions",
+      overlapRegionsTable: "tc_overlap_regions",
+    },
     failedKinds,
   );
 }
