@@ -1,7 +1,12 @@
 <script lang="ts">
   import type { CrosswalkRow } from "./pipeline/index";
 
-  let { rows = [] as CrosswalkRow[] } = $props();
+  let {
+    rows = [] as CrosswalkRow[],
+    values = null,
+  }: { rows?: CrosswalkRow[]; values?: Record<string, string | null> | null } = $props();
+
+  const hasNotes = $derived(rows.some((r) => r.note));
 
   function rowClass(r: CrosswalkRow): string {
     if (r.targetColumn) return "resolved";
@@ -15,10 +20,11 @@
   <table>
     <thead>
       <tr>
-        <th>Source column</th>
-        <th>Target column</th>
-        <th>Unique count</th>
-        <th>Note</th>
+        <th class="fit">Source</th>
+        <th class="fit">Target</th>
+        <th class="fit num" title="Unique values">Unique</th>
+        {#if values}<th class="flex">Value</th>{/if}
+        {#if hasNotes}<th class="flex">Note</th>{/if}
       </tr>
     </thead>
     <tbody>
@@ -27,7 +33,10 @@
           <td>{r.sourceColumn}</td>
           <td class="target">{r.targetColumn ?? "–"}</td>
           <td class="num">{r.uniqueCount}</td>
-          <td class="note">{r.note || "–"}</td>
+          {#if values}
+            <td class="flex value" title={values[r.sourceColumn]}>{values[r.sourceColumn] ?? "–"}</td>
+          {/if}
+          {#if hasNotes}<td class="flex note" title={r.note || null}>{r.note || "–"}</td>{/if}
         </tr>
       {/each}
     </tbody>
@@ -58,6 +67,20 @@
     text-align: left;
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid #e5e7eb;
+    white-space: nowrap;
+  }
+  .fit {
+    width: 1%;
+  }
+  /* max-width: 0 stops cell content from widening the column, so it truncates instead. */
+  .flex {
+    width: 100%;
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  th.num {
+    text-align: right;
   }
   th {
     font-weight: 600;
@@ -65,7 +88,8 @@
     text-transform: uppercase;
     color: #4b5563;
   }
-  td.target {
+  td.target,
+  td.value {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   td.num {

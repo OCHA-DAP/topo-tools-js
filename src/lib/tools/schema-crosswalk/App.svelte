@@ -34,6 +34,7 @@
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let renamedCount = $state(0);
   let droppedColumns = $state<string[]>([]);
+  let selectedValues = $state<Record<string, string | null> | null>(null);
 
   let clearMap: (() => void) | undefined;
 
@@ -71,6 +72,23 @@
     resultBounds = null;
     renamedCount = 0;
     droppedColumns = [];
+    selectedValues = null;
+  }
+
+  async function inspectAt(lngLat: [number, number] | null): Promise<void> {
+    if (!lngLat) {
+      selectedValues = null;
+      return;
+    }
+    const r = await duckdbState.conn!.query(`--sql
+      SELECT a.* EXCLUDE (fid) FROM layer_01 g JOIN layer_attr a USING (fid)
+      WHERE ST_Intersects(g.geom, ST_Point(${lngLat[0]}, ${lngLat[1]}))
+      ORDER BY fid LIMIT 1
+    `);
+    const row = r.toArray()[0]?.toJSON() as Record<string, unknown> | undefined;
+    selectedValues = row
+      ? Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v == null ? null : String(v)]))
+      : null;
   }
 
   async function handleLoad(): Promise<void> {
@@ -94,10 +112,16 @@
     }
   }
 
+  // A template edit during a run queues one rerun with the latest values.
+  let rerunQueued = false;
+
   async function handleRun(): Promise<void> {
+    if (running) {
+      rerunQueued = true;
+      return;
+    }
     error = null;
     running = true;
-    resetResults();
 
     const schema: TargetSchema = { nameField, codeField };
     try {
@@ -109,11 +133,24 @@
       droppedColumns = result.refactor.droppedColumns;
       ran = true;
     } catch (e) {
+      resetResults();
       error = e instanceof Error ? e.message : String(e);
     } finally {
       running = false;
+      if (rerunQueued) {
+        rerunQueued = false;
+        handleRun();
+      }
     }
   }
+
+  $effect(() => {
+    // templateValid only flips on validity, so read both templates to reschedule on every edit.
+    void [nameField, codeField];
+    if (!loaded || !templateValid) return;
+    const timer = setTimeout(() => untrack(handleRun), 400);
+    return () => clearTimeout(timer);
+  });
 
   function fileStem(file: File): string {
     return file.name.replace(/\.[^.]+$/, "");
@@ -158,18 +195,16 @@
         <p class="field-hint">Naming templates for a resolved level's number. Defaults to a generic schema.</p>
         <label class="field">
           <span>Name template</span>
-          <input type="text" bind:value={nameField} disabled={running} />
+          <input type="text" bind:value={nameField} />
         </label>
         <label class="field">
           <span>Code template</span>
-          <input type="text" bind:value={codeField} disabled={running} />
+          <input type="text" bind:value={codeField} />
         </label>
         {#if !templateValid}
           <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
         {/if}
-        <button class="run-btn" onclick={handleRun} disabled={running || !templateValid}>
-          {running ? "Mapping…" : "Run"}
-        </button>
+        {#if running}<p class="status">Mapping…</p>{/if}
       </section>
     {/if}
 
@@ -208,34 +243,25 @@
   </aside>
 
   <div class="results-container">
-    {#if ran}
-      <div class="split">
-        <div class="split-pane">
-          <MapView
-            geojson={resultGeoJSON ?? originalGeoJSON}
-            originalGeojson={resultGeoJSON ? originalGeoJSON : null}
-            bounds={resultBounds ?? loadedBounds}
-            processing={loading || running}
-            registerClear={(fn: () => void) => {
-              clearMap = fn;
-            }}
-          />
-        </div>
-        <div class="split-pane">
-          <ResultsTable {rows} />
-        </div>
-      </div>
-    {:else}
+    <div class="map-pane">
       <MapView
-        geojson={originalGeoJSON}
-        originalGeojson={null}
-        bounds={loadedBounds}
-        processing={loading}
+        geojson={resultGeoJSON ?? originalGeoJSON}
+        originalGeojson={resultGeoJSON ? originalGeoJSON : null}
+        bounds={resultBounds ?? loadedBounds}
+        processing={loading || running}
+        onFeatureClick={inspectAt}
         registerClear={(fn: () => void) => {
           clearMap = fn;
         }}
       />
-    {/if}
+    </div>
+    <div class="table-pane">
+      {#if ran}
+        <ResultsTable {rows} values={selectedValues ?? {}} />
+      {:else}
+        <p class="table-empty">Load a layer to see its crosswalk.</p>
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -334,26 +360,6 @@
     margin: 0;
   }
 
-  .run-btn {
-    background: #1d4ed8;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 0.6rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .run-btn:hover:not(:disabled) {
-    background: #1e40af;
-  }
-
-  .run-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   @keyframes pulse {
     0%,
     100% {
@@ -389,24 +395,41 @@
   }
 
   .results-container {
+    display: grid;
+    grid-template-rows: 65% 35%;
     height: 100%;
+    min-width: 0;
     overflow: hidden;
     background: #fff;
   }
 
-  .split {
-    display: grid;
-    grid-template-rows: 1fr 1fr;
-    height: 100%;
-  }
-
-  .split-pane {
+  .map-pane {
     min-height: 0;
-    overflow: hidden;
+    position: relative;
     border-bottom: 1px solid #e5e7eb;
   }
 
-  .split-pane:last-child {
-    border-bottom: none;
+  .table-pane {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .table-empty {
+    padding: 1rem;
+    text-align: center;
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin: 0;
+  }
+
+  @media (min-width: 1280px) {
+    .results-container {
+      grid-template-rows: 1fr;
+      grid-template-columns: 1fr minmax(26rem, 35%);
+    }
+    .map-pane {
+      border-right: 1px solid #e5e7eb;
+      border-bottom: none;
+    }
   }
 </style>
