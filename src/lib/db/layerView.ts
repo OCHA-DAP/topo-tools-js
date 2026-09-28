@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { ROW_ORDER_COLUMN } from "./export";
 
 export type Bounds = [number, number, number, number];
 
@@ -17,17 +18,23 @@ export async function layerBounds(
   return b.every((v) => Number.isFinite(v)) ? b : null;
 }
 
-// Source attributes of the first loaded feature containing a point, as strings.
+// Attributes of the first feature containing a point, as strings.
 export async function attributesAt(
   conn: AsyncDuckDBConnection,
   [lng, lat]: [number, number],
+  geomTable = "layer_01",
+  attrTable = "layer_attr",
 ): Promise<Record<string, string | null> | null> {
   const r = await conn.query(`--sql
-    SELECT a.* EXCLUDE (fid) FROM layer_01 g JOIN layer_attr a USING (fid)
+    SELECT a.* EXCLUDE (fid) FROM ${geomTable} g JOIN ${attrTable} a USING (fid)
     WHERE ST_Intersects(g.geom, ST_Point(${lng}, ${lat}))
     ORDER BY fid LIMIT 1
   `);
   const row = r.toArray()[0]?.toJSON() as Record<string, unknown> | undefined;
   if (!row) return null;
-  return Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v == null ? null : String(v)]));
+  return Object.fromEntries(
+    Object.entries(row)
+      .filter(([k]) => k !== ROW_ORDER_COLUMN)
+      .map(([k, v]) => [k, v == null ? null : String(v)]),
+  );
 }

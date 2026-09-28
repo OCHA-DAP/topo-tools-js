@@ -103,6 +103,17 @@ export const tools: Tool[] = [
     },
   },
   {
+    slug: "schema-join",
+    name: "Schema Join",
+    tagline:
+      "Copy a join layer's admin hierarchy columns onto each input feature by largest overlap, keeping conflicting values as numbered siblings.",
+    iconHref: "/icons/tools/schema-join.svg",
+    demo: {
+      input: "https://data.source.coop/hdx/topo-tools/nld/demo/schema-join/nld_admin2.parquet",
+      join: "https://data.source.coop/hdx/topo-tools/nld/demo/schema-join/nld_admin1.parquet",
+    },
+  },
+  {
     slug: "schema-fill",
     name: "Schema Fill",
     tagline:

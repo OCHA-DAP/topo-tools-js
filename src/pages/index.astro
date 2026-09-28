@@ -21,6 +21,7 @@ const packagePolygons = bySlug("package-polygons");
 const packagePoints = bySlug("package-points");
 const packageLines = bySlug("package-lines");
 const schemaMap = bySlug("schema-map");
+const schemaJoin = bySlug("schema-join");
 const schemaFill = bySlug("schema-fill");
 const codeRefactor = bySlug("code-refactor");
 const codeUpdate = bySlug("code-update");
@@ -50,7 +51,8 @@ const codeUpdate = bySlug("code-update");
         >
           <GroupBox>
             <ToolCard tool={schemaMap} header />
-            <Disclosure label="Show 1 individual tool">
+            <Disclosure label="Show 2 individual tools">
+              <ToolCard tool={schemaJoin} variant="secondary" />
               <ToolCard tool={schemaFill} variant="secondary" />
             </Disclosure>
           </GroupBox>

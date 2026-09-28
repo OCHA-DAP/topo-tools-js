@@ -21,6 +21,8 @@ export type ExportSource =
   | "schema_map"
   | "schema_refactor"
   | "schema_fill"
+  | "schema_join"
+  | "schema_join_issues"
   | "package_polygons_level_0"
   | "package_polygons_level_1"
   | "package_polygons_level_2"
@@ -118,7 +120,7 @@ const KNOWN_DRIVERS: Record<string, DriverMeta> = {
   },
 };
 
-// An attrTable column that sets export row order and is itself left out.
+// A column that sets export row order and is itself left out.
 export const ROW_ORDER_COLUMN = "__row_order";
 
 interface SourceConfig {
@@ -257,6 +259,19 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: "sr_result_attr",
     suffix: "_mapped",
     kind: "spatial",
+  },
+  schema_join: {
+    table: "input_layer_01",
+    attrTable: "sj_result_attr",
+    suffix: "_join",
+    kind: "spatial",
+  },
+  schema_join_issues: {
+    table: "sj_issues",
+    attrTable: null,
+    suffix: "_issues",
+    kind: "spatial",
+    columns: ["key", "kind", "unit_a", "join_fid", "reason", "area_m2"],
   },
   schema_fill: {
     table: "layer_01",
@@ -558,18 +573,17 @@ async function buildSpatialSelect(
   if (!source.attrTable) {
     // Source carries its own props on the row. An explicit allowlist (when
     // given) takes precedence; otherwise passthrough every non-geom column.
-    let cols: string[];
-    if (source.columns) {
-      cols = source.columns.map((c) => `a.${JSON.stringify(c)}`);
-    } else {
-      const desc = await conn.query(`DESCRIBE ${source.table}`);
-      const schema = desc.toArray() as Array<{ column_name: string; column_type: string }>;
-      cols = schema
-        .filter((r) => r.column_name !== "geom")
-        .map((r) => `a.${JSON.stringify(r.column_name)}`);
-    }
+    const desc = await conn.query(`DESCRIBE ${source.table}`);
+    const schema = desc.toArray() as Array<{ column_name: string; column_type: string }>;
+    const cols = (
+      source.columns ??
+      schema.map((r) => r.column_name).filter((c) => c !== "geom" && c !== ROW_ORDER_COLUMN)
+    ).map((c) => `a.${JSON.stringify(c)}`);
     const extra = cols.length > 0 ? ", " + cols.join(", ") : "";
-    return `SELECT ${geomExpr}${extra} FROM ${source.table} AS a WHERE a.geom IS NOT NULL`;
+    const order = schema.some((r) => r.column_name === ROW_ORDER_COLUMN)
+      ? ` ORDER BY a.${ROW_ORDER_COLUMN}`
+      : "";
+    return `SELECT ${geomExpr}${extra} FROM ${source.table} AS a WHERE a.geom IS NOT NULL${order}`;
   }
   const attrDesc = await conn.query(`DESCRIBE ${source.attrTable}`);
   const attrSchema = attrDesc.toArray() as Array<{

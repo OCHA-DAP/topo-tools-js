@@ -11,6 +11,7 @@
   let {
     geojson = null,
     originalGeojson = null,
+    originalOutline = false,
     bounds = null,
     processing = false,
     registerClear = undefined,
@@ -18,6 +19,8 @@
   }: {
     geojson?: string | null;
     originalGeojson?: string | null;
+    // Draws originalGeojson as outlines above the result instead of a fill.
+    originalOutline?: boolean;
     bounds?: [number, number, number, number] | null;
     processing?: boolean;
     registerClear?: (fn: () => void) => void;
@@ -80,9 +83,13 @@
         (map.getSource("original") as GeoJSONSource).setData(oUrl);
       } else {
         map.addSource("original", { type: "geojson", data: oUrl, generateId: true });
-        map.addLayer({ id: "original-fill", type: "fill", source: "original", filter: polyFilter, paint: { "fill-color": "#8dc65a", "fill-opacity": 1 } });
-        map.addLayer({ id: "original-line", type: "line", source: "original", paint: { "line-color": "#222222", "line-width": lineWidth } });
-        addSelectedLayer("original");
+        if (originalOutline) {
+          map.addLayer({ id: "original-line", type: "line", source: "original", paint: { "line-color": "#111827", "line-width": 2 } });
+        } else {
+          map.addLayer({ id: "original-fill", type: "fill", source: "original", filter: polyFilter, paint: { "fill-color": "#8dc65a", "fill-opacity": 1 } });
+          map.addLayer({ id: "original-line", type: "line", source: "original", paint: { "line-color": "#222222", "line-width": lineWidth } });
+          addSelectedLayer("original");
+        }
       }
     }
 
@@ -100,7 +107,7 @@
     function apply() {
       if (!map) return;
       // Insert result layers below original if original is already shown
-      const before = map.getLayer("original-fill") ? "original-fill" : undefined;
+      const before = ["original-fill", "original-line"].find((l) => map?.getLayer(l));
       if (map.getSource("result")) {
         if (selected?.source === "result") clearSelection();
         (map.getSource("result") as GeoJSONSource).setData(rUrl);

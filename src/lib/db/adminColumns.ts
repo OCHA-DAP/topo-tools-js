@@ -13,6 +13,41 @@ export function fieldPrefix(template: string): string {
   return template.split("{n}")[0];
 }
 
+// Groups level columns by suffix, e.g. {"_code": {1: "adm1_code", ...}}.
+export function columnFamilies(
+  columns: string[],
+  levels: number[],
+  prefix: string,
+): Map<string, Map<number, string>> {
+  const pattern = new RegExp(`^${escapeRegExp(prefix)}(\\d+)(.*)$`);
+  const families = new Map<string, Map<number, string>>();
+  for (const column of columns) {
+    const m = pattern.exec(column);
+    if (!m) continue;
+    const level = Number(m[1]);
+    if (!levels.includes(level)) continue;
+    if (!families.has(m[2])) families.set(m[2], new Map());
+    families.get(m[2])!.set(level, column);
+  }
+  return families;
+}
+
+// Level columns under both templates' prefixes, keyed like "adm{n}_name".
+export function templateFamilies(
+  columns: string[],
+  levels: number[],
+  nameField: string,
+  codeField: string,
+): Map<string, Map<number, string>> {
+  const families = new Map<string, Map<number, string>>();
+  for (const prefix of new Set([fieldPrefix(codeField), fieldPrefix(nameField)])) {
+    for (const [suffix, perLevel] of columnFamilies(columns, levels, prefix)) {
+      families.set(`${prefix}{n}${suffix}`, perLevel);
+    }
+  }
+  return families;
+}
+
 // A column's index-th numbered sibling, `_`-separated after a trailing digit.
 export function siblingName(column: string, index: number): string {
   return /\d$/.test(column) ? `${column}_${index}` : `${column}${index}`;
