@@ -52,9 +52,10 @@ const codeUpdate = bySlug("code-update");
         >
           <GroupBox>
             <ToolCard tool={schemaCrosswalk} header />
-            <Disclosure label="Show 2 individual tools">
+            <Disclosure label="Show 3 individual tools">
               <ToolCard tool={schemaMap} variant="secondary" />
               <ToolCard tool={schemaRefactor} variant="secondary" />
+              <ToolCard tool={schemaFill} variant="secondary" />
             </Disclosure>
           </GroupBox>
         </Step>
@@ -99,8 +100,9 @@ const codeUpdate = bySlug("code-update");
         >
           <GroupBox>
             <ToolCard tool={codeUpdate} header />
-            <Disclosure label="Show 1 individual tool">
+            <Disclosure label="Show 2 individual tools">
               <ToolCard tool={codeRefactor} variant="secondary" />
+              <ToolCard tool={change} variant="secondary" />
             </Disclosure>
           </GroupBox>
         </Step>
@@ -127,14 +129,6 @@ const codeUpdate = bySlug("code-update");
           </GroupBox>
         </Step>
       </ol>
-    </section>
-
-    <section class="tools">
-      <h2 class="section-heading">Other tools</h2>
-      <Disclosure label="Show 2 more tools">
-        <ToolCard tool={change} />
-        <ToolCard tool={schemaFill} />
-      </Disclosure>
     </section>
 
     <section class="settings">
