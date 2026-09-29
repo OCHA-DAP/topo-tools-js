@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { gatedCoverageClean } from "$lib/db/coverageClean";
+import { gatedCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
 import { checkNoErosion, buildGapTable, hasMicroPolygons } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { stageCleanInput } from "./clean";
@@ -78,11 +78,7 @@ async function runValidation(
   // Each check is wrapped independently so a single failure (e.g. ST_Union_Agg
   // in the gap check OOMing on a huge result) doesn't abort the others.
   try {
-    const r = await conn.query(`--sql
-      SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL AS bad
-      FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${finalTable})
-    `);
-    if (r.toArray()[0].bad) console.warn(`OVERLAPS in ${finalTable}`);
+    if (await hasCoverageViolations(conn, finalTable)) console.warn(`OVERLAPS in ${finalTable}`);
   } catch (e) {
     console.warn("overlap check failed:", e);
   }
