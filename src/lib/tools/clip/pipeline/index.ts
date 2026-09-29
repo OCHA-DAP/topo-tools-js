@@ -1,5 +1,6 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { assignOne } from "$lib/db/assignOne";
+import { carryOverlayColumns } from "$lib/db/carryColumns";
 import { clipEngine } from "$lib/db/clipEngine";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
@@ -71,6 +72,7 @@ export async function runClip(
   overlayFiles: File[],
   onProgress: ProgressFn,
   matchColumns: MatchColumnOptions = {},
+  carryColumns: string[] = [],
 ): Promise<ClipResult> {
   onProgress(1, "Loading input");
   await loadLayers(db, conn, inputFiles, overlayFiles);
@@ -84,6 +86,11 @@ export async function runClip(
   let assign;
   try {
     assign = await assignOne(conn, matchColumns);
+  } catch (e) {
+    throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
+  }
+  try {
+    await carryOverlayColumns(conn, carryColumns, assign.overlayFid, inputColumns.all);
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
   }

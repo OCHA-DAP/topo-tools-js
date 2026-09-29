@@ -50,8 +50,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `clip` MUST produce an issues report whenever it has at least one row,
   combining every input feature dropped for not overlapping the winning overlay feature
   (`kind='unassigned'`) with every assigned input feature whose clip result came
-  out empty (`kind='clip-empty'`, `reason` `clip intersection with its
-  overlay feature was empty`), plus any `code-mismatch`/`code-fallback`
+  out empty (`kind='clip-empty'`, `reason`
+  `clip intersection with its overlay feature was empty`), plus any
+  `code-mismatch`/`code-fallback`
   row from a supplied code-based assignment override (see
   `docs/reference/shared.md`).
 
@@ -62,5 +63,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   of multiple independently-voted input files in one run).
 - `clip` MAY accept a `matchColumn` name or a
   `overlayMatchColumn`/`inputMatchColumn` pair for the code-based
-  assignment override (see `docs/adr/0029`); it has no other
-  user-configurable parameters.
+  assignment override (see `docs/adr/0029`).
+- `clip` MAY accept a list of overlay feature attribute columns to carry into
+  the output, the same contract as `mosaic`'s (see `docs/reference/mosaic.md`):
+  each joined onto every output row, under its own name, from the single
+  winning overlay feature's own attribute row. A carried column whose name
+  already exists on the input layer MUST raise.

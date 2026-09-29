@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CarryColumnsPicker from "$lib/components/CarryColumnsPicker.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -36,6 +37,7 @@
   let overlayColumns = $state<ColumnGuess | null>(null);
   let inputMatchColumn = $state<string | null>(null);
   let overlayMatchColumn = $state<string | null>(null);
+  let carryOverlayColumns = $state<string[]>([]);
 
   let clearMap: (() => void) | undefined;
 
@@ -53,6 +55,7 @@
         overlayColumns = null;
         inputMatchColumn = null;
         overlayMatchColumn = null;
+        carryOverlayColumns = [];
         handleRun();
       });
     }
@@ -64,6 +67,14 @@
     untrack(() => {
       if (!resultGeoJSON || running) return;
       if ((inputMatchColumn == null) !== (overlayMatchColumn == null)) return;
+      handleRun();
+    });
+  });
+
+  $effect(() => {
+    const _cols = carryOverlayColumns;
+    untrack(() => {
+      if (!resultGeoJSON || running) return;
       handleRun();
     });
   });
@@ -97,6 +108,7 @@
           stageLabel = label;
         },
         { overlayMatchColumn: overlayMatchColumn ?? undefined, inputMatchColumn: inputMatchColumn ?? undefined },
+        carryOverlayColumns,
       );
 
       resultGeoJSON = result.clippedGeoJSON;
@@ -207,6 +219,22 @@
             </select>
           </label>
         </div>
+      </section>
+    {/if}
+
+    {#if overlayColumns}
+      <section class="step">
+        <h2 class="step-heading">Carry overlay columns (optional)</h2>
+        <p class="hint">
+          Join the winning overlay feature's own attribute values onto every output row. A column the input layer
+          already has can't be carried.
+        </p>
+        <CarryColumnsPicker
+          overlayColumns={overlayColumns.all}
+          inputColumns={inputColumns?.all ?? []}
+          bind:selected={carryOverlayColumns}
+          disabled={running}
+        />
       </section>
     {/if}
 

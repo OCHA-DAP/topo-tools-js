@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CarryColumnsPicker from "$lib/components/CarryColumnsPicker.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -266,24 +267,12 @@
           Join the winning overlay feature's own attribute values onto every output row. A column the input layer
           already has can't be carried.
         </p>
-        <div class="carry-cols">
-          {#each overlayColumns.all as col (col)}
-            <label class="carry-field">
-              <input
-                type="checkbox"
-                checked={carryOverlayColumns.includes(col)}
-                disabled={running || inputColumns?.all.includes(col)}
-                onchange={(e) => {
-                  const checked = (e.target as HTMLInputElement).checked;
-                  carryOverlayColumns = checked
-                    ? [...carryOverlayColumns, col]
-                    : carryOverlayColumns.filter((c) => c !== col);
-                }}
-              />
-              <span>{col}</span>
-            </label>
-          {/each}
-        </div>
+        <CarryColumnsPicker
+          overlayColumns={overlayColumns.all}
+          inputColumns={inputColumns?.all ?? []}
+          bind:selected={carryOverlayColumns}
+          disabled={running}
+        />
       </section>
     {/if}
 
@@ -507,22 +496,6 @@
     font-size: 0.75rem;
     color: #b91c1c;
     margin: 0;
-  }
-
-  .carry-cols {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    max-height: 8rem;
-    overflow-y: auto;
-  }
-
-  .carry-field {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
-    color: #374151;
   }
 
   .blurb {

@@ -1,5 +1,6 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { assignOne } from "$lib/db/assignOne";
+import { carryOverlayColumns } from "$lib/db/carryColumns";
 import { clipEngine } from "$lib/db/clipEngine";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
@@ -70,7 +71,7 @@ export async function runMosaic(
   overlayFiles: File[],
   onProgress: ProgressFn,
   matchColumns: MatchColumnOptions = {},
-  carryOverlayColumns: string[] = [],
+  carryColumns: string[] = [],
   fillOptions?: ApplyFillOptions,
 ): Promise<MosaicResult> {
   onProgress(1, "Loading input");
@@ -89,22 +90,10 @@ export async function runMosaic(
     throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
   }
 
-  // Ported from topo-tools-py's carry_columns: joins the single winning
-  // overlay feature's own attribute values onto every output row, unprefixed.
-  if (carryOverlayColumns.length > 0) {
-    const clashes = carryOverlayColumns.filter((c) => inputColumns.all.includes(c));
-    if (clashes.length > 0) {
-      throw new PipelineError(
-        `Carried overlay columns already exist on the input layer: ${clashes.join(", ")}`,
-        2,
-      );
-    }
-    const selectCols = carryOverlayColumns.map((c) => `p.${JSON.stringify(c)}`).join(", ");
-    await conn.query(`--sql
-      CREATE OR REPLACE TABLE input_layer_attr AS
-      SELECT c.*, ${selectCols}
-      FROM input_layer_attr c, (SELECT * FROM overlay_layer_attr WHERE fid = ${assign.overlayFid}) p
-    `);
+  try {
+    await carryOverlayColumns(conn, carryColumns, assign.overlayFid, inputColumns.all);
+  } catch (e) {
+    throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
   }
 
   onProgress(3, "Clipping to overlay boundary");
