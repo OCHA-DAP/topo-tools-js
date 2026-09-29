@@ -32,6 +32,11 @@ const codeUpdate = bySlug("code-update");
   description="A suite of browser-only geospatial topology tools. All processing runs client-side; your files never leave your device."
 >
   <main class="page">
+    <nav class="topnav" aria-label="Related sites">
+      <a href="https://ocha-dap.github.io/topo-tools-py/">Python &amp; CLI</a>
+      <a href="https://github.com/OCHA-DAP/topo-tools-js">GitHub</a>
+    </nav>
+
     <header class="hero">
       <h1>Topology Tools</h1>
       <p class="tagline">
@@ -152,6 +157,21 @@ const codeUpdate = bySlug("code-update");
     display: flex;
     flex-direction: column;
     gap: 2.5rem;
+  }
+  .topnav {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1.25rem;
+    margin-bottom: -1.5rem;
+    font-size: 0.875rem;
+  }
+  .topnav a {
+    color: #4b5563;
+    text-decoration: none;
+  }
+  .topnav a:hover {
+    color: #111;
+    text-decoration: underline;
   }
   .hero h1 {
     font-size: 2rem;
