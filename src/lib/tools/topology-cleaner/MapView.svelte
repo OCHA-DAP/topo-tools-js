@@ -37,6 +37,7 @@
   const CLEANED_FILL = "#aad4e0"; // blue
   const OVERLAP = "#e11d48"; // red
   const GAP = "#f59e0b"; // amber
+  const MICRO = "#7c3aed"; // violet
 
   let container: HTMLDivElement | undefined;
   let map: MaplibreMap | undefined;
@@ -56,6 +57,8 @@
     OVERLAP,
     "gap",
     GAP,
+    "micro-polygon",
+    MICRO,
     "#888888",
   ] as unknown as ExpressionSpecification;
 

@@ -116,14 +116,14 @@ name instead of repeating them.
   its clipped output, `clean` again after its fix, and `package-polygons`,
   `package-points` and `package-lines` to their input.
 - Each merged or dropped part MUST be reported as a `micro-polygon` row
-  by `clip`, `stitch`, `mosaic`, `match` and `package-polygons`, with the
-  part's own fid in `unit_a`, the receiving fid in `unit_b` (null when
-  dropped), `reason` `merged into neighbouring feature` or
-  `dropped: touches no feature`, and the part itself as `geom`.
-  `package-points` and `package-lines` MUST log the count instead. `clean`
-  MUST NOT list them in its issues panel.
-- `detect` MUST report micro-polygons unfixed (see
-  `docs/reference/detect.md`).
+  by every tool that writes an issues report (`clip`, `stitch`, `mosaic`,
+  `match`, `clean` and `package-polygons`), with the part's own fid in
+  `unit_a`, the receiving fid in `unit_b` (null when dropped), `reason`
+  `merged into neighbouring feature` or `dropped: touches no feature`,
+  `fixed` true where the table has that column, and the part itself as
+  `geom`. `package-points` and `package-lines` MUST log the count instead.
+- `detect` MUST report micro-polygons unfixed, with `unit_b` and `reason`
+  null (see `docs/reference/detect.md`).
 - `schema-join` and `schema-map` MUST NOT apply this rule, since they
   never modify geometry.
 

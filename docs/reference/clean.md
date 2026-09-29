@@ -9,8 +9,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   `docs/reference/shared.md`) without correcting any topology defect first,
   so the issues stage sees the original, unmodified geometry.
 - `clean` MUST merge micro-polygons in the loaded input (see
-  `docs/reference/shared.md`) before freezing it, without listing them in
-  the issues panel.
+  `docs/reference/shared.md`) before freezing it, listing each as a fixed
+  `micro-polygon` issue.
 - `clean` MUST freeze the loaded input into an array shape once per load
   (`buildInput`) and MUST cache whether that input has any coverage
   violation (`inputHasViolations`), reusing both across every reclean
@@ -96,12 +96,13 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   or abort — an unfilled gap or a residual defect it finds is surfaced for
   display, not rejected.
 - `clean` MUST report, for every originally-detected issue, whether it
-  ended up resolved in the current cleaned output: an overlap MUST always
-  count as resolved; a gap MUST count as resolved only if a representative
+  ended up resolved in the current cleaned output: an overlap or a
+  micro-polygon MUST always count as resolved; a gap MUST count as resolved only if a representative
   interior point of the gap is now covered by some polygon in the cleaned
   output.
 - `clean` MUST merge or drop every micro-polygon left in its output,
-  including when the clean was skipped.
+  including when the clean was skipped, and MUST replace the previous
+  clean's output `micro-polygon` issues with this clean's on every reclean.
 - `clean` MUST report a collapsed-feature count (input row count minus
   surviving cleaned row count) whenever a clean or reclean runs. A feature
   removed by the micro-polygon merge MUST NOT count toward the validation

@@ -8,6 +8,7 @@ import {
   buildOverlapRegions,
   checkFixedIssues,
   resolveGapFillWidths,
+  syncOutputMicroIssues,
   type IssueKind,
   type IssueRow,
 } from "./issues";
@@ -99,8 +100,8 @@ async function computeBounds(
 
 // Re-clean at the current gap-fill mode (gapWidthM for Minimal/Thin/Manual,
 // allGaps for All — see CleanOptions). Snapping tolerance is runCoverageClean's
-// own SNAP_TOLERANCE default. Gap + overlap regions and the issues table are
-// static (built once per load) and are NOT recomputed here.
+// own SNAP_TOLERANCE default. Gap + overlap regions are static (built once per
+// load) and are NOT recomputed here; only the output's micro-polygon rows are.
 export async function recleanOnly(
   conn: AsyncDuckDBConnection,
   opts: CleanOptions,
@@ -109,6 +110,9 @@ export async function recleanOnly(
 
   await buildClean(conn, "tc_clean", gapDeg, cachedHasViolations);
   const kept = await countRows(conn, "tc_clean");
+  const issuesRes = await syncOutputMicroIssues(conn, cachedFailedKinds);
+  cachedIssues = issuesRes.rows;
+  cachedIssuesGeoJSON = issuesRes.geojson;
 
   const fixedKeys = await checkFixedIssues(conn, cachedIssues);
   const exportCheck = await verifyExport(conn);
@@ -161,8 +165,6 @@ export async function runFromLoaded(
   let exportCheck: ExportCheck;
   try {
     const issuesRes = await buildIssues(conn, failedKinds);
-    cachedIssues = issuesRes.rows;
-    cachedIssuesGeoJSON = issuesRes.geojson;
     cachedFailedKinds = issuesRes.failedKinds;
 
     const { minimalFillM } = resolveGapFillWidths(issuesRes.rows);
@@ -170,6 +172,9 @@ export async function runFromLoaded(
     await buildClean(conn, "tc_clean", metersToDegrees(minimalFillM), cachedHasViolations);
 
     const kept = await countRows(conn, "tc_clean");
+    const synced = await syncOutputMicroIssues(conn, cachedFailedKinds);
+    cachedIssues = synced.rows;
+    cachedIssuesGeoJSON = synced.geojson;
     fixedKeys = await checkFixedIssues(conn, cachedIssues);
     exportCheck = await verifyExport(conn);
     cleanedGeoJSON = await tableToGeoJSON(conn, "tc_clean", "layer_attr");

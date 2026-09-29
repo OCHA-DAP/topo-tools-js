@@ -58,6 +58,7 @@ export async function buildClean(
       CREATE OR REPLACE TABLE ${targetTable} AS
       SELECT fid, geom FROM tc_merged WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
     `);
+    await conn.query(`DROP TABLE IF EXISTS ${targetTable}_micro`);
     return;
   }
   const scratch = `${targetTable}_scratch`;
@@ -70,7 +71,6 @@ export async function buildClean(
   }
   // Catches parts the clean itself left micro, as topo-tools-py's topo-clean does.
   await mergeMicroPolygons(conn, scratch, targetTable, `${targetTable}_micro`);
-  await conn.query(`DROP TABLE IF EXISTS ${targetTable}_micro`);
   await conn.query(`DROP TABLE IF EXISTS ${scratch}`);
 }
 

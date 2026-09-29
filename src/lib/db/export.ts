@@ -165,6 +165,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
       "unit_a_area_change_m2",
       "unit_b_area_change_m2",
       "filled_area_m2",
+      "reason",
     ],
   },
   crosswalk_overlay: {

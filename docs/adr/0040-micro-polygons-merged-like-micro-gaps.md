@@ -44,6 +44,6 @@ target and issue row in `docs/reference/shared.md`.
   the same adm2 codes as Python. JS reports 197 micro-polygon rows to
   Python's 174, as the WASM clip's snap fallbacks cut slightly different
   slivers.
-- Topology Cleaner merges micro-polygons without listing them in its
-  issues panel, as topo-tools-py's `topo-clean` does.
+- Topology Cleaner lists each merged micro-polygon as a fixed issue, from
+  its input merge and from each clean's output merge.
 - The any-hole input trigger adds a whole-layer union per loaded input.
