@@ -33,7 +33,7 @@ snapping it onto the other side at `SNAP_TOLERANCE` (1e-8°). The snapped
 areas match native exact areas to within ~1e-10 of the unit's area; see
 [`docs/adr/0036`](../adr/0036-overlap-pairs-snap-fallback-on-wasm-noding-failure.md).
 
-Intersection/difference crumbs below `1e-12` deg² (~1cm²) are dropped before
+Intersection crumbs below `1e-12` deg² (~1cm²) are dropped before
 they contribute to shared area — a cheap pre-filter on raw degree² area,
 applied only to already-computed intersection geometry (not the whole
 layer). Areas and ratios use an equal-area projection so the resulting

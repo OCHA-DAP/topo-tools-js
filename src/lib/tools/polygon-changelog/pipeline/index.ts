@@ -1,7 +1,6 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { computeOverlapPairs } from "$lib/db/overlap";
 import { buildKeyed, dropPriorRun, loadSide } from "./load";
-import { stageOverlayDifferences } from "./overlay";
 import { stageClassify, REL_ORDER, REL_COLORS, type RelClass } from "./classify";
 import { stageRender, buildOverlayGeoJSON, buildOutlineGeoJSON, computeBounds } from "./render";
 import { stageTable, type TableRow } from "./table";
@@ -65,7 +64,6 @@ export async function runFromLoaded(
     stage = 3;
     onProgress(3, "Measuring overlap");
     await computeOverlapPairs(conn, "cw_a_keyed", "cw_b_keyed", "cw_pairs");
-    await stageOverlayDifferences(conn);
 
     stage = 4;
     onProgress(4, "Classifying clusters");
