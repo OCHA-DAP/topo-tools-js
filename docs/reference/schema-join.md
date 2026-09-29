@@ -56,8 +56,8 @@ any input value.
   columns `key`, `kind`, `unit_a`, `join_fid`, `reason`, `area_m2`, sorted by
   `unit_a` then `kind`, with one row per:
   - `no-overlap`: an input feature overlapping no join feature, with
-    `reason` `input feature overlaps no join feature; join columns left
-    NULL`;
+    `reason`
+    `input feature overlaps no join feature; join columns left NULL`;
   - `low-overlap`: an input feature whose assigned join feature covers less
     than the minimum overlap of its area, with `area_m2` set to the input
     feature's area outside that join feature and `reason`

@@ -20,14 +20,14 @@ Python succeeds and JS does not, so the failure itself is the parity gap.
 
 Tested per failing pair, against native `ST_Intersection` areas:
 
-| Approach | Pairs recovered | Accuracy |
-|---|---|---|
-| Intersect part-by-part (Python's `assign_many`) | 0/19 | n/a |
-| `ST_Difference` instead of `ST_Intersection` | 0/19 | n/a |
-| `ST_Covers` short-circuit | 0/19 (no failing child is fully covered) | n/a |
-| `ST_ReducePrecision` both sides, 1e-9° to 1e-7° | 19/19 | up to ~60 m² off at 1e-7° |
-| `ST_Snap(a, b, 1e-8)` then intersect, every pair | 19/19 | up to 420 m² off on the 664 pairs that never failed |
-| `ST_Snap(a, b, 1e-8)` then intersect, failing pairs only | 19/19 | within 0.009 m² (1.2e-10 of child area); plurality parent identical to native for 342/342 children |
+| Approach                                                 | Pairs recovered                          | Accuracy                                                                                           |
+| -------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Intersect part-by-part (Python's `assign_many`)          | 0/19                                     | n/a                                                                                                |
+| `ST_Difference` instead of `ST_Intersection`             | 0/19                                     | n/a                                                                                                |
+| `ST_Covers` short-circuit                                | 0/19 (no failing child is fully covered) | n/a                                                                                                |
+| `ST_ReducePrecision` both sides, 1e-9° to 1e-7°          | 19/19                                    | up to ~60 m² off at 1e-7°                                                                          |
+| `ST_Snap(a, b, 1e-8)` then intersect, every pair         | 19/19                                    | up to 420 m² off on the 664 pairs that never failed                                                |
+| `ST_Snap(a, b, 1e-8)` then intersect, failing pairs only | 19/19                                    | within 0.009 m² (1.2e-10 of child area); plurality parent identical to native for 342/342 children |
 
 Changelog's earlier point-sampling fallback (commit `0672282`) predates any
 `ST_Snap` use in this repo, so snapping was never tried for this failure.

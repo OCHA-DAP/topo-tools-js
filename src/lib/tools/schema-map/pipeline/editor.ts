@@ -1,9 +1,5 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import {
-  runSchemaMap,
-  type CrosswalkRow,
-  type TargetSchema,
-} from "./index";
+import { runSchemaMap, type CrosswalkRow, type TargetSchema } from "./index";
 import { writeCrosswalkTable } from "./outputs";
 import {
   loadCrosswalkCsv,
@@ -33,7 +29,8 @@ export interface EditableRow extends CrosswalkRow {
 // Schema Refactor's target rules per row, plus a kept column with no target name.
 export function rowIssues(rows: EditableRow[]): Map<string, string> {
   const issues = targetIssues(rows);
-  for (const r of rows) if (r.keep && !r.targetColumn) issues.set(r.sourceColumn, "Target is empty");
+  for (const r of rows)
+    if (r.keep && !r.targetColumn) issues.set(r.sourceColumn, "Target is empty");
   return issues;
 }
 
