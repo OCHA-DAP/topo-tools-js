@@ -26,7 +26,7 @@
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let overlayFid = $state<number | null>(null);
   let assignedCount = $state(0);
-  let droppedAssignCount = $state(0);
+  let overlappingCount = $state(0);
   let emptyClipCount = $state(0);
   let issues = $state<ClipIssueRow[]>([]);
   let issuesGeoJSON = $state<string | null>(null);
@@ -89,7 +89,7 @@
     resultBounds = null;
     overlayFid = null;
     assignedCount = 0;
-    droppedAssignCount = 0;
+    overlappingCount = 0;
     emptyClipCount = 0;
     issues = [];
     issuesGeoJSON = null;
@@ -117,7 +117,7 @@
       resultBounds = result.bounds;
       overlayFid = result.overlayFid;
       assignedCount = result.assignedCount;
-      droppedAssignCount = result.droppedAssignCount;
+      overlappingCount = result.overlappingCount;
       emptyClipCount = result.emptyClipCount;
       issues = result.issues;
       issuesGeoJSON = result.issuesGeoJSON;
@@ -263,16 +263,14 @@
 
     {#if resultGeoJSON && overlayFid !== null}
       <section class="step">
-        <p class="info-line">Assigned to overlay feature fid {overlayFid} — {assignedCount} of {assignedCount + droppedAssignCount} input features agreed.</p>
-        {#if droppedAssignCount > 0}
-          <p class="warn-line">
-            {droppedAssignCount} input feature{droppedAssignCount === 1 ? "" : "s"} dropped — didn't overlap
-            the winning overlay unit.
-          </p>
-        {/if}
+        <p class="info-line">
+          Fitted to overlay feature fid {overlayFid}, which {overlappingCount} of {assignedCount} input
+          features overlap.
+        </p>
         {#if emptyClipCount > 0}
           <p class="warn-line">
-            {emptyClipCount} more dropped, clipped to an empty result.
+            {emptyClipCount} input feature{emptyClipCount === 1 ? " falls" : "s fall"} outside it and
+            {emptyClipCount === 1 ? "was" : "were"} clipped away, see the issues download.
           </p>
         {/if}
         {#if microCount > 0}

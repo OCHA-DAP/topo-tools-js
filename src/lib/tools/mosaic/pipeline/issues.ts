@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { assignOneDropIssuesSql } from "$lib/db/assignOne";
 import {
   CODE_FALLBACK_REASON,
   CODE_MISMATCH_REASON,
@@ -11,7 +12,7 @@ import { buildStitchIssues } from "../../stitch/pipeline/issues";
 
 export interface MosaicIssueRow {
   key: string;
-  kind: "unassigned" | "gap" | "micro-polygon" | "code-mismatch" | "code-fallback";
+  kind: "unassigned" | "clip-empty" | "gap" | "micro-polygon" | "code-mismatch" | "code-fallback";
   areaM2: number | null;
   maxWidthM: number | null;
   thinnessRatio: number | null;
@@ -38,13 +39,9 @@ export async function buildMosaicIssues(
 ): Promise<MosaicIssuesResult> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ms_unassigned AS
-    SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
-           NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m, NULL::DOUBLE AS thinness_ratio,
-           fid AS unit_a, NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason,
-           geom,
-           ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
-    FROM input_layer_01
-    WHERE fid NOT IN (SELECT fid FROM cl_clip)
+    SELECT key, kind, NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m,
+           NULL::DOUBLE AS thinness_ratio, unit_a, overlay_fid, reason, geom, xmin, ymin, xmax, ymax
+    FROM (${assignOneDropIssuesSql("cl_clip")})
   `);
 
   // Every assigned input feature shares the single run-wide assignment_method
@@ -89,11 +86,11 @@ export async function buildMosaicIssues(
   const meta = (
     await conn.query(`--sql
       SELECT key, kind, unit_a, overlay_fid, reason, xmin, ymin, xmax, ymax
-      FROM ms_issues WHERE kind IN ('unassigned', 'code-mismatch', 'code-fallback')
+      FROM ms_issues WHERE kind IN ('unassigned', 'clip-empty', 'code-mismatch', 'code-fallback')
     `)
   ).toArray() as Array<{
     key: string;
-    kind: "unassigned" | "code-mismatch" | "code-fallback";
+    kind: "unassigned" | "clip-empty" | "code-mismatch" | "code-fallback";
     unit_a: bigint | number;
     overlay_fid: bigint | number | null;
     reason: string | null;

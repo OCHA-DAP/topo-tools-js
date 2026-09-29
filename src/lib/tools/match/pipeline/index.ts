@@ -10,6 +10,7 @@ import {
   type MatchColumnOptions,
 } from "$lib/db/codeJoin";
 import { applyOptionalFill, type ApplyFillOptions } from "$lib/db/fillCompose";
+import { CLIP_EMPTY_REASON } from "$lib/db/assignOne";
 import { dropInternalTables } from "$lib/tools/edge-extender/pipeline/index";
 import { loadLayers } from "./load";
 import { computeAssignment } from "./assign";
@@ -48,6 +49,9 @@ export interface EdgeMatchResult {
   codeFallbackCount: number;
   microCount: number;
   gapCount: number;
+  clipEmptyCount: number;
+  // Assign-one only: the winner overlay feature's label.
+  assignedOverlayLabel: string | null;
   inputColumns: ColumnGuess;
   overlayColumns: ColumnGuess;
   // Geometry-only outline of the overlay layer, so the map can show it as a
@@ -59,7 +63,7 @@ export interface EdgeMatchResult {
 // code-mismatch/code-fallback per docs/adr/0045) into one exportable table.
 async function buildIssuesTable(
   conn: AsyncDuckDBConnection,
-): Promise<{ dropped: number; passthrough: number }> {
+): Promise<{ dropped: number; passthrough: number; clipEmpty: number }> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_issues AS
     SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
@@ -86,14 +90,21 @@ async function buildIssuesTable(
            a.input_fid AS unit_a, NULL, a.overlay_fid AS overlay_fid, '${CODE_FALLBACK_REASON}' AS reason, c.geom
     FROM ge_assignment a JOIN input_layer_01 c ON c.fid = a.input_fid
     WHERE a.assignment_method = 'spatial_fallback'
+    UNION ALL
+    SELECT 'clip-empty-' || unit_a AS key, 'clip-empty' AS kind,
+           unit_a, NULL, overlay_fid, '${CLIP_EMPTY_REASON}' AS reason, geom
+    FROM ge_clip_empty
   `);
-  const [droppedRes, passthroughRes] = await Promise.all([
+  await conn.query("DROP TABLE IF EXISTS ge_clip_empty");
+  const [droppedRes, passthroughRes, clipEmptyRes] = await Promise.all([
     conn.query("SELECT COUNT(*) AS n FROM ge_dropped"),
     conn.query(`SELECT COUNT(*) AS n FROM ge_issues WHERE kind = 'passthrough'`),
+    conn.query(`SELECT COUNT(*) AS n FROM ge_issues WHERE kind = 'clip-empty'`),
   ]);
   return {
     dropped: Number((droppedRes.toArray()[0] as { n: bigint | number }).n),
     passthrough: Number((passthroughRes.toArray()[0] as { n: bigint | number }).n),
+    clipEmpty: Number((clipEmptyRes.toArray()[0] as { n: bigint | number }).n),
   };
 }
 
@@ -207,13 +218,14 @@ export async function runEdgeMatch(
   matchColumns: MatchColumnOptions = {},
   passthrough = false,
   fillOptions?: ApplyFillOptions,
+  perFeature = false,
 ): Promise<EdgeMatchResult> {
   onProgress({ phase: "loading" });
   await loadLayers(db, conn, inputFiles, overlayFiles);
   const overlayOutlineGeojson = await tableToGeoJSON(conn, "overlay_layer_01", null);
 
   onProgress({ phase: "assigning" });
-  const assignment = await computeAssignment(conn, matchColumns, passthrough);
+  const assignment = await computeAssignment(conn, matchColumns, passthrough, perFeature);
 
   const nameGuess = await detectColumns(conn, "overlay_layer_attr");
   const inputColumns = await detectColumns(conn, "input_layer_attr");
@@ -233,7 +245,13 @@ export async function runEdgeMatch(
       onProgress({ phase: "group-done", groupIndex, groupTotal, result }),
   );
 
-  const { dropped: droppedCount, passthrough: passthroughCount } = await buildIssuesTable(conn);
+  const {
+    dropped: droppedCount,
+    passthrough: passthroughCount,
+    clipEmpty: clipEmptyCount,
+  } = await buildIssuesTable(conn);
+  const assignedOverlayLabel =
+    groups.find((g) => g.overlayFid === assignment.overlayFid)?.label ?? null;
 
   // A group OOM above leaves the connection poisoned for the rest of the
   // session, so attribute enrichment below may also throw. It's a
@@ -305,6 +323,8 @@ export async function runEdgeMatch(
     codeFallbackCount: assignment.codeFallbackCount,
     microCount,
     gapCount,
+    clipEmptyCount,
+    assignedOverlayLabel,
     inputColumns,
     overlayColumns,
     overlayOutlineGeojson,

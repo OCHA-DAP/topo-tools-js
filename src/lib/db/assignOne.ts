@@ -12,24 +12,44 @@ import {
 } from "./codeJoin";
 
 export interface AssignOneResult {
-  overlayFid: number;
+  // Null when no input feature overlaps any overlay feature.
+  overlayFid: number | null;
   assignedCount: number;
-  droppedCount: number;
+  // Input features overlapping the winner; the rest are assigned anyway and clip to empty.
+  overlappingCount: number;
   // Set only when a match column was supplied; see docs/adr/0045.
   assignmentMethod?: AssignmentMethod;
   spatialAgrees?: boolean | null;
 }
 
-// Ported from topo-tools-py's core/assign/_one.py assign_one, scoped to this
-// app's browser paradigm: one input upload is one majority-vote group
-// (Python's "one input file"), so there is exactly one winner overlay feature per
-// run — see docs/adr/0026. Every input feature overlapping that winner is kept;
-// every other input feature (including any that overlap a different overlay feature only) is
-// dropped, matching the reference contract's "an input feature that does not agree
-// with its file's majority-vote overlay feature MUST be dropped." Shared by clip and
-// mosaic, both of which need this same per-file majority-vote assignment
-// (mosaic's assign stage is this function called directly, per
-// topo-tools-py's own mosaic explanation doc).
+export const CLIP_EMPTY_REASON = "clip intersection with its overlay feature was empty";
+
+// Issue rows for input features missing from clipTable: 'unassigned' when no
+// winner took them, 'clip-empty' when their clip to the winner came out empty.
+export function assignOneDropIssuesSql(
+  clipTable: string,
+  microTable: string | null = null,
+): string {
+  const notMicro = microTable ? `AND a.input_fid NOT IN (SELECT unit_a FROM ${microTable})` : "";
+  return `--sql
+    SELECT 'unassigned-' || c.fid AS key, 'unassigned' AS kind,
+           c.fid AS unit_a, NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason,
+           c.geom,
+           ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
+    FROM input_layer_01 c
+    WHERE c.fid NOT IN (SELECT input_fid FROM cl_assign)
+    UNION ALL
+    SELECT 'clip-empty-' || a.input_fid AS key, 'clip-empty' AS kind,
+           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid,
+           '${CLIP_EMPTY_REASON}' AS reason,
+           c.geom,
+           ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
+    FROM cl_assign a JOIN input_layer_01 c ON c.fid = a.input_fid
+    WHERE a.input_fid NOT IN (SELECT fid FROM ${clipTable}) ${notMicro}`;
+}
+
+// Port of topo-tools-py's assign_one (py ADR 0082): every input feature goes to
+// the majority-vote winner, into cl_assign, even one that doesn't overlap it.
 export async function assignOne(
   conn: AsyncDuckDBConnection,
   matchColumns: MatchColumnOptions = {},
@@ -115,7 +135,8 @@ export async function assignOne(
 
   if (votes.length === 0) {
     await conn.query("DROP TABLE IF EXISTS cl_pairs");
-    throw new Error("No input features overlap any overlay feature — nothing to clip.");
+    await conn.query("CREATE OR REPLACE TABLE cl_assign (input_fid BIGINT, overlay_fid BIGINT)");
+    return { overlayFid: null, assignedCount: 0, overlappingCount: 0 };
   }
 
   const spatialOverlayFid = Number(votes[0].overlay_fid);
@@ -141,22 +162,20 @@ export async function assignOne(
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_assign AS
-    SELECT DISTINCT input_fid, ${overlayFid} AS overlay_fid
-    FROM cl_pairs WHERE overlay_fid = ${overlayFid}
+    SELECT fid AS input_fid, ${overlayFid}::BIGINT AS overlay_fid FROM input_layer_01
   `);
-  await conn.query("DROP TABLE IF EXISTS cl_pairs");
-
-  const [assignedRes, totalRes] = await Promise.all([
+  const [assignedRes, overlappingRes] = await Promise.all([
     conn.query("SELECT COUNT(*) AS n FROM cl_assign"),
-    conn.query("SELECT COUNT(*) AS n FROM input_layer_01"),
+    conn.query(
+      `SELECT COUNT(DISTINCT input_fid) AS n FROM cl_pairs WHERE overlay_fid = ${overlayFid}`,
+    ),
   ]);
-  const assignedCount = Number((assignedRes.toArray()[0] as { n: bigint | number }).n);
-  const totalCount = Number((totalRes.toArray()[0] as { n: bigint | number }).n);
+  await conn.query("DROP TABLE IF EXISTS cl_pairs");
 
   return {
     overlayFid,
-    assignedCount,
-    droppedCount: Math.max(0, totalCount - assignedCount),
+    assignedCount: Number((assignedRes.toArray()[0] as { n: bigint | number }).n),
+    overlappingCount: Number((overlappingRes.toArray()[0] as { n: bigint | number }).n),
     assignmentMethod,
     spatialAgrees,
   };

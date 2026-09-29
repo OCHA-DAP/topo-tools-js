@@ -19,8 +19,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   overlaps most (assign-one, distinct from `match`'s per-input-feature plurality
   assign-many — see `docs/explanation/clip.md`).
 - A tie in the vote MUST be broken by the lower overlay feature fid.
-- An input feature that does not overlap the winning overlay feature MUST be dropped
-  from the run, not clipped against a different overlay feature.
+- `clip` MUST assign every input feature to the winning overlay feature,
+  including one that does not overlap it, never to a different overlay
+  feature. Such a feature clips to empty (see Clipping).
 - If no input feature overlaps any overlay feature at all, `clip` MUST fail the run
   rather than produce an empty result.
 - `clip` MAY accept a code-based assignment override, evaluated per file
@@ -47,11 +48,11 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `clip` performs no topology hard gate on its output; that check is
   `stitch`'s job on the assembled result, not `clip`'s.
 - `clip` MUST report the winning overlay feature's fid, the count of input features
-  assigned to it, the count dropped for not overlapping it, and the count
-  dropped for clipping empty.
+  assigned to it, the count that overlap it, and the count dropped for
+  clipping empty.
 - `clip` MUST produce an issues report whenever it has at least one row,
-  combining every input feature dropped for not overlapping the winning overlay feature
-  (`kind='unassigned'`) with every assigned input feature whose clip result came
+  combining every input feature left unassigned because no overlay feature
+  won (`kind='unassigned'`) with every assigned input feature whose clip result came
   out empty (`kind='clip-empty'`, `reason`
   `clip intersection with its overlay feature was empty`), every merged
   or dropped micro-polygon (`kind='micro-polygon'`), plus any

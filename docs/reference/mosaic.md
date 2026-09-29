@@ -18,10 +18,10 @@ for rules `mosaic` shares with other tools.
 ## Assigning and clipping
 
 - `mosaic`'s assign and clip stages MUST behave exactly as `clip`'s own
-  (`docs/reference/clip.md`): assign-one majority vote, drop input features not
-  overlapping the winning overlay feature, adaptively grid-tile a large overlay feature
+  (`docs/reference/clip.md`): assign-one majority vote with every input
+  feature assigned to the winner, adaptively grid-tile a large overlay feature
   boundary, drop any assigned input feature whose clip result is empty, and fail
-  the run if zero input features were ever assigned.
+  the run if no overlay feature wins.
 
 ## Stitching
 
@@ -36,8 +36,9 @@ for rules `mosaic` shares with other tools.
   `docs/adr/0027`).
 - `mosaic` MUST export the final stitched layer.
 - `mosaic` MUST also produce a combined issues report listing every input feature
-  that never made it into the final output (kind `unassigned`, identified
-  by its own fid), every leftover gap the stitch pass's own issues check
+  that never made it into the final output, identified by its own fid (kind
+  `unassigned` when no overlay feature won, `clip-empty` when its clip came
+  out empty), every leftover gap the stitch pass's own issues check
   finds (kind `gap`), every micro-polygon the stitch pass merged or
   dropped (kind `micro-polygon`), and any `code-mismatch`/`code-fallback` rows from a
   supplied code-based assignment override (see `docs/reference/clip.md`,
