@@ -11,7 +11,9 @@ export async function carryOverlayColumns(
   if (columns.length === 0) return;
   const clashes = columns.filter((c) => inputColumns.includes(c));
   if (clashes.length > 0) {
-    throw new Error(`Carried overlay columns already exist on the input layer: ${clashes.join(", ")}`);
+    throw new Error(
+      `Carried overlay columns already exist on the input layer: ${clashes.join(", ")}`,
+    );
   }
   const selectCols = columns.map((c) => `p.${JSON.stringify(c)}`).join(", ");
   await conn.query(`--sql

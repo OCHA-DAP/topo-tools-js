@@ -87,7 +87,9 @@ export async function stageMerge(conn: AsyncDuckDBConnection): Promise<void> {
 
 async function dissolvePerFid(conn: AsyncDuckDBConnection): Promise<number> {
   const fids = (await conn.query("SELECT DISTINCT fid FROM layer_05_tmp2 ORDER BY fid")).toArray();
-  await conn.query("CREATE OR REPLACE TABLE layer_05 AS SELECT fid, geom FROM layer_05_tmp2 WHERE FALSE");
+  await conn.query(
+    "CREATE OR REPLACE TABLE layer_05 AS SELECT fid, geom FROM layer_05_tmp2 WHERE FALSE",
+  );
   let gridded = 0;
   for (const { fid } of fids) {
     const insert = (geomExpr: string) => `--sql
