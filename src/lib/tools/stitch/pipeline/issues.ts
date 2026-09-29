@@ -1,7 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { buildGapTable } from "$lib/db/coverage";
-import { degSqToM2, degToM } from "$lib/db/units";
+import { gapIssuesSql } from "$lib/db/issues";
 
 // Issues report: any interior hole left in sourceTable wider than
 // SNAP_TOLERANCE after the whole-table coverage-clean pass, plus the clean's
@@ -36,21 +35,9 @@ export async function buildStitchIssues(
 ): Promise<StitchIssuesResult> {
   await buildGapTable(conn, "st_gap_regions", sourceTable);
 
-  const areaFactor = degSqToM2(1).toExponential();
-  const widthFactor = degToM(1).toExponential();
   await conn.query(`--sql
     CREATE OR REPLACE TABLE st_issues AS
-    SELECT 'gap-' || n AS key, 'gap' AS kind,
-           ST_Area(geom) * ${areaFactor} AS area_m2,
-           (ST_MaximumInscribedCircle(geom)).radius * 2 * ${widthFactor} AS max_width_m,
-           4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2) AS thinness_ratio,
-           FALSE AS fixed,
-           NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b, NULL::VARCHAR AS reason,
-           geom,
-           ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
-    FROM st_gap_regions
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-      AND (ST_MaximumInscribedCircle(geom)).radius * 2 > ${SNAP_TOLERANCE}
+    ${gapIssuesSql("st_gap_regions")}
     UNION ALL
     SELECT key, kind, area_m2, max_width_m, NULL::DOUBLE, fixed, unit_a, unit_b, reason,
            geom, xmin, ymin, xmax, ymax

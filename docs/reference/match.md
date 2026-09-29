@@ -78,12 +78,15 @@ with other tools.
 ## Outputs
 
 - `match` MUST export the assembled, clipped result, plus a separate
-  combined export of every unassigned input feature and every input feature belonging to a
-  failed group, each tagged with which kind it is, available independently
-  of the main result export.
+  combined export of every unassigned input feature, every input feature
+  belonging to a failed group, and a `gap` row for every interior hole in
+  the final result wider than `SNAP_TOLERANCE`, each tagged with which kind
+  it is, available independently of the main result export. A residual gap
+  MUST NOT fail the run.
 - `match` MUST report, per group, whether it succeeded or failed, and MUST
-  report the total count of unassigned input features and the total count of
-  input features excluded via a failed group.
+  report the total count of unassigned input features, the total count of
+  input features excluded via a failed group, and the count of residual
+  gaps.
 - `match` MUST report the assembled result's bounding box for map fit,
   whenever the bounds are finite.
 

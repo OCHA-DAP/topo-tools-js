@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { SNAP_TOLERANCE } from "./constants";
 import { buildGapTable, buildOverlapTable, emptyRegions, isMicroSql } from "./coverage";
 import { degSqToM2, degToM } from "./units";
 
@@ -100,6 +101,25 @@ export async function buildMicroRegions(
     );
     return false;
   }
+}
+
+// Gap issue rows for regionsTable's holes wider than the noise floor, as
+// topo-tools-py's gap_issues_sql.
+export function gapIssuesSql(regionsTable: string): string {
+  const areaFactor = degSqToM2(1).toExponential();
+  const widthFactor = degToM(1).toExponential();
+  return `--sql
+    SELECT 'gap-' || n AS key, 'gap' AS kind,
+           ST_Area(geom) * ${areaFactor} AS area_m2,
+           (ST_MaximumInscribedCircle(geom)).radius * 2 * ${widthFactor} AS max_width_m,
+           4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2) AS thinness_ratio,
+           FALSE AS fixed,
+           NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b, NULL::VARCHAR AS reason,
+           geom,
+           ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
+    FROM ${regionsTable}
+    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+      AND (ST_MaximumInscribedCircle(geom)).radius * 2 > ${SNAP_TOLERANCE}`;
 }
 
 export interface AssembleIssuesTables {
