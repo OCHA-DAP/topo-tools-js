@@ -50,8 +50,6 @@ export async function dropPriorRun(conn: AsyncDuckDBConnection): Promise<void> {
   const tables = [
     "cw_a_keyed",
     "cw_b_keyed",
-    "cw_a_only",
-    "cw_b_only",
     // Scratch tables from the shared overlap module (src/lib/db/overlap.ts),
     // namespaced off the "cw_pairs" output table it's called with.
     "cw_pairs_overlap",

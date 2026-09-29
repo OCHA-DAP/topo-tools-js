@@ -46,7 +46,7 @@ prefixed `cw_`) compares two versions of a polygon layer ("Version A" = old,
 - `change` MUST compute overlap via exact geometric intersection; a failure
   MUST propagate to the caller rather than falling back to an
   approximation.
-- An intersection or difference piece with area below the sliver threshold
+- An intersection piece with area below the sliver threshold
   (~1cm²) MUST be discarded before it contributes to any pair's shared area.
 - `change` MUST NOT re-run overlap measurement when only classification
   thresholds or code/name column selections change; those MUST re-use the
