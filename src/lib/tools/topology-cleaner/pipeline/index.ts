@@ -25,6 +25,8 @@ export class PipelineError extends Error {
   constructor(
     message: string,
     public readonly failedStage: number,
+    // Set when detection finished but the clean was rejected, so a reclean can retry it.
+    public readonly analysis?: AnalysisResult,
   ) {
     super(message);
     this.name = "PipelineError";
@@ -38,18 +40,21 @@ export interface CleanOptions {
   allGaps?: boolean;
 }
 
-export interface CleanResult {
+export interface AnalysisResult {
   originalGeoJSON: string;
-  cleanedGeoJSON: string;
   issues: IssueRow[];
   issuesGeoJSON: string;
   bounds: [number, number, number, number] | null;
   totalCount: number;
-  collapsedCount: number;
-  fixedKeys: Set<string>;
   // Kinds whose detection query failed (even after retry) and was degraded to
   // an empty table — a 0 count for these means "couldn't check," not "clean."
   detectionFailed: Set<IssueKind>;
+}
+
+export interface CleanResult extends AnalysisResult {
+  cleanedGeoJSON: string;
+  collapsedCount: number;
+  fixedKeys: Set<string>;
   // Independent validation of the exact table that gets exported (tc_clean),
   // run automatically on every clean/reclean. See verify.ts.
   exportCheck: ExportCheck;
@@ -159,15 +164,29 @@ export async function runFromLoaded(
   // Assemble issues (gap widths via ST_MaximumInscribedCircle), then run a
   // single ST_CoverageClean at the Minimal-mode gap width (noise-scale gaps
   // only) — the UI's default mode, so the first clean a user sees matches it.
+  try {
+    const issuesRes = await buildIssues(conn, failedKinds);
+    cachedFailedKinds = issuesRes.failedKinds;
+    cachedIssues = issuesRes.rows;
+    cachedIssuesGeoJSON = issuesRes.geojson;
+  } catch (e) {
+    throw new PipelineError(e instanceof Error ? e.message : String(e), 4);
+  }
+  const analysis: AnalysisResult = {
+    originalGeoJSON,
+    issues: cachedIssues,
+    issuesGeoJSON: cachedIssuesGeoJSON,
+    bounds,
+    totalCount,
+    detectionFailed: cachedFailedKinds,
+  };
+
   let cleanedGeoJSON: string;
   let collapsedCount: number;
   let fixedKeys: Set<string>;
   let exportCheck: ExportCheck;
   try {
-    const issuesRes = await buildIssues(conn, failedKinds);
-    cachedFailedKinds = issuesRes.failedKinds;
-
-    const { minimalFillM } = resolveGapFillWidths(issuesRes.rows);
+    const { minimalFillM } = resolveGapFillWidths(cachedIssues);
 
     await buildClean(conn, "tc_clean", metersToDegrees(minimalFillM), cachedHasViolations);
 
@@ -180,7 +199,7 @@ export async function runFromLoaded(
     cleanedGeoJSON = await tableToGeoJSON(conn, "tc_clean", "layer_attr");
     collapsedCount = Math.max(0, totalCount - kept);
   } catch (e) {
-    throw new PipelineError(e instanceof Error ? e.message : String(e), 4);
+    throw new PipelineError(e instanceof Error ? e.message : String(e), 4, analysis);
   }
 
   return {

@@ -118,3 +118,6 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - Changing the gap-width slider MUST trigger only a reclean (`buildClean`
   - `checkFixedIssues` + export-check), reusing the cached input freeze
     and the cached issues list, never re-running gap/overlap detection.
+- The gap-fill mode controls, the issues table, and the input map MUST be
+  available once gap/overlap detection finishes, including when the first
+  clean is rejected, so a reclean at another mode or width can retry it.
