@@ -1,6 +1,7 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
-import { hasMicroPolygons, hasNoiseFloorGap } from "$lib/db/coverage";
+import { buildGapTable, hasMicroPolygons, hasNoiseFloorGap } from "$lib/db/coverage";
+import { gapIssuesSql } from "$lib/db/issues";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
 import {
@@ -46,6 +47,7 @@ export interface EdgeMatchResult {
   codeMismatchCount: number;
   codeFallbackCount: number;
   microCount: number;
+  gapCount: number;
   inputColumns: ColumnGuess;
   overlayColumns: ColumnGuess;
   // Geometry-only outline of the overlay layer, so the map can show it as a
@@ -107,6 +109,20 @@ async function appendMicroIssues(conn: AsyncDuckDBConnection): Promise<number> {
   const n = await conn.query("SELECT COUNT(*) AS n FROM ge_micro");
   await conn.query("DROP TABLE ge_micro");
   return Number((n.toArray()[0] as { n: bigint | number }).n);
+}
+
+async function appendGapIssues(conn: AsyncDuckDBConnection): Promise<number> {
+  try {
+    await buildGapTable(conn, "ge_gap_regions", "ge_results");
+    await conn.query(`--sql
+      INSERT INTO ge_issues BY NAME
+      SELECT key, kind, reason, geom FROM (${gapIssuesSql("ge_gap_regions")})
+    `);
+    const r = await conn.query("SELECT COUNT(*) AS n FROM ge_issues WHERE kind = 'gap'");
+    return Number((r.toArray()[0] as { n: bigint | number }).n);
+  } finally {
+    await conn.query("DROP TABLE IF EXISTS ge_gap_regions");
+  }
 }
 
 async function buildResultsAttrTable(conn: AsyncDuckDBConnection): Promise<void> {
@@ -271,6 +287,12 @@ export async function runEdgeMatch(
   }
 
   await runValidation(conn, "ge_results");
+  let gapCount = 0;
+  try {
+    gapCount = await appendGapIssues(conn);
+  } catch (e) {
+    console.warn("gap issues failed:", e);
+  }
 
   return {
     geojson,
@@ -282,6 +304,7 @@ export async function runEdgeMatch(
     codeMismatchCount: assignment.codeMismatchCount,
     codeFallbackCount: assignment.codeFallbackCount,
     microCount,
+    gapCount,
     inputColumns,
     overlayColumns,
     overlayOutlineGeojson,

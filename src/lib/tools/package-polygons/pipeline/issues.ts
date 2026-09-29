@@ -1,7 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { buildGapTable } from "$lib/db/coverage";
-import { degSqToM2, degToM } from "$lib/db/units";
+import { gapIssuesSql } from "$lib/db/issues";
 
 // Gap issues report per level table (a plain GROUP BY dissolve cannot itself
 // produce an overlap), plus the input's micro-polygon rows at the finest level.
@@ -30,21 +29,11 @@ export async function buildPolygonIssues(
   const issuesTable = `pp_issues_${level}`;
   await buildGapTable(conn, gapTable, sourceTable);
 
-  const areaFactor = degSqToM2(1).toExponential();
-  const widthFactor = degToM(1).toExponential();
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ${issuesTable} AS
-    SELECT 'gap-' || n AS key, 'gap' AS kind,
-           ST_Area(geom) * ${areaFactor} AS area_m2,
-           (ST_MaximumInscribedCircle(geom)).radius * 2 * ${widthFactor} AS max_width_m,
-           4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2) AS thinness_ratio,
-           FALSE AS fixed,
-           NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b,
-           geom,
-           ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
-    FROM ${gapTable}
-    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-      AND (ST_MaximumInscribedCircle(geom)).radius * 2 > ${SNAP_TOLERANCE}
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, fixed, unit_a, unit_b,
+           geom, xmin, ymin, xmax, ymax
+    FROM (${gapIssuesSql(gapTable)})
     ${
       microTable
         ? `UNION ALL
