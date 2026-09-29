@@ -20,9 +20,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   widened by `SNAP_TOLERANCE`, up to 9 further attempts, stopping at the
   first attempt with no invalid edges or after the attempt cap, whichever
   comes first.
-- The pass MUST preserve the input's fid set: a feature `ST_CoverageClean`
-  collapses to empty MUST fall back to its pre-clean geometry rather than
-  being dropped.
+- The pass MUST merge micro-polygons first (see `docs/reference/shared.md`).
+  It MUST otherwise preserve the input's fid set: a feature
+  `ST_CoverageClean` collapses to empty MUST fall back to its pre-clean
+  geometry rather than being dropped.
 
 ## Outputs
 
@@ -36,7 +37,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   `max_width_m`, and `thinness_ratio` populated and every other column
   null, in the same schema `clean`'s issues table uses. A residual gap is
   not necessarily a defect — it may be a legitimate absence — so `stitch`
-  MUST NOT raise on one, only report and warn-log it.
+  MUST NOT raise on one, only report and warn-log it. The report MUST
+  also list every merged or dropped micro-polygon as a `micro-polygon`
+  row, with `unit_a`, `unit_b` and `reason` set.
 - `stitch` MUST offer the issues report as a separate download only when
   it has at least one row.
 

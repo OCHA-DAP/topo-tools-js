@@ -1,12 +1,12 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { assignBestOverlap } from "$lib/db/assignBestOverlap";
 import {
-  buildPerChildCodeWinners,
-  combinePerChildAssignment,
+  buildPerInputCodeWinners,
+  combinePerInputAssignment,
   type MatchColumnOptions,
   resolveMatchColumns,
 } from "$lib/db/codeJoin";
-import { PASSTHROUGH_PARENT_FID } from "./groups";
+import { PASSTHROUGH_OVERLAY_FID } from "./groups";
 
 export interface AssignResult {
   groupCount: number;
@@ -16,27 +16,27 @@ export interface AssignResult {
   codeFallbackCount: number;
 }
 
-// Assigns each child to its largest-overlap parent (plurality); an optional
+// Assigns each input feature to its largest-overlap overlay feature (plurality); an optional
 // code join wins over that pick wherever it disagrees (docs/adr/0045).
 export async function computeAssignment(
   conn: AsyncDuckDBConnection,
   matchColumns: MatchColumnOptions = {},
   passthrough = false,
 ): Promise<AssignResult> {
-  await assignBestOverlap(conn, "child_layer_01", "parent_layer_01", "ge_pairs", "ge_spatial");
+  await assignBestOverlap(conn, "input_layer_01", "overlay_layer_01", "ge_pairs", "ge_spatial");
 
   const resolvedCols = resolveMatchColumns(matchColumns);
   if (resolvedCols) {
-    await buildPerChildCodeWinners(conn, {
-      childAttrTable: "child_layer_attr",
-      parentAttrTable: "parent_layer_attr",
+    await buildPerInputCodeWinners(conn, {
+      inputAttrTable: "input_layer_attr",
+      overlayAttrTable: "overlay_layer_attr",
       pairsTable: "ge_pairs",
-      pairsChildCol: "a_fid",
-      pairsParentCol: "b_fid",
+      pairsInputCol: "a_fid",
+      pairsOverlayCol: "b_fid",
       columns: resolvedCols,
       outputTable: "ge_code_winner",
     });
-    await combinePerChildAssignment(conn, {
+    await combinePerInputAssignment(conn, {
       codeWinnersTable: "ge_code_winner",
       spatialTable: "ge_spatial",
       outputTable: "ge_assignment",
@@ -45,7 +45,7 @@ export async function computeAssignment(
   } else {
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ge_assignment AS
-      SELECT child_fid, parent_fid,
+      SELECT input_fid, overlay_fid,
              NULL::VARCHAR AS assignment_method, NULL::BOOLEAN AS spatial_agrees
       FROM ge_spatial
     `);
@@ -54,16 +54,16 @@ export async function computeAssignment(
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_unassigned AS
-    SELECT fid, geom FROM child_layer_01
-    WHERE fid NOT IN (SELECT child_fid FROM ge_assignment)
+    SELECT fid, geom FROM input_layer_01
+    WHERE fid NOT IN (SELECT input_fid FROM ge_assignment)
   `);
 
-  // Opt-in: tag every zero-overlap child so it runs through the extend
+  // Opt-in: tag every zero-overlap input feature so it runs through the extend
   // pipeline unclipped, instead of only being reported as unassigned.
   if (passthrough) {
     await conn.query(`--sql
       INSERT INTO ge_assignment
-      SELECT fid AS child_fid, ${PASSTHROUGH_PARENT_FID} AS parent_fid,
+      SELECT fid AS input_fid, ${PASSTHROUGH_OVERLAY_FID} AS overlay_fid,
              NULL::VARCHAR AS assignment_method, NULL::BOOLEAN AS spatial_agrees
       FROM ge_unassigned
     `);
@@ -71,10 +71,10 @@ export async function computeAssignment(
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_groups AS
-    SELECT parent_fid, COUNT(*) AS child_count
+    SELECT overlay_fid, COUNT(*) AS input_count
     FROM ge_assignment
-    GROUP BY parent_fid
-    ORDER BY parent_fid
+    GROUP BY overlay_fid
+    ORDER BY overlay_fid
   `);
 
   const [assigned, unassigned, groups, codeStats] = await Promise.all([

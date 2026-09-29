@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/schema-join/App.svelte";
+---
+
+<Layout
+  title="Schema Join: copy parent admin columns onto child polygons in your browser"
+  description="Browser-only tool that assigns each child polygon to the parent it overlaps most and copies the parent's admin hierarchy columns onto it, keeping conflicting values as numbered siblings."
+>
+  <App client:load />
+</Layout>

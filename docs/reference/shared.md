@@ -30,8 +30,9 @@ name instead of repeating them.
   response MUST show an actionable message in the drop zone.
 - A successful URL load MUST write that URL to the page's query string
   under the drop zone's parameter name (`url`, `old`/`new`,
-  `child`/`parent`, `crosswalk`), and a local drop or browse MUST remove
-  it. Opening a page with that parameter MUST load the URL automatically.
+  `input`/`join`, `input`/`overlay`, `crosswalk`), and a local drop or browse
+  MUST remove it. Opening a page with that parameter MUST load the URL
+  automatically.
 - GeoParquet MUST be loaded via `read_parquet`, not `ST_Read`. Every other
   format MUST be loaded via `ST_Read`.
 - Exporting spatial results MUST offer GeoParquet always, plus whichever
@@ -71,18 +72,62 @@ name instead of repeating them.
   MUST NOT be treated as a gap check: it reports "no violations" both when
   a real, fully-enclosed gap exists with no overlaps, and when the input
   has collapsed to nothing.
-- The shared gap check MUST detect fully-enclosed interior holes only, in
-  the union of a layer's own geometries. An open, non-enclosed inlet
-  between two polygons MUST NOT be reported as a gap.
+- The shared gap check (`buildGapTable`) MUST detect fully-enclosed interior
+  holes only, in the union of a layer's own geometries. An open,
+  non-enclosed inlet between two polygons MUST NOT be reported as a gap.
+- When the exact union throws, the gap check MUST retry the union on
+  `ST_ReducePrecision(geom, 1e-11)` and MUST drop every resulting hole whose
+  `ST_PointOnSurface` intersects an input polygon. A retry that still throws
+  MUST propagate to the caller.
+- The shared overlap check (`buildOverlapTable`) MUST intersect every pair
+  whose interiors overlap or where one contains the other, through
+  `intersectPairs` (see Overlap measurement).
 - A "clean this derived output" pass MUST first check for a coverage
-  violation and skip `ST_CoverageClean` entirely when none is found. Every
-  caller that wants this behavior MUST go through `gatedCoverageClean`
-  rather than calling `ST_CoverageClean` directly.
-- `gatedCoverageClean` MUST preserve the input's fid set: a feature that
+  violation or a micro-polygon and skip `ST_CoverageClean` entirely when
+  neither is found. On a freshly loaded input (`match`, `code-update`,
+  `change`, `extend`), the check MUST also fire on any enclosed hole,
+  however narrow. Every caller that wants this behavior MUST go through
+  `gatedCoverageClean` rather than calling `ST_CoverageClean` directly.
+- `gatedCoverageClean` MUST preserve the input's fid set, apart from
+  features the micro-polygon merge removes: a feature that
   `ST_CoverageClean` collapses to empty MUST fall back to its pre-clean
   geometry rather than being dropped.
 - A `gatedCoverageClean` failure MUST be caught and logged, leaving the
   target table untouched, rather than propagated to the caller.
+
+## Micro-polygons (`$lib/db/coverage.ts::mergeMicroPolygons`)
+
+- A micro-polygon is any single polygon part (after splitting
+  MultiPolygons) whose maximum inscribed circle is at most
+  `SNAP_TOLERANCE` across. A wider part MUST be kept, however small its
+  area.
+- A tool that modifies geometry MUST NOT output a micro-polygon. Where it
+  finds one, it MUST merge the part into the feature whose non-micro part
+  it overlaps most once buffered by `SNAP_TOLERANCE` (ties to the lowest
+  fid, including the part's own feature), or drop it when it touches no
+  feature. A feature left with no parts MUST be removed.
+- The merge MUST measure each buffered micro part's overlap with its
+  candidate features through `intersectPairs` (see Overlap measurement),
+  with its snap and grid retries. When the set-based union that rebuilds
+  the receiving features throws, the merge MUST rebuild them one by one,
+  retrying a feature that still throws with its own parts snapped onto its
+  incoming micro parts at `SNAP_TOLERANCE`.
+- Every `buildCoverageClean` call MUST merge micro-polygons before
+  `ST_CoverageClean` runs, so `extend`, `stitch`, `match`, `mosaic`,
+  `clean` and every cleaned input apply this rule. `clip` applies it to
+  its clipped output, `clean` again after its fix, and `package-polygons`,
+  `package-points` and `package-lines` to their input.
+- Each merged or dropped part MUST be reported as a `micro-polygon` row
+  by every tool that writes an issues report (`clip`, `stitch`, `mosaic`,
+  `match`, `clean` and `package-polygons`), with the part's own fid in
+  `unit_a`, the receiving fid in `unit_b` (null when dropped), `reason`
+  `merged into neighbouring feature` or `dropped: touches no feature`,
+  `fixed` true where the table has that column, and the part itself as
+  `geom`. `package-points` and `package-lines` MUST log the count instead.
+- `detect` MUST report micro-polygons unfixed, with `unit_b` and `reason`
+  null (see `docs/reference/detect.md`).
+- `schema-join` and `schema-map` MUST NOT apply this rule, since they
+  never modify geometry.
 
 ## No-erosion guard (`$lib/db/coverage.ts::checkNoErosion`)
 
@@ -98,47 +143,62 @@ Shared by `extend` (whole-file) and `match` (per-group).
 
 ## Overlap measurement (`$lib/db/overlap.ts`)
 
-Shared by `match` (parent/child assignment) and `change` (version-to-version
-comparison).
+Shared by `match` (input/overlay assignment), `change` (version-to-version
+comparison), `code-update` (per-level classify and reparent), and
+`schema-join` (join assignment). Its pairwise intersection (`intersectPairs`)
+is also shared by assign-one, the clip engine (`clip`, `mosaic`, and `match`'s
+per-group clip) and the shared overlap check (`detect`, `clean`).
 
 - Overlap measurement MUST compute exact geometric intersection
-  (`ST_Intersection`); a failure MUST propagate to the caller rather than
-  falling back to an approximation.
-- An intersection piece with area below the sliver threshold (~1cm²) MUST
-  be discarded before it contributes to any pair's shared area.
+  (`ST_Intersection`) for every candidate pair.
+- A pair whose exact intersection throws MUST be retried once as
+  `ST_Intersection(ST_Snap(a, b, SNAP_TOLERANCE), b)`. A pair whose snapped
+  intersection also throws MUST be retried once with both sides on
+  `ST_ReducePrecision(geom, 1e-11)`. A pair that still throws MUST propagate
+  the failure to the caller.
+- Whenever any pair falls back, `intersectPairs` MUST log the number of
+  snapped and gridded pairs to the console, labelled with its caller.
+- In `computeOverlapPairs`, an intersection piece with area below the
+  sliver threshold (~1cm²) MUST be discarded before it contributes to any
+  pair's shared area. Assign-one MUST count any pair with shared area above
+  zero.
 - Area and ratio calculations (`coverage_a`, `coverage_b`, `iou`) MUST use
   an equal-area projection, not raw EPSG:4326 degree-area.
 
 ### Best-overlap plurality pick (`$lib/db/assignBestOverlap.ts`)
 
-Shared by `match` (parent/child assignment) and `code-update` (per-level
-reparent).
+Shared by `match` (input/overlay assignment), `code-update` (per-level
+reparent), and `schema-join` (join assignment).
 
-- `assignBestOverlap` MUST assign each child to the parent it shares the
-  largest overlap area with, breaking a tie by lowest parent fid.
-- A child with zero overlapping parents MUST be absent from the output
-  table entirely, not assigned a null parent.
+- `assignBestOverlap` MUST assign each input feature (`input_fid`) to the
+  overlay feature (`overlay_fid`) it shares the largest overlap area with,
+  breaking a tie by lowest overlay fid.
+- An input feature with zero overlapping overlay features MUST be absent
+  from the output table entirely, not assigned a null overlay.
 
 ## Code-based assignment override (`$lib/db/codeJoin.ts`)
 
-Shared by `match`, `mosaic`, and `clip` for parent assignment.
+Shared by `match`, `mosaic`, and `clip` for overlay assignment.
 
 - Callers MAY supply a `matchColumn` name (same column on both layers) or a
-  `parentMatchColumn`/`childMatchColumn` pair (different names), mutually
+  `overlayMatchColumn`/`inputMatchColumn` pair (different names), mutually
   exclusive with each other. Supplying only one of the pair MUST raise.
-- When supplied, an exact code join, restricted to `(child, parent)` pairs
+- When supplied, an exact code join, restricted to `(input, overlay)` pairs
   that already spatially overlap, MUST win over the default
   spatial-majority-vote assignment wherever a code match exists, even when
-  it disagrees with the spatial result. A child (or, for assign-one, a
-  whole file) whose code has no overlapping-parent match MUST fall back to
+  it disagrees with the spatial result. An input feature (or, for assign-one,
+  a whole file) whose code has no overlapping-overlay match MUST fall back to
   the spatial result (see `docs/adr/0029`).
 - The outcome MUST be recorded as `assignmentMethod: 'code' | 'spatial_fallback'`
   and `spatialAgrees: boolean | null` (`true`/`false` when the method is
   `'code'`, `null` when it's `'spatial_fallback'`).
 - A disagreement or fallback MUST surface as an issues row: `kind='code-mismatch'`
   when the code match won but disagreed with the spatial result, or
-  `kind='code-fallback'` when no code match existed. `unitA` MUST hold the
-  child's own fid, `parentFid` the winning parent's fid.
+  `kind='code-fallback'` when no code match existed, with `reason`
+  `code join picked a different overlay feature than spatial majority` or
+  `no matching code; fell back to spatial majority` respectively. `unitA`
+  MUST hold the input feature's own fid, `overlayFid` the winning overlay
+  feature's fid.
 - Omitting both parameters MUST leave assignment behavior and output schema
   unchanged for existing callers.
 

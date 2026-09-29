@@ -1,13 +1,8 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import type { TargetSchema } from "$lib/tools/schema-map/pipeline/targetSchema";
+import { columnFamilies, escapeRegExp, fieldPrefix } from "$lib/db/adminColumns";
 
-export function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function fieldPrefix(template: string): string {
-  return template.split("{n}")[0];
-}
+export { columnFamilies, escapeRegExp, fieldPrefix };
 
 export function levelPrefix(schema: TargetSchema): string {
   return fieldPrefix(schema.codeField);
@@ -52,23 +47,4 @@ export async function detectLevels(
   const result = Array.from({ length: maxLevel }, (_, i) => i + 1);
   if (columns.has(schema.codeField.replace("{n}", "0"))) result.unshift(0);
   return result;
-}
-
-// Groups level columns by suffix, e.g. {"_code": {1: "adm1_code", ...}}.
-export function columnFamilies(
-  columns: string[],
-  levels: number[],
-  prefix: string,
-): Map<string, Map<number, string>> {
-  const pattern = new RegExp(`^${escapeRegExp(prefix)}(\\d+)(.*)$`);
-  const families = new Map<string, Map<number, string>>();
-  for (const column of columns) {
-    const m = pattern.exec(column);
-    if (!m) continue;
-    const level = Number(m[1]);
-    if (!levels.includes(level)) continue;
-    if (!families.has(m[2])) families.set(m[2], new Map());
-    families.get(m[2])!.set(level, column);
-  }
-  return families;
 }

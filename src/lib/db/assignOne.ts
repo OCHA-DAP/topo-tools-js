@@ -1,7 +1,8 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
+import { bboxColumnsSql } from "./bbox";
 import { CLIP_TILE_MIN_VERTICES } from "./constants";
 import { subdivideBoundary } from "./clipTiling";
+import { intersectPairs } from "./overlap";
 import {
   type AssignmentMethod,
   type MatchColumnOptions,
@@ -11,7 +12,7 @@ import {
 } from "./codeJoin";
 
 export interface AssignOneResult {
-  parentFid: number;
+  overlayFid: number;
   assignedCount: number;
   droppedCount: number;
   // Set only when a match column was supplied; see docs/adr/0045.
@@ -20,12 +21,12 @@ export interface AssignOneResult {
 }
 
 // Ported from topo-tools-py's core/assign/_one.py assign_one, scoped to this
-// app's browser paradigm: one children upload is one majority-vote group
-// (Python's "one children file"), so there is exactly one winner parent per
-// run — see docs/adr/0026. Every child overlapping that winner is kept;
-// every other child (including any that overlap a different parent only) is
-// dropped, matching the reference contract's "a child that does not agree
-// with its file's majority-vote parent MUST be dropped." Shared by clip and
+// app's browser paradigm: one input upload is one majority-vote group
+// (Python's "one input file"), so there is exactly one winner overlay feature per
+// run — see docs/adr/0026. Every input feature overlapping that winner is kept;
+// every other input feature (including any that overlap a different overlay feature only) is
+// dropped, matching the reference contract's "an input feature that does not agree
+// with its file's majority-vote overlay feature MUST be dropped." Shared by clip and
 // mosaic, both of which need this same per-file majority-vote assignment
 // (mosaic's assign stage is this function called directly, per
 // topo-tools-py's own mosaic explanation doc).
@@ -34,137 +35,126 @@ export async function assignOne(
   matchColumns: MatchColumnOptions = {},
 ): Promise<AssignOneResult> {
   await conn.query(`--sql
-    CREATE OR REPLACE TABLE cl_child_parts AS
-    SELECT fid, part_geom, ${bboxColumnsSql("part_geom")}
-    FROM (SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM child_layer_01)
+    CREATE OR REPLACE TABLE cl_input_parts AS
+    SELECT ROW_NUMBER() OVER () AS id, fid, geom, ${bboxColumnsSql("geom")}
+    FROM (SELECT fid, UNNEST(ST_Dump(geom)).geom AS geom FROM input_layer_01)
   `);
   await conn.query(`--sql
-    CREATE OR REPLACE TABLE cl_parent_parts AS
-    SELECT ROW_NUMBER() OVER () AS part_id, fid, part_geom,
-           ST_NPoints(part_geom) AS n_points, ${bboxColumnsSql("part_geom")}
-    FROM (SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM parent_layer_01)
+    CREATE OR REPLACE TABLE cl_overlay_parts AS
+    SELECT ROW_NUMBER() OVER () AS part_id, fid, part_geom, ST_NPoints(part_geom) AS n_points
+    FROM (SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM overlay_layer_01)
   `);
 
-  // Light parent parts: bbox-prefiltered, area-weighted overlap. A part-pair
-  // that only touches (shared edge/corner, zero overlap area) contributes a
-  // zero-area row here and is filtered out below — a bare ST_Intersects
-  // boolean would otherwise count a touch-only child as a vote, unlike
-  // topo-tools-py's assign_one, which only counts shared_area > 0.
+  // Overlay pieces: light parts as-is, heavy parts grid-tiled (the same tiling
+  // clip's own clip step uses) so input features bbox-prefilter against tiles.
   await conn.query(`--sql
-    CREATE OR REPLACE TABLE cl_pairs_raw AS
-    SELECT c.fid AS child_fid, p.fid AS parent_fid,
-           ST_Area(ST_Intersection(c.part_geom, p.part_geom)) AS shared_area
-    FROM cl_child_parts c
-    JOIN cl_parent_parts p
-      ON ${bboxOverlapSql("c", "p")} AND ST_Intersects(c.part_geom, p.part_geom)
-    WHERE p.n_points < ${CLIP_TILE_MIN_VERTICES}
+    CREATE OR REPLACE TABLE cl_overlay_pieces AS
+    SELECT fid AS overlay_fid, part_geom AS geom
+    FROM cl_overlay_parts WHERE n_points < ${CLIP_TILE_MIN_VERTICES}
   `);
-
-  // Heavy parent parts: grid-tile first (same tiling clip's own clip step
-  // uses), then bbox-prefilter children against tiles instead of the raw
-  // possibly-huge part.
   const heavyParts = (
     await conn.query(`--sql
-      SELECT part_id, fid FROM cl_parent_parts WHERE n_points >= ${CLIP_TILE_MIN_VERTICES}
+      SELECT part_id, fid FROM cl_overlay_parts WHERE n_points >= ${CLIP_TILE_MIN_VERTICES}
     `)
   ).toArray() as Array<{ part_id: bigint | number; fid: bigint | number }>;
-
-  if (heavyParts.length > 0) {
+  for (const { part_id: partId, fid } of heavyParts) {
     await conn.query(`--sql
-      CREATE OR REPLACE TABLE cl_parent_tiles (
-        parent_fid BIGINT, geom GEOMETRY, xmin DOUBLE, xmax DOUBLE, ymin DOUBLE, ymax DOUBLE
-      )
+      CREATE OR REPLACE TABLE cl_heavy_src AS
+      SELECT part_geom AS geom FROM cl_overlay_parts WHERE part_id = ${partId}
     `);
-    for (const { part_id: partId, fid } of heavyParts) {
-      await conn.query(`--sql
-        CREATE OR REPLACE TABLE cl_heavy_src AS
-        SELECT part_geom AS geom FROM cl_parent_parts WHERE part_id = ${partId}
-      `);
-      await subdivideBoundary(conn, "cl_heavy_src", "geom", "cl_heavy_tiles_raw");
-      await conn.query(`--sql
-        INSERT INTO cl_parent_tiles
-        SELECT ${fid} AS parent_fid, geom, ${bboxColumnsSql("geom")} FROM cl_heavy_tiles_raw
-      `);
-    }
-    await conn.query(`--sql
-      INSERT INTO cl_pairs_raw
-      SELECT c.fid AS child_fid, t.parent_fid AS parent_fid,
-             ST_Area(ST_Intersection(c.part_geom, t.geom)) AS shared_area
-      FROM cl_child_parts c
-      JOIN cl_parent_tiles t
-        ON ${bboxOverlapSql("c", "t")} AND ST_Intersects(c.part_geom, t.geom)
-    `);
-    await conn.query("DROP TABLE IF EXISTS cl_heavy_src");
-    await conn.query("DROP TABLE IF EXISTS cl_heavy_tiles_raw");
-    await conn.query("DROP TABLE IF EXISTS cl_parent_tiles");
+    await subdivideBoundary(conn, "cl_heavy_src", "geom", "cl_heavy_tiles_raw");
+    await conn.query(
+      `INSERT INTO cl_overlay_pieces SELECT ${fid} AS overlay_fid, geom FROM cl_heavy_tiles_raw`,
+    );
   }
+  await conn.query("DROP TABLE IF EXISTS cl_heavy_src");
+  await conn.query("DROP TABLE IF EXISTS cl_heavy_tiles_raw");
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE cl_overlay_pieces AS
+    SELECT ROW_NUMBER() OVER () AS id, overlay_fid, geom, ${bboxColumnsSql("geom")}
+    FROM cl_overlay_pieces
+  `);
 
-  // Aggregate part-level areas up to one row per (child, parent) — a child
-  // with multiple parts overlapping the same parent still counts as one vote
+  // Area-weighted overlap per piece pair. A touch-only pair (shared edge or
+  // corner) has zero area and is dropped below, matching topo-tools-py's
+  // assign_one, which only counts shared_area > 0.
+  await intersectPairs(conn, "assignOne", "cl_input_parts", "cl_overlay_pieces", "cl_pairs_geom");
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE cl_pairs_raw AS
+    SELECT c.fid AS input_fid, p.overlay_fid, ST_Area(g.geom) AS shared_area
+    FROM cl_pairs_geom g
+    JOIN cl_input_parts c ON c.id = g.a_id
+    JOIN cl_overlay_pieces p ON p.id = g.b_id
+  `);
+  await conn.query("DROP TABLE IF EXISTS cl_pairs_geom");
+  await conn.query("DROP TABLE IF EXISTS cl_overlay_pieces");
+
+  // Aggregate part-level areas up to one row per (input feature, overlay feature) — an input feature
+  // with multiple parts overlapping the same overlay feature still counts as one vote
   // — and drop any pair whose total shared area is zero (touch-only).
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_pairs AS
-    SELECT child_fid, parent_fid, SUM(shared_area) AS shared_area
+    SELECT input_fid, overlay_fid, SUM(shared_area) AS shared_area
     FROM cl_pairs_raw
-    GROUP BY child_fid, parent_fid
+    GROUP BY input_fid, overlay_fid
     HAVING SUM(shared_area) > 0
   `);
   await conn.query("DROP TABLE IF EXISTS cl_pairs_raw");
 
   const votes = (
     await conn.query(`--sql
-      SELECT parent_fid, COUNT(DISTINCT child_fid) AS n_children
-      FROM cl_pairs GROUP BY parent_fid
-      ORDER BY n_children DESC, parent_fid ASC
+      SELECT overlay_fid, COUNT(DISTINCT input_fid) AS n_inputs
+      FROM cl_pairs GROUP BY overlay_fid
+      ORDER BY n_inputs DESC, overlay_fid ASC
       LIMIT 1
     `)
-  ).toArray() as Array<{ parent_fid: bigint | number; n_children: bigint | number }>;
+  ).toArray() as Array<{ overlay_fid: bigint | number; n_inputs: bigint | number }>;
 
-  await conn.query("DROP TABLE IF EXISTS cl_child_parts");
-  await conn.query("DROP TABLE IF EXISTS cl_parent_parts");
+  await conn.query("DROP TABLE IF EXISTS cl_input_parts");
+  await conn.query("DROP TABLE IF EXISTS cl_overlay_parts");
 
   if (votes.length === 0) {
     await conn.query("DROP TABLE IF EXISTS cl_pairs");
-    throw new Error("No children overlap any parent unit — nothing to clip.");
+    throw new Error("No input features overlap any overlay feature — nothing to clip.");
   }
 
-  const spatialParentFid = Number(votes[0].parent_fid);
+  const spatialOverlayFid = Number(votes[0].overlay_fid);
 
   const resolvedCols = resolveMatchColumns(matchColumns);
-  let parentFid = spatialParentFid;
+  let overlayFid = spatialOverlayFid;
   let assignmentMethod: AssignmentMethod | undefined;
   let spatialAgrees: boolean | null | undefined;
   if (resolvedCols) {
-    const codeParentFid = await pickFileCodeWinner(conn, {
-      childAttrTable: "child_layer_attr",
-      parentAttrTable: "parent_layer_attr",
+    const codeOverlayFid = await pickFileCodeWinner(conn, {
+      inputAttrTable: "input_layer_attr",
+      overlayAttrTable: "overlay_layer_attr",
       pairsTable: "cl_pairs",
-      pairsChildCol: "child_fid",
-      pairsParentCol: "parent_fid",
+      pairsInputCol: "input_fid",
+      pairsOverlayCol: "overlay_fid",
       columns: resolvedCols,
     });
-    const outcome = resolveAssignment(codeParentFid, spatialParentFid);
-    parentFid = outcome.parentFid;
+    const outcome = resolveAssignment(codeOverlayFid, spatialOverlayFid);
+    overlayFid = outcome.overlayFid;
     assignmentMethod = outcome.assignmentMethod;
     spatialAgrees = outcome.spatialAgrees;
   }
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_assign AS
-    SELECT DISTINCT child_fid, ${parentFid} AS parent_fid
-    FROM cl_pairs WHERE parent_fid = ${parentFid}
+    SELECT DISTINCT input_fid, ${overlayFid} AS overlay_fid
+    FROM cl_pairs WHERE overlay_fid = ${overlayFid}
   `);
   await conn.query("DROP TABLE IF EXISTS cl_pairs");
 
   const [assignedRes, totalRes] = await Promise.all([
     conn.query("SELECT COUNT(*) AS n FROM cl_assign"),
-    conn.query("SELECT COUNT(*) AS n FROM child_layer_01"),
+    conn.query("SELECT COUNT(*) AS n FROM input_layer_01"),
   ]);
   const assignedCount = Number((assignedRes.toArray()[0] as { n: bigint | number }).n);
   const totalCount = Number((totalRes.toArray()[0] as { n: bigint | number }).n);
 
   return {
-    parentFid,
+    overlayFid,
     assignedCount,
     droppedCount: Math.max(0, totalCount - assignedCount),
     assignmentMethod,

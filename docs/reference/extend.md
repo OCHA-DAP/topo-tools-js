@@ -8,8 +8,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `extend` MUST read the input via the shared loader (see
   `docs/reference/shared.md`).
 - If the loaded input has any coverage violation (an overlap or a
-  mismatched shared edge), `extend` MUST correct it via `gatedCoverageClean`
-  before continuing; otherwise it MUST leave the input unmodified.
+  mismatched shared edge), a micro-polygon or an enclosed hole, `extend`
+  MUST correct it via `gatedCoverageClean` before continuing; otherwise it
+  MUST leave the input unmodified. Run from `match`, `extend` MUST skip the
+  hole check, since `match` already cleaned the whole input.
 - Correcting a violation MAY shift any polygon's boundary, not just the
   violating one.
 - `extend` MUST NOT distinguish a real hole from a digitization gap at this
@@ -49,14 +51,18 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 ## Merging
 
 - Each polygon's final geometry MUST be its original geometry combined
-  with the portion of its own Voronoi extension not already covered by a
-  bounding-box-nearby original polygon.
+  with the portion of its own Voronoi extension not already covered by an
+  original polygon part that intersects the extension.
 - Before differencing, a polygon's Voronoi extension MUST be snapped
-  (`ST_Snap`, a fixed small tolerance) to the union of its bounding-box-
-  nearby neighbors, so near-but-not-quite-coincident seams from Voronoi
-  cell generation don't cause a GEOS noding failure on the subsequent
-  difference. A noding failure that survives the snap MUST propagate as a
-  normal pipeline error, not be retried.
+  (`ST_Snap`, `SNAP_TOLERANCE`) to the union of those intersecting parts, so
+  near-but-not-quite-coincident seams from Voronoi cell generation don't
+  cause a GEOS noding failure on the subsequent difference. A noding failure
+  that survives the snap MUST propagate as a normal pipeline error.
+- When the per-fid union of original and extension pieces throws, each fid
+  MUST be unioned on its own, and a fid whose union still throws MUST be
+  retried once on `ST_ReducePrecision(geom, 1e-11)`. A retry that still
+  throws MUST propagate. The number of fids unioned on the grid MUST be
+  logged to the console.
 - `extend` MUST run the shared no-erosion guard (`docs/reference/shared.md`)
   against the merged result, before the final clean pass below, comparing
   it to the loaded-and-normalized input, and MUST treat a violation as a

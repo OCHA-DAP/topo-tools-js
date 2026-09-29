@@ -1,12 +1,10 @@
 # Schema Refactor
 
-`schema-refactor` takes a crosswalk file (written by `schema-map`, likely
-hand-edited afterward) and actually renames/drops the input layer's columns.
-Splitting this from `schema-map` (`docs/explanation/schema-map.md`) gives
-schema mapping a real human-review gate: nothing is ever renamed without a
-human having seen and been able to edit the crosswalk first. Ported from
-topo-tools-py's `schema-refactor` (`docs/explanation/schema_refactor.md`
-there).
+`schema-refactor` applies a crosswalk to the loaded layer, renaming and
+dropping its columns. It is the apply step of the Schema Map tool
+(`docs/explanation/schema-map.md`), which feeds it either the crosswalk edited in
+its table or an imported crosswalk CSV. Ported from topo-tools-py's
+`schema-refactor` (`docs/explanation/schema_refactor.md` there).
 
 ## Pipeline
 
@@ -30,18 +28,25 @@ there).
    reserved-name (`fid`/`geom`/`geometry`, case-insensitive) `target_column`.
 5. **Rename** (`pipeline/rename.ts`) - one `SELECT` renames every source
    column to its `target_column` and drops any column whose `target_column`
-   is null/empty, writing `sr_result_attr`. `layer_01`'s geometry is never
-   touched or re-read; the renamed attribute table is only joined back to it
-   at preview/export time.
+   is null/empty, writing `sr_result_attr` with columns in crosswalk row
+   order (topo-tools-py ADR 0115: reordering is a row move, in a
+   spreadsheet or in Schema Map's table). `misorderedSiblings` in
+   `$lib/db/adminColumns.ts`, a port of its `core/admin_columns.py`, flags
+   the swapped-sibling case (`adm2_name1` before `adm2_name`) that template
+   ordering existed to prevent. A `__row_order` column ranks rows by the
+   deepest level's code (`canonicalOrder`'s sort column); the shared export
+   sorts by it and leaves it out, since this app runs with
+   `preserve_insertion_order = false`. `layer_01`'s
+   geometry is never touched or re-read; the renamed attribute table is
+   only joined back to it at export time.
 
 ## Crosswalk semantics
 
 A `target_column` of null/empty means "drop this column"; anything else is
 the new name to rename it to, including the column's own original name if
-the intent is simply to retain it unchanged. `schema-map` always proposes
-retaining an unmatched column under its original name rather than leaving it
-ambiguous, so an unedited crosswalk from `schema-map` never drops data;
-dropping is always an explicit edit a human makes.
+the intent is simply to retain it unchanged. `schema-map` leaves an
+unmatched column's target empty, so an unedited crosswalk drops it, as in
+topo-tools-py; keeping it is an explicit edit.
 
 ## Why this needed new CSV-input infrastructure
 

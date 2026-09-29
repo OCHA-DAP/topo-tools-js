@@ -1,10 +1,11 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
-import { gapRegionsQuery } from "$lib/db/coverage";
+import { buildGapTable } from "$lib/db/coverage";
 import { degSqToM2, degToM } from "$lib/db/units";
 
-// Gap-only issues report: any interior hole left in sourceTable wider than
-// SNAP_TOLERANCE after the whole-table coverage-clean pass. Unlike
+// Issues report: any interior hole left in sourceTable wider than
+// SNAP_TOLERANCE after the whole-table coverage-clean pass, plus the clean's
+// merged or dropped micro-polygons (st_micro). Unlike
 // topology-cleaner's issues table, stitch has no "fixed" concept (there's
 // only ever one clean pass, not a reclean loop) and no overlap rows
 // (ST_CoverageClean removes those by construction) — matches
@@ -14,6 +15,10 @@ import { degSqToM2, degToM } from "$lib/db/units";
 
 export interface StitchIssueRow {
   key: string;
+  kind: "gap" | "micro-polygon";
+  unitA: number | null;
+  unitB: number | null;
+  reason: string | null;
   areaM2: number;
   maxWidthM: number;
   thinnessRatio: number;
@@ -29,7 +34,7 @@ export async function buildStitchIssues(
   conn: AsyncDuckDBConnection,
   sourceTable: string,
 ): Promise<StitchIssuesResult> {
-  await conn.query(gapRegionsQuery("st_gap_regions", sourceTable));
+  await buildGapTable(conn, "st_gap_regions", sourceTable);
 
   const areaFactor = degSqToM2(1).toExponential();
   const widthFactor = degToM(1).toExponential();
@@ -40,20 +45,30 @@ export async function buildStitchIssues(
            (ST_MaximumInscribedCircle(geom)).radius * 2 * ${widthFactor} AS max_width_m,
            4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2) AS thinness_ratio,
            FALSE AS fixed,
-           NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b,
+           NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b, NULL::VARCHAR AS reason,
            geom,
            ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
     FROM st_gap_regions
     WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
       AND (ST_MaximumInscribedCircle(geom)).radius * 2 > ${SNAP_TOLERANCE}
+    UNION ALL
+    SELECT key, kind, area_m2, max_width_m, NULL::DOUBLE, fixed, unit_a, unit_b, reason,
+           geom, xmin, ymin, xmax, ymax
+    FROM st_micro
   `);
 
   const meta = await conn.query(`--sql
-    SELECT key, area_m2, max_width_m, thinness_ratio, xmin, ymin, xmax, ymax FROM st_issues
+    SELECT key, kind, unit_a, unit_b, reason, area_m2, max_width_m, thinness_ratio,
+           xmin, ymin, xmax, ymax
+    FROM st_issues
   `);
   const rows: StitchIssueRow[] = (
     meta.toArray() as Array<{
       key: string;
+      kind: "gap" | "micro-polygon";
+      unit_a: bigint | number | null;
+      unit_b: bigint | number | null;
+      reason: string | null;
       area_m2: number | null;
       max_width_m: number | null;
       thinness_ratio: number | null;
@@ -64,6 +79,10 @@ export async function buildStitchIssues(
     }>
   ).map((r) => ({
     key: r.key,
+    kind: r.kind,
+    unitA: r.unit_a == null ? null : Number(r.unit_a),
+    unitB: r.unit_b == null ? null : Number(r.unit_b),
+    reason: r.reason,
     areaM2: r.area_m2 ?? NaN,
     maxWidthM: r.max_width_m ?? NaN,
     thinnessRatio: r.thinness_ratio ?? NaN,
@@ -71,12 +90,17 @@ export async function buildStitchIssues(
   }));
 
   const gj = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, ST_AsGeoJSON(geom) AS _geom FROM st_issues
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, unit_b, reason,
+           ST_AsGeoJSON(geom) AS _geom
+    FROM st_issues
   `);
   const features = (
     gj.toArray() as Array<{
       key: string;
       kind: string;
+      unit_a: bigint | number | null;
+      unit_b: bigint | number | null;
+      reason: string | null;
       area_m2: number | null;
       max_width_m: number | null;
       thinness_ratio: number | null;
@@ -91,6 +115,9 @@ export async function buildStitchIssues(
       area_m2: r.area_m2,
       max_width_m: r.max_width_m,
       thinness_ratio: r.thinness_ratio,
+      unit_a: r.unit_a == null ? null : Number(r.unit_a),
+      unit_b: r.unit_b == null ? null : Number(r.unit_b),
+      reason: r.reason,
     },
   }));
 

@@ -1,21 +1,29 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import type { AssignmentMethod } from "$lib/db/codeJoin";
+import {
+  CODE_FALLBACK_REASON,
+  CODE_MISMATCH_REASON,
+  type AssignmentMethod,
+} from "$lib/db/codeJoin";
 
-// Clip's first issues report: dropped children plus code-mismatch/
-// code-fallback rows when a code join was supplied (docs/adr/0045).
+// Clip's issues report: dropped input features, merged or dropped
+// micro-polygons, and code-join rows when one was supplied (docs/adr/0045).
+
+type ClipIssueKind =
+  "unassigned" | "clip-empty" | "micro-polygon" | "code-mismatch" | "code-fallback";
 
 export interface ClipIssueRow {
   key: string;
-  kind: "unassigned" | "clip-empty" | "code-mismatch" | "code-fallback";
+  kind: ClipIssueKind;
   unitA: number;
-  parentFid: number | null;
+  unitB: number | null; // micro-polygon rows: the receiving fid, null when dropped
+  overlayFid: number | null;
   reason: string | null;
   bbox: [number, number, number, number];
 }
 
 export interface ClipIssuesResult {
   rows: ClipIssueRow[];
-  geojson: string; // FeatureCollection, props {key, kind, unit_a, parent_fid}
+  geojson: string; // FeatureCollection, props {key, kind, unit_a, unit_b, overlay_fid, reason}
 }
 
 export interface AssignmentOutcomeInfo {
@@ -32,23 +40,25 @@ export async function buildClipIssues(
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_unassigned_issues AS
     SELECT 'unassigned-' || c.fid AS key, 'unassigned' AS kind,
-           c.fid AS unit_a, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason,
+           c.fid AS unit_a, NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason,
            c.geom,
            ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
-    FROM child_layer_01 c
+    FROM input_layer_01 c
     WHERE c.fid NOT IN (SELECT fid FROM cl_clip)
-      AND c.fid NOT IN (SELECT child_fid FROM cl_assign)
+      AND c.fid NOT IN (SELECT input_fid FROM cl_assign)
     UNION ALL
-    SELECT 'clip-empty-' || a.child_fid AS key, 'clip-empty' AS kind,
-           a.child_fid AS unit_a, a.parent_fid AS parent_fid, NULL::VARCHAR AS reason,
+    SELECT 'clip-empty-' || a.input_fid AS key, 'clip-empty' AS kind,
+           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid,
+           'clip intersection with its overlay feature was empty' AS reason,
            c.geom,
            ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
-    FROM cl_assign a JOIN child_layer_01 c ON c.fid = a.child_fid
-    WHERE a.child_fid NOT IN (SELECT fid FROM cl_clip)
+    FROM cl_assign a JOIN input_layer_01 c ON c.fid = a.input_fid
+    WHERE a.input_fid NOT IN (SELECT fid FROM cl_clip)
+      AND a.input_fid NOT IN (SELECT unit_a FROM cl_micro)
   `);
 
-  // Every assigned child shares the single run-wide assignment_method
-  // (assign-one is per-file, not per-child; see docs/adr/0045).
+  // Every assigned input feature shares the single run-wide assignment_method
+  // (assign-one is per-file, not per-input-feature; see docs/adr/0045).
   const codeKind: "code-mismatch" | "code-fallback" | null =
     assignment.assignmentMethod === "code" && assignment.spatialAgrees === false
       ? "code-mismatch"
@@ -57,35 +67,42 @@ export async function buildClipIssues(
         : null;
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_code_issues AS
-    SELECT ${codeKind ? `'${codeKind}-' || a.child_fid` : "NULL::VARCHAR"} AS key,
+    SELECT ${codeKind ? `'${codeKind}-' || a.input_fid` : "NULL::VARCHAR"} AS key,
            ${codeKind ? `'${codeKind}'` : "NULL::VARCHAR"} AS kind,
-           a.child_fid AS unit_a, a.parent_fid AS parent_fid, NULL::VARCHAR AS reason,
+           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid,
+           ${codeKind === "code-mismatch" ? `'${CODE_MISMATCH_REASON}'` : codeKind === "code-fallback" ? `'${CODE_FALLBACK_REASON}'` : "NULL::VARCHAR"} AS reason,
            c.geom,
            ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
-    FROM cl_assign a JOIN child_layer_01 c ON c.fid = a.child_fid
+    FROM cl_assign a JOIN input_layer_01 c ON c.fid = a.input_fid
     WHERE ${codeKind ? "TRUE" : "FALSE"}
   `);
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_issues AS
-    SELECT key, kind, unit_a, parent_fid, reason, geom, xmin, ymin, xmax, ymax
+    SELECT key, kind, unit_a, NULL::BIGINT AS unit_b, overlay_fid, reason, geom, xmin, ymin, xmax, ymax
     FROM cl_unassigned_issues
     UNION ALL
-    SELECT key, kind, unit_a, parent_fid, reason, geom, xmin, ymin, xmax, ymax
+    SELECT key, kind, unit_a, unit_b, NULL::BIGINT, reason, geom, xmin, ymin, xmax, ymax
+    FROM cl_micro
+    UNION ALL
+    SELECT key, kind, unit_a, NULL::BIGINT, overlay_fid, reason, geom, xmin, ymin, xmax, ymax
     FROM cl_code_issues
   `);
   await conn.query("DROP TABLE IF EXISTS cl_unassigned_issues");
   await conn.query("DROP TABLE IF EXISTS cl_code_issues");
+  await conn.query("DROP TABLE IF EXISTS cl_micro");
 
   const meta = (
     await conn.query(`--sql
-      SELECT key, kind, unit_a, parent_fid, xmin, ymin, xmax, ymax FROM cl_issues
+      SELECT key, kind, unit_a, unit_b, overlay_fid, reason, xmin, ymin, xmax, ymax FROM cl_issues
     `)
   ).toArray() as Array<{
     key: string;
-    kind: "unassigned" | "clip-empty" | "code-mismatch" | "code-fallback";
+    kind: ClipIssueKind;
     unit_a: bigint | number;
-    parent_fid: bigint | number | null;
+    unit_b: bigint | number | null;
+    overlay_fid: bigint | number | null;
+    reason: string | null;
     xmin: number;
     ymin: number;
     xmax: number;
@@ -96,20 +113,23 @@ export async function buildClipIssues(
     key: r.key,
     kind: r.kind,
     unitA: Number(r.unit_a),
-    parentFid: r.parent_fid == null ? null : Number(r.parent_fid),
-    reason: null,
+    unitB: r.unit_b == null ? null : Number(r.unit_b),
+    overlayFid: r.overlay_fid == null ? null : Number(r.overlay_fid),
+    reason: r.reason,
     bbox: [r.xmin, r.ymin, r.xmax, r.ymax],
   }));
 
   const gj = await conn.query(`--sql
-    SELECT key, kind, unit_a, parent_fid, ST_AsGeoJSON(geom) AS _geom FROM cl_issues
+    SELECT key, kind, unit_a, unit_b, overlay_fid, reason, ST_AsGeoJSON(geom) AS _geom FROM cl_issues
   `);
   const features = (
     gj.toArray() as Array<{
       key: string;
       kind: string;
       unit_a: bigint | number;
-      parent_fid: bigint | number | null;
+      unit_b: bigint | number | null;
+      overlay_fid: bigint | number | null;
+      reason: string | null;
       _geom: string;
     }>
   ).map((r) => ({
@@ -119,7 +139,9 @@ export async function buildClipIssues(
       key: r.key,
       kind: r.kind,
       unit_a: Number(r.unit_a),
-      parent_fid: r.parent_fid == null ? null : Number(r.parent_fid),
+      unit_b: r.unit_b == null ? null : Number(r.unit_b),
+      overlay_fid: r.overlay_fid == null ? null : Number(r.overlay_fid),
+      reason: r.reason,
     },
   }));
 

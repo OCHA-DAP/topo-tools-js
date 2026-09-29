@@ -1,13 +1,14 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
-import { gapRegionsQuery } from "$lib/db/coverage";
+import { buildGapTable } from "$lib/db/coverage";
 import { degSqToM2, degToM } from "$lib/db/units";
 
-// Gap-only issues report per level table, same shape dissolve's own issues
-// table used; a plain GROUP BY dissolve cannot itself produce an overlap.
+// Gap issues report per level table (a plain GROUP BY dissolve cannot itself
+// produce an overlap), plus the input's micro-polygon rows at the finest level.
 
 export interface PolygonIssueRow {
   key: string;
+  kind: "gap" | "micro-polygon";
   areaM2: number;
   maxWidthM: number;
   thinnessRatio: number;
@@ -23,10 +24,11 @@ export async function buildPolygonIssues(
   conn: AsyncDuckDBConnection,
   sourceTable: string,
   level: number,
+  microTable: string | null = null,
 ): Promise<PolygonIssuesResult> {
   const gapTable = `pp_gap_regions_${level}`;
   const issuesTable = `pp_issues_${level}`;
-  await conn.query(gapRegionsQuery(gapTable, sourceTable));
+  await buildGapTable(conn, gapTable, sourceTable);
 
   const areaFactor = degSqToM2(1).toExponential();
   const widthFactor = degToM(1).toExponential();
@@ -43,14 +45,24 @@ export async function buildPolygonIssues(
     FROM ${gapTable}
     WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
       AND (ST_MaximumInscribedCircle(geom)).radius * 2 > ${SNAP_TOLERANCE}
+    ${
+      microTable
+        ? `UNION ALL
+    SELECT key, kind, area_m2, max_width_m, NULL::DOUBLE, fixed, unit_a, unit_b,
+           geom, xmin, ymin, xmax, ymax
+    FROM ${microTable}`
+        : ""
+    }
   `);
 
   const meta = await conn.query(`--sql
-    SELECT key, area_m2, max_width_m, thinness_ratio, xmin, ymin, xmax, ymax FROM ${issuesTable}
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, xmin, ymin, xmax, ymax
+    FROM ${issuesTable}
   `);
   const rows: PolygonIssueRow[] = (
     meta.toArray() as Array<{
       key: string;
+      kind: "gap" | "micro-polygon";
       area_m2: number | null;
       max_width_m: number | null;
       thinness_ratio: number | null;
@@ -61,6 +73,7 @@ export async function buildPolygonIssues(
     }>
   ).map((r) => ({
     key: r.key,
+    kind: r.kind,
     areaM2: r.area_m2 ?? NaN,
     maxWidthM: r.max_width_m ?? NaN,
     thinnessRatio: r.thinness_ratio ?? NaN,

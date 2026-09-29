@@ -32,8 +32,8 @@ async function overlapArea(conn: AsyncDuckDBConnection): Promise<number> {
 
 // Fids not adjacent to any detected gap or overlap that nonetheless vanished
 // (became empty) in the cleaned output despite having nonzero input area.
-// Defect-adjacent fids are exempt — they're expected to change or vanish as
-// part of resolving their own defect.
+// Defect-adjacent and micro-polygon fids are exempt, since resolving their
+// own defect is expected to change or remove them.
 async function collapsedUnrelatedCount(
   conn: AsyncDuckDBConnection,
   cleanTable: string,
@@ -47,6 +47,8 @@ async function collapsedUnrelatedCount(
       SELECT DISTINCT i.fid
       FROM layer_01 i, tc_gap_regions g
       WHERE g.geom IS NOT NULL AND NOT ST_IsEmpty(g.geom) AND ST_Intersects(i.geom, g.geom)
+      UNION
+      SELECT unit_a AS fid FROM tc_micro
     )
     SELECT COUNT(*) AS n
     FROM layer_01 i

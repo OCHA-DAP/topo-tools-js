@@ -54,14 +54,14 @@ export const tools: Tool[] = [
     slug: "clip",
     name: "Clip",
     tagline:
-      "Assign a children layer to its one best-overlapping parent unit by majority vote, then clip every child to that boundary.",
+      "Assign an input layer to its one best-overlapping overlay feature by majority vote, then clip every input feature to that boundary.",
     iconHref: "/icons/tools/clip.svg",
   },
   {
     slug: "mosaic",
     name: "Mosaic",
     tagline:
-      "Fit an already-extended children layer into a new parent boundary. Assign, clip, and close seams in one pass, no re-extension.",
+      "Fit an already-extended input layer into a new overlay boundary. Assign, clip, and close seams in one pass, no re-extension.",
     iconHref: "/icons/tools/mosaic.svg",
   },
   {
@@ -93,31 +93,25 @@ export const tools: Tool[] = [
     iconHref: "/icons/tools/package-lines.svg",
   },
   {
-    slug: "schema-crosswalk",
-    name: "Schema Crosswalk",
-    tagline:
-      "Infer a polygon layer's admin hierarchy crosswalk and immediately apply it, producing both the crosswalk CSV and the renamed layer in one call.",
-    iconHref: "/icons/tools/schema-crosswalk.svg",
-    demo: {
-      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema/admin2-simplified/nld_admin2.parquet",
-    },
-  },
-  {
     slug: "schema-map",
     name: "Schema Map",
     tagline:
-      "Infer a polygon layer's admin hierarchy structurally, from cardinality and containment alone, and propose a crosswalk to a target schema for review.",
+      "Infer a polygon layer's admin hierarchy crosswalk, review and edit it in place, and apply it to download the renamed layer, the crosswalk CSV, or both.",
     iconHref: "/icons/tools/schema-map.svg",
     demo: {
-      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema/admin2-simplified/nld_admin2.parquet",
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/schema-map/nld_admin2.parquet",
     },
   },
   {
-    slug: "schema-refactor",
-    name: "Schema Refactor",
+    slug: "schema-join",
+    name: "Schema Join",
     tagline:
-      "Apply a crosswalk CSV, from Schema Map or hand-edited, to rename or drop a polygon layer's columns. Geometry passes through unchanged.",
-    iconHref: "/icons/tools/schema-refactor.svg",
+      "Copy a join layer's admin hierarchy columns onto each input feature by largest overlap, keeping conflicting values as numbered siblings.",
+    iconHref: "/icons/tools/schema-join.svg",
+    demo: {
+      input: "https://data.source.coop/hdx/topo-tools/nld/demo/schema-join/nld_admin2.parquet",
+      join: "https://data.source.coop/hdx/topo-tools/nld/demo/schema-join/nld_admin1.parquet",
+    },
   },
   {
     slug: "schema-fill",

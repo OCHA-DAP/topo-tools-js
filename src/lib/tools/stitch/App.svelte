@@ -22,6 +22,8 @@
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let issues = $state<StitchIssueRow[]>([]);
   let issuesGeoJSON = $state<string | null>(null);
+  const gapCount = $derived(issues.filter((i) => i.kind === "gap").length);
+  const microCount = $derived(issues.filter((i) => i.kind === "micro-polygon").length);
   let hadResidualOverlaps = $state(false);
   let error = $state<string | null>(null);
 
@@ -244,11 +246,19 @@
       {/if}
 
       {#if resultGeoJSON && issues.length > 0}
-        <div class="issues-note">
-          {issues.length} gap{issues.length === 1 ? "" : "s"} wider than the noise floor
-          {issues.length === 1 ? "remains" : "remain"} — may be a legitimate unfilled gap, not a
-          defect.
-        </div>
+        {#if gapCount > 0}
+          <div class="issues-note">
+            {gapCount} gap{gapCount === 1 ? "" : "s"} wider than the noise floor
+            {gapCount === 1 ? "remains" : "remain"}; it may be a legitimate unfilled gap, not a
+            defect.
+          </div>
+        {/if}
+        {#if microCount > 0}
+          <div class="issues-note">
+            {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance)
+            merged into a neighbouring feature or dropped.
+          </div>
+        {/if}
         <DownloadMenu
           primaryLabel="Download Issues"
           filenameStem={fileStem(files[0])}

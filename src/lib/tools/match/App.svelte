@@ -19,10 +19,10 @@
     "Merge polygons",
   ];
 
-  type GroupRow = GroupResult | { parentFid: number; label: string; childCount: number; status: "pending" | "running" };
+  type GroupRow = GroupResult | { overlayFid: number; label: string; inputCount: number; status: "pending" | "running" };
 
-  let childFiles = $state<File[]>([]);
-  let parentFiles = $state<File[]>([]);
+  let inputFiles = $state<File[]>([]);
+  let overlayFiles = $state<File[]>([]);
   let running = $state(false);
   let phaseLabel = $state("");
   let error = $state<string | null>(null);
@@ -32,23 +32,24 @@
   let activeStage = $state(0);
 
   let resultGeoJSON = $state<string | null>(null);
-  let parentOutlineGeoJSON = $state<string | null>(null);
+  let overlayOutlineGeoJSON = $state<string | null>(null);
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let unassignedCount = $state<number | null>(null);
   let droppedCount = $state<number | null>(null);
   let passthroughCount = $state<number | null>(null);
   let codeMismatchCount = $state<number | null>(null);
   let codeFallbackCount = $state<number | null>(null);
+  let microCount = $state<number | null>(null);
   let passthrough = $state(false);
 
   // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
   // first auto-run never changes behavior, even when a plausible code column
   // exists. Repicking after a run reruns the whole pipeline, since a
-  // reassigned child can move to a different group entirely.
-  let childColumns = $state<ColumnGuess | null>(null);
-  let parentColumns = $state<ColumnGuess | null>(null);
-  let childMatchColumn = $state<string | null>(null);
-  let parentMatchColumn = $state<string | null>(null);
+  // reassigned input feature can move to a different group entirely.
+  let inputColumns = $state<ColumnGuess | null>(null);
+  let overlayColumns = $state<ColumnGuess | null>(null);
+  let inputMatchColumn = $state<string | null>(null);
+  let overlayMatchColumn = $state<string | null>(null);
 
   let fillSchema = $state(false);
   let fillNameField = $state("");
@@ -73,29 +74,29 @@
   });
 
   $effect(() => {
-    const f = childFiles;
-    const c = parentFiles;
+    const f = inputFiles;
+    const c = overlayFiles;
     if (f.length > 0 && c.length > 0 && duckdbState.ready) {
       untrack(() => {
         if (running) return;
-        childColumns = null;
-        parentColumns = null;
-        childMatchColumn = null;
-        parentMatchColumn = null;
+        inputColumns = null;
+        overlayColumns = null;
+        inputMatchColumn = null;
+        overlayMatchColumn = null;
         handleRun();
       });
     }
   });
 
   // Repicking the code-join column after the first run reruns the whole
-  // pipeline: a reassigned child can move to a different group entirely, so
+  // pipeline: a reassigned input feature can move to a different group entirely, so
   // there is no cheaper partial-recompute path here (unlike Changelog's).
   $effect(() => {
-    const _c = childMatchColumn;
-    const _p = parentMatchColumn;
+    const _c = inputMatchColumn;
+    const _p = overlayMatchColumn;
     untrack(() => {
       if (!resultGeoJSON || running) return;
-      if ((childMatchColumn == null) !== (parentMatchColumn == null)) return;
+      if ((inputMatchColumn == null) !== (overlayMatchColumn == null)) return;
       handleRun();
     });
   });
@@ -153,13 +154,14 @@
     error = null;
     running = true;
     resultGeoJSON = null;
-    parentOutlineGeoJSON = null;
+    overlayOutlineGeoJSON = null;
     resultBounds = null;
     unassignedCount = null;
     droppedCount = null;
     passthroughCount = null;
     codeMismatchCount = null;
     codeFallbackCount = null;
+    microCount = null;
     groupRows = [];
     activeGroupIndex = -1;
     activeStage = 0;
@@ -178,23 +180,24 @@
       const result = await runEdgeMatch(
         duckdbState.db!,
         duckdbState.conn!,
-        childFiles,
-        parentFiles,
+        inputFiles,
+        overlayFiles,
         onProgress,
-        { parentMatchColumn: parentMatchColumn ?? undefined, childMatchColumn: childMatchColumn ?? undefined },
+        { overlayMatchColumn: overlayMatchColumn ?? undefined, inputMatchColumn: inputMatchColumn ?? undefined },
         passthrough,
         fillOptions,
       );
       resultGeoJSON = result.geojson;
-      parentOutlineGeoJSON = result.parentOutlineGeojson;
+      overlayOutlineGeoJSON = result.overlayOutlineGeojson;
       resultBounds = result.bounds;
       unassignedCount = result.unassignedCount;
       droppedCount = result.droppedCount;
       passthroughCount = result.passthroughCount;
       codeMismatchCount = result.codeMismatchCount;
       codeFallbackCount = result.codeFallbackCount;
-      childColumns = result.childColumns;
-      parentColumns = result.parentColumns;
+      microCount = result.microCount;
+      inputColumns = result.inputColumns;
+      overlayColumns = result.overlayColumns;
       phaseLabel = "Done";
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -241,52 +244,52 @@
     {/if}
 
     <section class="step">
-      <h2 class="step-heading">Fine layer</h2>
+      <h2 class="step-heading">Input layer</h2>
       <DropZone
-        bind:files={childFiles}
-        urlParam="child"
+        bind:files={inputFiles}
+        urlParam="input"
         disabled={running}
         helpText="The layer to match and extend — any polygon set, any admin level. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />
     </section>
 
     <section class="step">
-      <h2 class="step-heading">Coarse layer</h2>
+      <h2 class="step-heading">Overlay layer</h2>
       <DropZone
-        bind:files={parentFiles}
-        urlParam="parent"
+        bind:files={overlayFiles}
+        urlParam="overlay"
         disabled={running}
         helpText="The boundary to match and clip against, one level up or many."
       />
     </section>
 
-    {#if childColumns && parentColumns}
+    {#if inputColumns && overlayColumns}
       <section class="step">
         <h2 class="step-heading">Code join (optional)</h2>
         <p class="hint">
-          Wins over spatial overlap wherever the codes agree on a parent the child overlaps at all,
+          Wins over spatial overlap wherever the codes agree on an overlay feature the input feature overlaps at all,
           falls back to spatial when no code match exists.
         </p>
         <div class="match-cols">
           <label class="match-field">
             <span>Fine code</span>
-            <select bind:value={childMatchColumn} disabled={running}>
+            <select bind:value={inputMatchColumn} disabled={running}>
               <option value={null}>(none)</option>
-              {#each childColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+              {#each inputColumns.all as col (col)}<option value={col}>{col}</option>{/each}
             </select>
           </label>
           <label class="match-field">
             <span>Coarse code</span>
-            <select bind:value={parentMatchColumn} disabled={running}>
+            <select bind:value={overlayMatchColumn} disabled={running}>
               <option value={null}>(none)</option>
-              {#each parentColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+              {#each overlayColumns.all as col (col)}<option value={col}>{col}</option>{/each}
             </select>
           </label>
         </div>
       </section>
     {/if}
 
-    {#if childColumns && parentColumns}
+    {#if inputColumns && overlayColumns}
       <section class="step">
         <h2 class="step-heading">Unmatched fine units</h2>
         <label class="passthrough-field">
@@ -354,7 +357,7 @@
                     <span class="group-dot">•</span>
                   {/if}
                   <span class="group-label">{row.label}</span>
-                  <span class="group-count">{row.childCount}</span>
+                  <span class="group-count">{row.inputCount}</span>
                 </span>
                 {#if i === activeGroupIndex && running}
                   <ol class="stages">
@@ -380,7 +383,7 @@
       <div class="error-panel">{error}</div>
     {/if}
 
-    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0)}
+    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0) || (microCount !== null && microCount > 0)}
       <div class="warn-panel">
         {#if unassignedCount !== null && unassignedCount > 0}
           <p>
@@ -399,7 +402,7 @@
         {#if codeMismatchCount !== null && codeMismatchCount > 0}
           <p>
             {codeMismatchCount} unit{codeMismatchCount === 1 ? "" : "s"} matched by code to a
-            different parent than the spatial overlap pick; the code match won.
+            different overlay than the spatial overlap pick; the code match won.
           </p>
         {/if}
         {#if codeFallbackCount !== null && codeFallbackCount > 0}
@@ -408,9 +411,15 @@
             match and fell back to the spatial pick.
           </p>
         {/if}
+        {#if microCount !== null && microCount > 0}
+          <p>
+            {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance)
+            merged into a neighbouring feature or dropped.
+          </p>
+        {/if}
         <DownloadMenu
           primaryLabel="Download issues"
-          filenameStem={fileStem(childFiles[0])}
+          filenameStem={fileStem(inputFiles[0])}
           exportSource="match_issues"
         />
       </div>
@@ -420,7 +429,7 @@
       <section class="step">
         <DownloadMenu
           primaryLabel="Download GeoJSON"
-          filenameStem={fileStem(childFiles[0])}
+          filenameStem={fileStem(inputFiles[0])}
           cachedGeoJSON={resultGeoJSON}
           exportSource="match"
         />
@@ -433,7 +442,7 @@
   <div class="map-container">
     <MapView
       resultGeojson={resultGeoJSON}
-      parentOutlineGeojson={parentOutlineGeoJSON}
+      overlayOutlineGeojson={overlayOutlineGeoJSON}
       bounds={resultBounds}
       processing={running}
     />

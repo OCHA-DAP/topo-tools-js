@@ -34,7 +34,13 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   from the output.
 - Every other source column MUST be renamed to its `target_column`.
 - The geometry column MUST always pass through unchanged, regardless of
-  the crosswalk.
+  the crosswalk, and MUST be the first output column.
+- Output columns MUST follow the crosswalk's row order, after geometry.
+  When a column's numbered siblings (`adm2_name1`, `adm2_name2`) don't
+  follow it in numeric order, Schema Map MUST warn, without reordering.
+- Output rows MUST be sorted by the deepest level's code column (NULLs
+  last, then input order). With no code-template column, rows MUST keep
+  input order and Schema Map MUST say so.
 
 ## Outputs
 
@@ -47,4 +53,6 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 ## Configuration
 
 - `schema-refactor` MUST process exactly one input layer and one crosswalk
-  CSV per run.
+  per run, either edited in Schema Map's table or loaded from a CSV.
+- `schema-refactor` MUST sort rows by the same `name_field`/`code_field`
+  templates `schema-map` inferred with. The templates set row order only.

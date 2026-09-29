@@ -4,6 +4,7 @@ import { tableToGeoJSON } from "$lib/db/geojson";
 import {
   assembleIssues,
   buildGapRegions,
+  buildMicroRegions,
   buildOverlapRegions,
   type IssueKind,
   type IssueRow,
@@ -54,7 +55,7 @@ async function computeBounds(
   return null;
 }
 
-// Read-only scan of layer_01 for gap/overlap defects — detect never modifies
+// Read-only scan of layer_01 for gap/overlap/micro-polygon defects; detect never modifies
 // geometry, it only reports (see docs/reference/detect.md). Overlap detection
 // is skipped (reported as zero) whenever the input already has no coverage
 // violations, matching topology-cleaner's own has-violations pre-check.
@@ -75,9 +76,11 @@ export async function runDetect(
     "layer_01",
     hasViolations,
   );
+  const microOk = await buildMicroRegions(conn, "dt_micro_regions", "layer_01");
   const failedKinds = new Set<IssueKind>();
   if (!gapOk) failedKinds.add("gap");
   if (!overlapOk) failedKinds.add("overlap");
+  if (!microOk) failedKinds.add("micro-polygon");
 
   onProgress(4, "Assembling issues report");
   try {
@@ -91,6 +94,7 @@ export async function runDetect(
         issuesTable: "dt_issues",
         gapRegionsTable: "dt_gap_regions",
         overlapRegionsTable: "dt_overlap_regions",
+        microRegionsTable: "dt_micro_regions",
       },
       failedKinds,
     );

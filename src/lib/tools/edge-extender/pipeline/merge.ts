@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { bboxColumnsSql, bboxOverlapSql } from "$lib/db/bbox";
-import { SNAP_TOLERANCE } from "$lib/db/constants";
+import { NODING_FALLBACK_GRID, SNAP_TOLERANCE } from "$lib/db/constants";
 
 export async function stageMerge(conn: AsyncDuckDBConnection): Promise<void> {
   // Per-part layer_01 with bbox columns. Parts (not whole multi-part fids) keep
@@ -36,6 +36,7 @@ export async function stageMerge(conn: AsyncDuckDBConnection): Promise<void> {
       FROM v
       JOIN layer_05_tmp1 p
         ON ${bboxOverlapSql("v", "p")}
+       AND ST_Intersects(p.part_geom, v.geom)
       GROUP BY v.fid
     ),
     snapped AS (
@@ -66,14 +67,41 @@ export async function stageMerge(conn: AsyncDuckDBConnection): Promise<void> {
   // Dissolve original + extension pieces to one row per fid via a direct
   // polygon union — a boundary+node+ST_BuildArea reconstruction was tried
   // instead but could invert a real polygon into a spurious interior hole.
-  await conn.query(`--sql
-    CREATE OR REPLACE TABLE layer_05 AS
-    SELECT fid, ST_Union_Agg(geom) AS geom
-    FROM layer_05_tmp2
-    GROUP BY fid
-  `);
+  try {
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE layer_05 AS
+      SELECT fid, ST_Union_Agg(geom) AS geom
+      FROM layer_05_tmp2
+      GROUP BY fid
+    `);
+  } catch (e) {
+    console.warn(`merge union failed; retrying failing fids on a ${NODING_FALLBACK_GRID} grid:`, e);
+    const gridded = await dissolvePerFid(conn);
+    console.warn(`stageMerge: ${gridded} fid(s) unioned on the fallback grid`);
+  }
 
   await conn.query("DROP TABLE IF EXISTS layer_05_tmp1");
   await conn.query("DROP TABLE IF EXISTS layer_04");
   await conn.query("DROP TABLE IF EXISTS layer_05_tmp2");
+}
+
+async function dissolvePerFid(conn: AsyncDuckDBConnection): Promise<number> {
+  const fids = (await conn.query("SELECT DISTINCT fid FROM layer_05_tmp2 ORDER BY fid")).toArray();
+  await conn.query(
+    "CREATE OR REPLACE TABLE layer_05 AS SELECT fid, geom FROM layer_05_tmp2 WHERE FALSE",
+  );
+  let gridded = 0;
+  for (const { fid } of fids) {
+    const insert = (geomExpr: string) => `--sql
+      INSERT INTO layer_05
+      SELECT fid, ST_Union_Agg(${geomExpr}) FROM layer_05_tmp2 WHERE fid = ${fid} GROUP BY fid
+    `;
+    try {
+      await conn.query(insert("geom"));
+    } catch {
+      await conn.query(insert(`ST_ReducePrecision(geom, ${NODING_FALLBACK_GRID})`));
+      gridded++;
+    }
+  }
+  return gridded;
 }

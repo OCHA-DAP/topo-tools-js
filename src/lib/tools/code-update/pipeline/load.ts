@@ -11,7 +11,7 @@ export async function loadSide(
 ): Promise<void> {
   const prefix = `cu_${side}_`;
   await loadFile(db, conn, files, { prefix });
-  await gatedCoverageClean(conn, `${prefix}layer_01`);
+  await gatedCoverageClean(conn, `${prefix}layer_01`, { anyHole: true });
 }
 
 export async function dropPriorRun(conn: AsyncDuckDBConnection): Promise<void> {

@@ -28,6 +28,23 @@ export function validateColumnsMatch(crosswalkColumns: Set<string>, actual: Set<
   );
 }
 
+// Per-row form of validateTargets, keyed by source column, for inline feedback.
+export function targetIssues(crosswalk: CrosswalkRow[]): Map<string, string> {
+  const counts = new Map<string, number>();
+  for (const r of crosswalk) {
+    if (r.targetColumn) counts.set(r.targetColumn, (counts.get(r.targetColumn) ?? 0) + 1);
+  }
+  const issues = new Map<string, string>();
+  for (const r of crosswalk) {
+    const t = r.targetColumn;
+    if (!t) continue;
+    if (RESERVED_NAMES.has(t.toLowerCase()))
+      issues.set(r.sourceColumn, `"${t}" is a reserved name`);
+    else if (counts.get(t)! > 1) issues.set(r.sourceColumn, `"${t}" is used by another column`);
+  }
+  return issues;
+}
+
 // Ports topo-tools-py's _validate_targets, except reserved-name collision is
 // checked case-insensitively per this port's own spec, not python's exact-case check.
 export function validateTargets(crosswalk: CrosswalkRow[]): void {

@@ -3,7 +3,75 @@
 See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 `docs/reference/shared.md` for rules `schema-map` shares with other tools.
 
+Schema Map is the tool at `/schema-map`. It infers a crosswalk (Inference,
+below), lets the user edit it, and applies it with `schema-refactor`
+(`docs/reference/schema-refactor.md`).
+
 ## Inputs
+
+- Schema Map MUST take exactly one polygon layer (query parameter `url`).
+- Schema Map MAY import a crosswalk CSV (query parameter `crosswalk`),
+  parsed by `schema-refactor`'s crosswalk rules. Its targets MUST replace
+  the inferred ones as the starting point for editing. Its input MUST be
+  collapsed by default and open on load when `crosswalk` is set.
+- An imported crosswalk whose `source_column` set does not match the layer MUST
+  be reported with `schema-refactor`'s column-mismatch error, and the
+  inferred crosswalk MUST be used instead.
+
+## Mapping
+
+- Schema Map MUST infer the crosswalk with the rules under Inference.
+- Editing the name or code template MUST re-run inference automatically,
+  under Inference's template rules.
+- A column with no inferred target MUST default to dropped, matching
+  Inference's empty `target_column`.
+
+## Editing
+
+- Every row MUST have a keep checkbox and an editable target name. A checked
+  row MUST rename the column to its target (its own name keeps it as is);
+  an unchecked row MUST drop it and write an empty `target_column`.
+- A row's target name MUST default to its inferred or imported target, else
+  its source name, and MUST be retained while the row is unchecked.
+- A header checkbox MUST check or uncheck every row, showing an
+  indeterminate state when only some are checked.
+- Edits MUST persist across re-inference, keyed by source column, until
+  reset per row or all at once.
+- A checked row with an empty target, or a duplicate or reserved target
+  (`schema-refactor`'s rules), MUST be flagged on its row, and the crosswalk
+  MUST NOT be applied or offered for download until every flagged row is
+  fixed.
+
+## Ordering
+
+- Table row order MUST be the output column order, and the crosswalk CSV
+  MUST be written in it.
+- Rows MUST start in the imported crosswalk's row order if one is loaded and
+  matches the layer, else in Inference's order.
+- A row MUST be movable by dragging its grip, and one place at a time with
+  Alt+↑/↓ on the focused grip.
+- "Sort to default order" MUST order kept rows by the templates applied to
+  their current targets (Inference's level order: deepest first, names,
+  other same-level columns, codes), then dropped rows in their current order.
+- Row order MUST persist across re-inference until "Reset all edits".
+
+## Applying and outputs
+
+- Every valid crosswalk state MUST be applied automatically with
+  `schema-refactor`'s pipeline, unchanged.
+- Schema Map MUST offer the mapped layer (`schema-refactor`'s output, suffix
+  `_mapped`) and the crosswalk CSV (Inference's output shape, suffix
+  `_crosswalk`), both reflecting the current edits.
+- The map MUST draw the loaded geometry once. Applying a crosswalk MUST NOT
+  serialize geometry.
+- Clicking a feature MUST show its source value on every row. With no
+  feature selected, each row MUST show up to three sorted distinct sample
+  values of its column.
+- Schema Map performs no topology check; nothing it runs touches geometry.
+
+## Inference
+
+### Inputs
 
 - `schema-map` MUST read the input via the shared loader (see
   `docs/reference/shared.md`).
@@ -12,7 +80,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   matching signal anywhere in its algorithm. Every decision MUST derive
   only from cardinality, containment, textual embedding, or bijection.
 
-## Candidate columns
+### Candidate columns
 
 - `schema-map` MUST exclude `fid` and `geom` (this app's own internal
   columns) from candidacy.
@@ -29,7 +97,7 @@ fid_orig`; OR the column name with a trailing `_\d+` GDAL
   columns are vacuously bijective with no real evidence. It MUST still
   remain eligible for bracketing and MUST still appear in the output.
 
-## Level-group formation
+### Level-group formation
 
 - `schema-map` MUST group remaining candidate columns by identical
   `COUNT(DISTINCT)`, then cluster columns within each same-count group
@@ -44,7 +112,7 @@ fid_orig`; OR the column name with a trailing `_\d+` GDAL
   missing-value placeholder string). Two or more distinct violating
   values MUST fail containment.
 
-## Chain building
+### Chain building
 
 - `schema-map` MUST test every ordered pair of level-groups (by ascending
   `COUNT(DISTINCT)`) for a coarser-to-finer edge, not just
@@ -62,7 +130,7 @@ fid_orig`; OR the column name with a trailing `_\d+` GDAL
   - 1)`over valid edges), breaking ties by, in order: longer path length,
 larger companion-group size, then higher (finer)`COUNT(DISTINCT)`.
 
-## Role assignment
+### Role assignment
 
 - `schema-map` MUST skip a chain level entirely (no role, no target
   column) when its group's `COUNT(DISTINCT) = 1`. This exclusion MUST be
@@ -85,7 +153,7 @@ larger companion-group size, then higher (finer)`COUNT(DISTINCT)`.
   parent, or the column's own `COUNT(DISTINCT)` when it is the coarsest
   resolved level.
 
-## Bracketing leftover columns
+### Bracketing leftover columns
 
 - A candidate column not absorbed into the chain MUST be bracketed to the
   sole chain level `k` where `chain_level[k-1].count < column.count <=
@@ -106,13 +174,13 @@ chain_level[k].count` (the position below the coarsest level counts as
 - A candidate that fails the winner check MUST get `note = "ambiguous,
 level {k}"` and an empty `target_column`.
 
-## Fallback
+### Fallback
 
 - Any column still unresolved after chain and bracket resolution MUST get
   an empty `note` and an empty `target_column`. `schema-map` MUST NOT
   guess a target for an unmatched column.
 
-## Outputs
+### Outputs
 
 - `schema-map` MUST produce a crosswalk with columns `source_column,
 target_column, unique_count, note`, downloadable as CSV.
@@ -122,7 +190,7 @@ target_column, unique_count, note`, downloadable as CSV.
   order. Within a level and role, and among unresolved rows, ties MUST
   break by original source-column order.
 
-## Configuration
+### Configuration
 
 - `schema-map` MUST default to the bundled generic target schema
   (`name_field = "adm{n}_name"`, `code_field = "adm{n}_code"`).

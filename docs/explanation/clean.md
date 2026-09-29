@@ -39,8 +39,10 @@ as Minimal / Thin / All / Manual modes.
 
 ## Gap-fill modes
 
-The gap-width slider (meters, converted to degrees via a latitude-aware
-factor in `pipeline/units.ts`) has four UI modes:
+The gap-width slider is in meters, converted to degrees in `pipeline/units.ts`
+by the same fixed 111,320 m/° factor the issues table uses for max width, so a
+slider value equal to a gap's displayed width fills exactly that gap. It has
+four UI modes:
 
 - **Minimal** (default) — fills only gaps at or below `SNAP_TOLERANCE`
   (floating-point-noise scale), at exactly that width. No shape heuristic.

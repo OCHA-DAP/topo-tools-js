@@ -22,31 +22,39 @@
 
   let showGaps = $state(true);
   let showOverlaps = $state(true);
+  let showMicro = $state(true);
 
   const gapCount = $derived(rows.filter((r) => r.kind === "gap").length);
   const overlapCount = $derived(rows.filter((r) => r.kind === "overlap").length);
-  // Both overlaps and gaps are auto-fixed (overlaps always, gaps within the gap-width).
-  const isFixable = (r: IssueRow) => r.kind === "overlap" || r.kind === "gap";
-  const fixableCount = $derived(rows.filter(isFixable).length);
-  const fixedCount = $derived(rows.filter((r) => isFixable(r) && fixedKeys.has(r.key)).length);
+  const microCount = $derived(rows.filter((r) => r.kind === "micro-polygon").length);
+  // Every kind is auto-fixed (overlaps and micro-polygons always, gaps within the gap-width).
+  const fixableCount = $derived(rows.length);
+  const fixedCount = $derived(rows.filter((r) => fixedKeys.has(r.key)).length);
   const visible = $derived(
     rows.filter((r) => {
       if (r.kind === "gap") return showGaps;
       if (r.kind === "overlap") return showOverlaps;
+      if (r.kind === "micro-polygon") return showMicro;
       return false;
     }),
   );
 
+  const KIND_LABEL: Record<IssueKind, string> = {
+    overlap: "Overlap",
+    gap: "Gap",
+    "micro-polygon": "Micro-polygon",
+  };
+
   function kindLabel(r: IssueRow): string {
-    return r.kind === "overlap" ? "Overlap" : "Gap";
+    return KIND_LABEL[r.kind];
   }
 
   function kindClass(r: IssueRow): string {
-    return r.kind === "overlap" ? "tc-key--overlap" : "tc-key--gap";
+    return `tc-key--${r.kind}`;
   }
 
   function isFixed(r: IssueRow): boolean {
-    return isFixable(r) && fixedKeys.has(r.key);
+    return fixedKeys.has(r.key);
   }
 </script>
 
@@ -81,6 +89,15 @@
           : "Toggle gaps"}
       >
         <span class="tc-key tc-key--gap"></span> Gaps {gapCount}{#if detectionFailed.has("gap")}<span class="tc-fail-mark">⚠</span>{/if}
+      </button>
+      <button
+        type="button"
+        class="tc-chip tc-chip--micro-polygon"
+        class:off={!showMicro}
+        onclick={() => (showMicro = !showMicro)}
+        title="Toggle micro-polygons (parts narrower than the snap tolerance, merged into a neighbour)"
+      >
+        <span class="tc-key tc-key--micro-polygon"></span> Micro-polygons {microCount}
       </button>
     </div>
   </div>
@@ -267,6 +284,9 @@
   }
   .tc-key--gap {
     background: #f59e0b;
+  }
+  .tc-key--micro-polygon {
+    background: #7c3aed;
   }
   .tc-check-cell {
     text-align: center;

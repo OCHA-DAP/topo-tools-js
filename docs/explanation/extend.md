@@ -64,9 +64,12 @@ drifting by single-digit millimeters to a few meters from the boundary it's
 supposed to exactly coincide with, and GEOS's noding step throwing on the
 resulting near-but-not-quite-coincident seam. See
 [`docs/explanation/performance.md`](performance.md#wasm-geos-overlayng-floating-point-divergence)
-for the general pattern. `merge.ts` snaps each polygon to its neighbors'
-union (`ST_Snap`, tolerance from `SNAP_TOLERANCE`) before differencing, which
-resolves most near-coincident seams; a noding failure that survives the snap
-propagates as a normal pipeline error rather than being retried — see
-[`docs/adr/0022-noding-precision-retry-removed-for-python-parity.md`](../adr/0022-noding-precision-retry-removed-for-python-parity.md)
-for why the earlier precision-reduction retry was removed.
+for the general pattern. `merge.ts` snaps each cell to the union of the
+original parts it intersects (`ST_Snap`, tolerance from `SNAP_TOLERANCE`)
+before differencing, which resolves most near-coincident seams, and a
+difference that still throws propagates as a pipeline error. The dissolve
+that follows can also throw in WASM where native GEOS succeeds. It then
+unions fid by fid and retries only the failing fids on a 1e-11° grid, three
+orders of magnitude below `SNAP_TOLERANCE`, which the final coverage-clean
+pass absorbs; see
+[`docs/adr/0038-extend-merge-union-grid-fallback.md`](../adr/0038-extend-merge-union-grid-fallback.md).

@@ -2,8 +2,8 @@
 
 `package` runs `package-polygons`, `package-points`, and `package-lines`
 against one loaded layer in a single call, for the common case of wanting
-the full cartographic bundle at once, mirroring this app's
-`schema-crosswalk` composite pattern. Ported from topo-tools-py's
+the full cartographic bundle at once, mirroring this app's `mosaic`
+composite pattern. Ported from topo-tools-py's
 `package`.
 
 ## Pipeline

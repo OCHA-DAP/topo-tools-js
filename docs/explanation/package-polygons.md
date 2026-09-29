@@ -31,7 +31,7 @@ topo-tools-py's `package-polygons`.
    its output is `layer_01`/`layer_attr` directly, since grouping by its
    own finest code column would be a no-op.
 4. **Issues** (`pipeline/issues.ts`'s `buildPolygonIssues`, reusing
-   `$lib/db/coverage.ts`'s `gapRegionsQuery`) - a gap-only report per
+   `$lib/db/coverage.ts`'s `buildGapTable`) - a gap-only report per
    level, the same shape the old `dissolve` tool used.
 
 ## Why `groupBy` alone isn't safe

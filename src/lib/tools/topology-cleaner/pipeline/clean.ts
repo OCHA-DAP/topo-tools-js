@@ -4,6 +4,7 @@ import {
   hasCoverageViolations,
   runCoverageClean,
 } from "$lib/db/coverageClean";
+import { mergeMicroPolygons } from "$lib/db/coverage";
 import { validateCleanOutput } from "./validate";
 
 // The topology-cleaner pipeline. Reads the loader-owned `layer_01` (fid, geom)
@@ -11,9 +12,11 @@ import { validateCleanOutput } from "./validate";
 // whole coverage via the shared src/lib/db/coverageClean.ts helpers (also used
 // by Edge Extender's input-clean gate and merge finalization).
 
-// Build the frozen input list ONCE per load (tc_input).
+// Build the frozen input list ONCE per load (tc_input), from layer_01 with
+// micro-polygons merged (tc_merged), as topo-tools-py's coverage_clean does.
 export async function buildInput(conn: AsyncDuckDBConnection): Promise<number> {
-  return buildCoverageCleanInput(conn, "layer_01", "tc_input");
+  await mergeMicroPolygons(conn, "layer_01", "tc_merged", "tc_micro");
+  return buildCoverageCleanInput(conn, "tc_merged", "tc_input");
 }
 
 // True if layer_01 has any overlaps/unmatched edges. Static per load (layer_01
@@ -53,8 +56,9 @@ export async function buildClean(
   if (gapDeg === 0 && !hasViolations) {
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ${targetTable} AS
-      SELECT fid, geom FROM layer_01 WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+      SELECT fid, geom FROM tc_merged WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
     `);
+    await conn.query(`DROP TABLE IF EXISTS ${targetTable}_micro`);
     return;
   }
   const scratch = `${targetTable}_scratch`;
@@ -65,7 +69,8 @@ export async function buildClean(
     await conn.query(`DROP TABLE IF EXISTS ${scratch}`);
     throw e;
   }
-  await conn.query(`CREATE OR REPLACE TABLE ${targetTable} AS SELECT * FROM ${scratch}`);
+  // Catches parts the clean itself left micro, as topo-tools-py's topo-clean does.
+  await mergeMicroPolygons(conn, scratch, targetTable, `${targetTable}_micro`);
   await conn.query(`DROP TABLE IF EXISTS ${scratch}`);
 }
 

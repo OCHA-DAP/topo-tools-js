@@ -20,23 +20,32 @@
 
   let showGaps = $state(true);
   let showOverlaps = $state(true);
+  let showMicro = $state(true);
 
   const gapCount = $derived(rows.filter((r) => r.kind === "gap").length);
   const overlapCount = $derived(rows.filter((r) => r.kind === "overlap").length);
+  const microCount = $derived(rows.filter((r) => r.kind === "micro-polygon").length);
   const visible = $derived(
     rows.filter((r) => {
       if (r.kind === "gap") return showGaps;
       if (r.kind === "overlap") return showOverlaps;
+      if (r.kind === "micro-polygon") return showMicro;
       return false;
     }),
   );
 
+  const KIND_LABEL: Record<IssueKind, string> = {
+    overlap: "Overlap",
+    gap: "Gap",
+    "micro-polygon": "Micro-polygon",
+  };
+
   function kindLabel(r: IssueRow): string {
-    return r.kind === "overlap" ? "Overlap" : "Gap";
+    return KIND_LABEL[r.kind];
   }
 
   function kindClass(r: IssueRow): string {
-    return r.kind === "overlap" ? "dt-key--overlap" : "dt-key--gap";
+    return `dt-key--${r.kind}`;
   }
 </script>
 
@@ -73,6 +82,20 @@
         <span class="dt-key dt-key--gap"></span> Gaps {gapCount}{#if detectionFailed.has("gap")}<span
             class="dt-fail-mark">⚠</span
           >{/if}
+      </button>
+      <button
+        type="button"
+        class="dt-chip dt-chip--micro-polygon"
+        class:off={!showMicro}
+        class:failed={detectionFailed.has("micro-polygon")}
+        onclick={() => (showMicro = !showMicro)}
+        title={detectionFailed.has("micro-polygon")
+          ? "Micro-polygon detection failed for this coverage, so this count may be incomplete, not necessarily 0"
+          : "Toggle micro-polygons (parts narrower than the snap tolerance)"}
+      >
+        <span class="dt-key dt-key--micro-polygon"></span> Micro-polygons {microCount}{#if detectionFailed.has(
+          "micro-polygon",
+        )}<span class="dt-fail-mark">⚠</span>{/if}
       </button>
     </div>
   </div>
@@ -250,5 +273,8 @@
   }
   .dt-key--gap {
     background: #f59e0b;
+  }
+  .dt-key--micro-polygon {
+    background: #7c3aed;
   }
 </style>

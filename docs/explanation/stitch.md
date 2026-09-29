@@ -25,7 +25,7 @@ which extracted this exact operation out of `match`'s and (eventually)
    produced. `SNAP_TOLERANCE` is a noise floor, not a real gap-closing
    width, see below for why a wider gap is left alone rather than filled.
 3. **Issues** (`pipeline/issues.ts`, via `$lib/db/coverage`'s
-   `gapRegionsQuery`) — any interior hole left in the cleaned output wider
+   `buildGapTable`) — any interior hole left in the cleaned output wider
    than `SNAP_TOLERANCE` gets a `kind='gap'` row (area, max width,
    thinness ratio), matching Topology Cleaner's issues-table column shape.
    `stitch` also checks the cleaned output for residual overlaps

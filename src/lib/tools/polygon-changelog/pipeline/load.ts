@@ -1,4 +1,5 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { gatedCoverageClean } from "$lib/db/coverageClean";
 import { loadFile } from "$lib/db/loader";
 
 // cw_a_/cw_b_ prefix = previous/new. Intermediate cw_*_layer_01/layer_attr
@@ -12,6 +13,7 @@ export async function loadSide(
 ): Promise<void> {
   const prefix = `cw_${side}_`;
   await loadFile(db, conn, files, { prefix });
+  await gatedCoverageClean(conn, `${prefix}layer_01`, { anyHole: true });
 }
 
 const QIDENT = (s: string) => '"' + s.replace(/"/g, '""') + '"';

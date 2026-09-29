@@ -4,6 +4,8 @@ import {
   assembleIssues,
   buildGapRegions as sharedBuildGapRegions,
   buildOverlapRegions as sharedBuildOverlapRegions,
+  readIssues,
+  replaceMicroIssues,
   type IssueKind,
   type IssueRow,
   type IssuesResult,
@@ -47,21 +49,59 @@ export async function buildOverlapRegions(
   return sharedBuildOverlapRegions(conn, "tc_overlap_regions", "layer_01", hasViolations);
 }
 
-// Assemble the issues table/rows/geojson from the gap + overlap region tables,
-// which are inputs built once per load by runFromLoaded.
+// Assemble the issues table/rows/geojson from the gap + overlap region tables
+// and the input's merged micro-polygons (tc_micro), built once per load.
 export async function buildIssues(
   conn: AsyncDuckDBConnection,
   failedKinds: Set<IssueKind>,
 ): Promise<IssuesResult> {
-  return assembleIssues(
-    conn,
-    {
-      issuesTable: "tc_issues",
-      gapRegionsTable: "tc_gap_regions",
-      overlapRegionsTable: "tc_overlap_regions",
-    },
-    failedKinds,
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE tc_micro_regions AS
+    SELECT row_number() OVER () AS n, unit_a, unit_b, reason, fixed, geom FROM tc_micro
+  `);
+  try {
+    return await assembleIssues(
+      conn,
+      {
+        issuesTable: "tc_issues",
+        gapRegionsTable: "tc_gap_regions",
+        overlapRegionsTable: "tc_overlap_regions",
+        microRegionsTable: "tc_micro_regions",
+      },
+      failedKinds,
+    );
+  } finally {
+    await conn.query("DROP TABLE IF EXISTS tc_micro_regions");
+  }
+}
+
+// Swaps in the micro-polygon rows of the latest clean's own output merge
+// (tc_clean_micro, absent when the clean was skipped).
+export async function syncOutputMicroIssues(
+  conn: AsyncDuckDBConnection,
+  failedKinds: Set<IssueKind>,
+): Promise<IssuesResult> {
+  const r = await conn.query(
+    "SELECT COUNT(*) AS n FROM duckdb_tables() WHERE table_name = 'tc_clean_micro'",
   );
+  const exists = Number((r.toArray()[0] as { n: bigint | number }).n) > 0;
+  if (exists) {
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE tc_clean_micro_regions AS
+      SELECT row_number() OVER () AS n, unit_a, unit_b, reason, fixed, geom FROM tc_clean_micro
+    `);
+  }
+  try {
+    await replaceMicroIssues(
+      conn,
+      "tc_issues",
+      exists ? "tc_clean_micro_regions" : null,
+      "micro-polygon-output-",
+    );
+  } finally {
+    await conn.query("DROP TABLE IF EXISTS tc_clean_micro_regions");
+  }
+  return readIssues(conn, "tc_issues", failedKinds);
 }
 
 // Check which issues are resolved in the current cleaned output (tc_clean),
@@ -81,7 +121,9 @@ export async function checkFixedIssues(
   rows: IssueRow[],
 ): Promise<Set<string>> {
   const fixed = new Set<string>();
-  rows.filter((r) => r.kind === "overlap").forEach((r) => fixed.add(r.key));
+  rows
+    .filter((r) => r.kind === "overlap" || r.kind === "micro-polygon")
+    .forEach((r) => fixed.add(r.key));
   const areaFactor = degSqToM2(1).toExponential();
 
   try {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CarryColumnsPicker from "$lib/components/CarryColumnsPicker.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -12,15 +13,15 @@
 
   const STAGE_LABELS = [
     "Loading input",
-    "Assigning to parent unit",
-    "Clipping to parent boundary",
+    "Assigning to overlay feature",
+    "Clipping to overlay boundary",
     "Closing seams",
     "Checking for residual gaps",
     "Assembling issues report",
   ];
 
-  let childFiles = $state<File[]>([]);
-  let parentFiles = $state<File[]>([]);
+  let inputFiles = $state<File[]>([]);
+  let overlayFiles = $state<File[]>([]);
   let running = $state(false);
   let currentStage = $state(0); // 0=idle, 1-6=active stage, 7=done
   let errorStage = $state(0);
@@ -29,20 +30,20 @@
 
   let resultGeoJSON = $state<string | null>(null);
   let originalGeoJSON = $state<string | null>(null);
-  let parentOutlineGeoJSON = $state<string | null>(null);
+  let overlayOutlineGeoJSON = $state<string | null>(null);
   let resultBounds = $state<[number, number, number, number] | null>(null);
-  let parentFid = $state<number | null>(null);
+  let overlayFid = $state<number | null>(null);
   let issues = $state<MosaicIssueRow[]>([]);
   let issuesGeoJSON = $state<string | null>(null);
   let hadResidualOverlaps = $state(false);
 
   // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
   // first auto-run never changes behavior.
-  let childColumns = $state<ColumnGuess | null>(null);
-  let parentColumns = $state<ColumnGuess | null>(null);
-  let childMatchColumn = $state<string | null>(null);
-  let parentMatchColumn = $state<string | null>(null);
-  let carryParentColumns = $state<string[]>([]);
+  let inputColumns = $state<ColumnGuess | null>(null);
+  let overlayColumns = $state<ColumnGuess | null>(null);
+  let inputMatchColumn = $state<string | null>(null);
+  let overlayMatchColumn = $state<string | null>(null);
+  let carryOverlayColumns = $state<string[]>([]);
 
   let fillSchema = $state(false);
   let fillNameField = $state("");
@@ -62,33 +63,33 @@
   );
 
   $effect(() => {
-    const c = childFiles;
-    const p = parentFiles;
+    const c = inputFiles;
+    const p = overlayFiles;
     if (c.length > 0 && p.length > 0 && duckdbState.ready) {
       untrack(() => {
         if (running) return;
-        childColumns = null;
-        parentColumns = null;
-        childMatchColumn = null;
-        parentMatchColumn = null;
-        carryParentColumns = [];
+        inputColumns = null;
+        overlayColumns = null;
+        inputMatchColumn = null;
+        overlayMatchColumn = null;
+        carryOverlayColumns = [];
         handleRun();
       });
     }
   });
 
   $effect(() => {
-    const _c = childMatchColumn;
-    const _p = parentMatchColumn;
+    const _c = inputMatchColumn;
+    const _p = overlayMatchColumn;
     untrack(() => {
       if (!resultGeoJSON || running) return;
-      if ((childMatchColumn == null) !== (parentMatchColumn == null)) return;
+      if ((inputMatchColumn == null) !== (overlayMatchColumn == null)) return;
       handleRun();
     });
   });
 
   $effect(() => {
-    const _cols = carryParentColumns;
+    const _cols = carryOverlayColumns;
     untrack(() => {
       if (!resultGeoJSON || running) return;
       handleRun();
@@ -114,9 +115,9 @@
     running = true;
     resultGeoJSON = null;
     originalGeoJSON = null;
-    parentOutlineGeoJSON = null;
+    overlayOutlineGeoJSON = null;
     resultBounds = null;
-    parentFid = null;
+    overlayFid = null;
     issues = [];
     issuesGeoJSON = null;
     hadResidualOverlaps = false;
@@ -137,27 +138,27 @@
       const result = await runMosaic(
         duckdbState.db!,
         duckdbState.conn!,
-        childFiles,
-        parentFiles,
+        inputFiles,
+        overlayFiles,
         (stage, label) => {
           currentStage = stage;
           stageLabel = label;
         },
-        { parentMatchColumn: parentMatchColumn ?? undefined, childMatchColumn: childMatchColumn ?? undefined },
-        carryParentColumns,
+        { overlayMatchColumn: overlayMatchColumn ?? undefined, inputMatchColumn: inputMatchColumn ?? undefined },
+        carryOverlayColumns,
         fillOptions,
       );
 
       resultGeoJSON = result.mosaicGeoJSON;
-      originalGeoJSON = result.childGeoJSON;
-      parentOutlineGeoJSON = result.parentOutlineGeoJSON;
+      originalGeoJSON = result.inputGeoJSON;
+      overlayOutlineGeoJSON = result.overlayOutlineGeoJSON;
       resultBounds = result.bounds;
-      parentFid = result.parentFid;
+      overlayFid = result.overlayFid;
       issues = result.issues;
       issuesGeoJSON = result.issuesGeoJSON;
       hadResidualOverlaps = result.hadResidualOverlaps;
-      childColumns = result.childColumns;
-      parentColumns = result.parentColumns;
+      inputColumns = result.inputColumns;
+      overlayColumns = result.overlayColumns;
       currentStage = 7;
       stageLabel = "Done";
     } catch (e) {
@@ -189,6 +190,7 @@
 
   const unassignedCount = $derived(issues.filter((i) => i.kind === "unassigned").length);
   const gapCount = $derived(issues.filter((i) => i.kind === "gap").length);
+  const microCount = $derived(issues.filter((i) => i.kind === "micro-polygon").length);
   const codeMismatchCount = $derived(issues.filter((i) => i.kind === "code-mismatch").length);
   const codeFallbackCount = $derived(issues.filter((i) => i.kind === "code-fallback").length);
 </script>
@@ -199,9 +201,9 @@
       <a class="back" href={base}>← Topology Tools</a>
       <h1>Mosaic</h1>
       <p class="blurb">
-        Fit an already-extended children layer into a new parent boundary without re-running
-        Voronoi extension: assign by majority vote, clip to the winning parent, then close seams
-        with a single coverage-clean pass. For children that haven't been extended yet, use Edge
+        Fit an already-extended input layer into a new overlay feature boundary without re-running
+        Voronoi extension: assign by majority vote, clip to the winning overlay feature, then close seams
+        with a single coverage-clean pass. For inputs that haven't been extended yet, use Edge
         Matcher instead.
       </p>
     </header>
@@ -214,73 +216,64 @@
     {/if}
 
     <section class="step">
-      <h2 class="step-heading">Children layer</h2>
+      <h2 class="step-heading">Input layer</h2>
       <DropZone
-        bind:files={childFiles}
-        urlParam="child"
+        bind:files={inputFiles}
+        urlParam="input"
         disabled={running}
         helpText="An already-extended layer — e.g. one country's Edge Extender output."
       />
     </section>
 
     <section class="step">
-      <h2 class="step-heading">Parent / clip layer</h2>
+      <h2 class="step-heading">Overlay layer</h2>
       <DropZone
-        bind:files={parentFiles}
-        urlParam="parent"
+        bind:files={overlayFiles}
+        urlParam="overlay"
         disabled={running}
-        helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 children layer."
+        helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 input layer."
       />
     </section>
 
-    {#if childColumns && parentColumns}
+    {#if inputColumns && overlayColumns}
       <section class="step">
         <h2 class="step-heading">Code join (optional)</h2>
         <p class="hint">
-          Wins over the majority-vote parent wherever the codes agree on a parent the file
+          Wins over the majority-vote overlay feature wherever the codes agree on an overlay feature the file
           overlaps at all, falls back to the majority vote when no code match exists.
         </p>
         <div class="match-cols">
           <label class="match-field">
-            <span>Child code</span>
-            <select bind:value={childMatchColumn} disabled={running}>
+            <span>Input code</span>
+            <select bind:value={inputMatchColumn} disabled={running}>
               <option value={null}>(none)</option>
-              {#each childColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+              {#each inputColumns.all as col (col)}<option value={col}>{col}</option>{/each}
             </select>
           </label>
           <label class="match-field">
-            <span>Parent code</span>
-            <select bind:value={parentMatchColumn} disabled={running}>
+            <span>Overlay code</span>
+            <select bind:value={overlayMatchColumn} disabled={running}>
               <option value={null}>(none)</option>
-              {#each parentColumns.all as col (col)}<option value={col}>{col}</option>{/each}
+              {#each overlayColumns.all as col (col)}<option value={col}>{col}</option>{/each}
             </select>
           </label>
         </div>
       </section>
     {/if}
 
-    {#if parentColumns}
+    {#if overlayColumns}
       <section class="step">
-        <h2 class="step-heading">Carry parent columns (optional)</h2>
-        <p class="hint">Join the winning parent's own attribute values onto every output row.</p>
-        <div class="carry-cols">
-          {#each parentColumns.all as col (col)}
-            <label class="carry-field">
-              <input
-                type="checkbox"
-                checked={carryParentColumns.includes(col)}
-                disabled={running}
-                onchange={(e) => {
-                  const checked = (e.target as HTMLInputElement).checked;
-                  carryParentColumns = checked
-                    ? [...carryParentColumns, col]
-                    : carryParentColumns.filter((c) => c !== col);
-                }}
-              />
-              <span>{col}</span>
-            </label>
-          {/each}
-        </div>
+        <h2 class="step-heading">Carry overlay columns (optional)</h2>
+        <p class="hint">
+          Join the winning overlay feature's own attribute values onto every output row. A column the input layer
+          already has can't be carried.
+        </p>
+        <CarryColumnsPicker
+          overlayColumns={overlayColumns.all}
+          inputColumns={inputColumns?.all ?? []}
+          bind:selected={carryOverlayColumns}
+          disabled={running}
+        />
       </section>
     {/if}
 
@@ -344,15 +337,21 @@
       <div class="error-panel">{error}</div>
     {/if}
 
-    {#if resultGeoJSON && parentFid !== null}
+    {#if resultGeoJSON && overlayFid !== null}
       <section class="step">
-        <p class="info-line">Fitted to parent unit fid {parentFid}.</p>
+        <p class="info-line">Fitted to overlay feature fid {overlayFid}.</p>
         {#if unassignedCount > 0 || gapCount > 0}
           <p class="warn-line">
-            {unassignedCount} child{unassignedCount === 1 ? "" : "ren"} unassigned, {gapCount} gap{gapCount ===
+            {unassignedCount} input feature{unassignedCount === 1 ? "" : "s"} unassigned, {gapCount} gap{gapCount ===
             1
               ? ""
               : "s"} remaining — see the issues download.
+          </p>
+        {/if}
+        {#if microCount > 0}
+          <p class="warn-line">
+            {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance) merged
+            into a neighbouring feature or dropped.
           </p>
         {/if}
         {#if hadResidualOverlaps}
@@ -360,16 +359,16 @@
         {/if}
         {#if codeMismatchCount > 0}
           <p class="warn-line">
-            Code match disagreed with the majority-vote parent for {codeMismatchCount} child{codeMismatchCount ===
-            1
+            Code match disagreed with the majority-vote overlay feature for {codeMismatchCount} input feature{codeMismatchCount ===
+             1
               ? ""
-              : "ren"}; the code match won.
+              : "s"}; the code match won.
           </p>
         {/if}
         {#if codeFallbackCount > 0}
           <p class="warn-line">
-            No overlapping code match for {codeFallbackCount} child{codeFallbackCount === 1 ? "" : "ren"};
-            fell back to the majority-vote parent.
+            No overlapping code match for {codeFallbackCount} input feature{codeFallbackCount === 1 ? "" : "s"};
+            fell back to the majority-vote overlay.
           </p>
         {/if}
       </section>
@@ -378,14 +377,14 @@
     {#if resultGeoJSON}
       <DownloadMenu
         primaryLabel="Download GeoJSON"
-        filenameStem={fileStem(childFiles[0])}
+        filenameStem={fileStem(inputFiles[0])}
         cachedGeoJSON={resultGeoJSON}
         exportSource="mosaic"
       />
       {#if issues.length > 0 && issuesGeoJSON}
         <DownloadMenu
           primaryLabel="Download Issues"
-          filenameStem={fileStem(childFiles[0])}
+          filenameStem={fileStem(inputFiles[0])}
           cachedGeoJSON={issuesGeoJSON}
           exportSource="mosaic_issues"
           variant="secondary"
@@ -399,7 +398,7 @@
   <div class="map-container">
     <MapView
       geojson={resultGeoJSON}
-      originalGeojson={originalGeoJSON ?? parentOutlineGeoJSON}
+      originalGeojson={originalGeoJSON ?? overlayOutlineGeoJSON}
       bounds={resultBounds}
       processing={running}
       registerClear={(fn: () => void) => {
@@ -504,22 +503,6 @@
     font-size: 0.75rem;
     color: #b91c1c;
     margin: 0;
-  }
-
-  .carry-cols {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    max-height: 8rem;
-    overflow-y: auto;
-  }
-
-  .carry-field {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
-    color: #374151;
   }
 
   .blurb {

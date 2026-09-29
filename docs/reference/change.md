@@ -23,6 +23,8 @@ prefixed `cw_`) compares two versions of a polygon layer ("Version A" = old,
 
 - `change` MUST reproject each side's geometry to EPSG:4326, run `ST_MakeValid`,
   and force it to 2D, independently of the other side.
+- `change` MUST run `gatedCoverageClean` over each side, triggered by any
+  coverage violation, micro-polygon or enclosed hole.
 - `change` MUST let the user pick a code column and a name column
   independently for each side, defaulting to the shared column
   auto-detector's guess (`src/lib/db/columns.ts`) for that side's attribute
@@ -92,11 +94,11 @@ prefixed `cw_`) compares two versions of a polygon layer ("Version A" = old,
 ## Outputs
 
 - `change` MUST produce a tabular changelog with one row per classified
-  pair plus one row per unmatched singleton fid, with columns `code_a,
-name_a, code_b, name_b, relationship_class, match_method, a_in_b
-(coverage_a, 3dp), b_in_a (coverage_b, 3dp), similarity (iou, 3dp),
-threshold_match, threshold_unchanged, link_by_code, link_by_name,
-link_mode`. Rows for a singleton MUST have `NULL` in every column that
+  pair plus one row per unmatched singleton fid, with columns `code_a`,
+  `name_a`, `code_b`, `name_b`, `relationship_class`, `match_method`,
+  `a_in_b` (coverage_a, 3dp), `b_in_a` (coverage_b, 3dp), `similarity`
+  (iou, 3dp), `threshold_match` and `threshold_same` (both `DOUBLE`),
+  `link_by_code`, `link_by_name`, `link_mode`. Rows for a singleton MUST have `NULL` in every column that
   belongs to the side the fid has no counterpart on.
 - `change` MUST produce a spatial overlay layer tagging every Version-B
   unit, and every Version-A unit classed `removed`, with its cluster ID and

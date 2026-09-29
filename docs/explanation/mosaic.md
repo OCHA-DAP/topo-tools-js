@@ -1,7 +1,7 @@
 # Mosaic
 
-Fits a children layer that is already the finished output of a prior Edge
-Extender run into a new/different parent boundary, without re-running
+Fits an input layer that is already the finished output of a prior Edge
+Extender run into a new/different overlay feature boundary, without re-running
 Voronoi extension. A thin orchestrator chaining the same three primitives
 this app exposes standalone: assign-one (`$lib/db/assignOne.ts`, shared
 with Clip), clip (`$lib/db/clipEngine.ts`/`clipTiling.ts`, shared with
@@ -11,24 +11,24 @@ usual `layer_01`). Ported from topo-tools-py's `mosaic`.
 
 ## Pipeline
 
-1. **Load** (`pipeline/load.ts`) — load the children layer and the
-   parent/clip layer raw, exactly like Clip: neither is coverage-checked
+1. **Load** (`pipeline/load.ts`) — load the input layer and the
+   overlay layer raw, exactly like Clip: neither is coverage-checked
    or -cleaned first.
 2. **Assign** (`$lib/db/assignOne.ts`), the same assign-one majority vote
-   Clip uses, at exactly the same single-children-file scope
-   (`docs/adr/0026`, shared by both tools). If parent columns were
-   requested, they're joined (prefixed `parent_`) from the winning
-   parent's own attribute row onto `child_layer_attr` here, before clipping.
+   Clip uses, at exactly the same single-input-file scope
+   (`docs/adr/0026`, shared by both tools). If overlay columns were
+   requested, they're joined under their own names from the winning
+   overlay feature's own attribute row onto `input_layer_attr` here, before clipping.
 3. **Clip** (`$lib/db/clipEngine.ts`) — the same tiled clip Clip uses.
    Fails the run if zero output rows result.
 4. **Stitch** (`stitch/pipeline/index.ts`'s `runStitch`, called with
-   `sourceTable="cl_clip"`, `attrTable="child_layer_attr"`) — one
+   `sourceTable="cl_clip"`, `attrTable="input_layer_attr"`) — one
    whole-table `ST_CoverageClean` pass over the clipped result, closing
    seams between the (already-extended, but freshly-clipped-to-a-new-
-   boundary) child pieces.
-5. **Assemble issues** (`pipeline/issues.ts`), combines every child that
+   boundary) input feature pieces.
+5. **Assemble issues** (`pipeline/issues.ts`), combines every input feature that
    never reached the final output (kind `unassigned`, whichever stage
-   dropped it: not overlapping the winner parent, or clipping to empty)
+   dropped it: not overlapping the winner overlay feature, or clipping to empty)
    with every leftover gap `runStitch`'s own issues check finds (kind
    `gap`) and any `code-mismatch`/`code-fallback` rows from an optional
    code-based assignment override (same override Clip's assign-one
@@ -36,18 +36,18 @@ usual `layer_01`). Ported from topo-tools-py's `mosaic`.
 
 ## Why assign-one, not assign-many
 
-Children here are assumed already extended (overshooting), which is
+Input features here are assumed already extended (overshooting), which is
 exactly the scenario assign-one (majority vote by count) is built to
-survive and assign-many (per-child plurality, what Edge Matcher uses) is
+survive and assign-many (per-input-feature plurality, what Edge Matcher uses) is
 vulnerable to — see `docs/explanation/clip.md`'s "Assign" section for the
 full reasoning, identical here.
 
 ## No re-extension
 
 Match's own per-group extension is the expensive part of that pipeline.
-Mosaic skips it entirely on the assumption the children are already
+Mosaic skips it entirely on the assumption the input features are already
 extended, making it just assign + clip + stitch — useful when refitting an
-existing Edge Extender output against a different or updated parent
+existing Edge Extender output against a different or updated overlay feature
 boundary without redoing the Voronoi work.
 
 ## Optional schema fill
@@ -55,7 +55,7 @@ boundary without redoing the Voronoi work.
 `mosaic` accepts an opt-in `fillSchema` flag (`$lib/db/fillCompose.ts`,
 shared with `stitch` and `match`), threaded straight through into the
 `runStitch` call above rather than needing a separate call site: it
-cascades admin-hierarchy column families down `child_layer_attr` in place,
+cascades admin-hierarchy column families down `input_layer_attr` in place,
 right before export, using `schema-fill`'s own depth-pin algorithm. See
 `docs/explanation/schema-fill.md` for the algorithm; off by default, and a
 no-op on output when disabled.

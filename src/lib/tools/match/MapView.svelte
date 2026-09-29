@@ -11,18 +11,18 @@
 
   let {
     resultGeojson = null,
-    parentOutlineGeojson = null,
+    overlayOutlineGeojson = null,
     bounds = null,
     processing = false,
   }: {
     resultGeojson?: string | null;
-    parentOutlineGeojson?: string | null;
+    overlayOutlineGeojson?: string | null;
     bounds?: [number, number, number, number] | null;
     processing?: boolean;
   } = $props();
 
   // Categorical palette cycled by group_id — group count is dynamic (unknown
-  // until the parent layer is loaded), unlike a fixed set of relationship
+  // until the overlay layer is loaded), unlike a fixed set of relationship
   // classes, so stops are generated at runtime from the distinct group_ids
   // actually present in the result rather than a hardcoded list.
   const PALETTE = [
@@ -85,20 +85,20 @@
   });
 
   $effect(() => {
-    const data = parentOutlineGeojson;
+    const data = overlayOutlineGeojson;
     if (!data || !map || !styleReady) return;
     if (outlineUrl) URL.revokeObjectURL(outlineUrl);
     outlineUrl = URL.createObjectURL(new Blob([data], { type: "application/json" }));
-    if (!map.getSource("eg-parent")) {
-      map.addSource("eg-parent", { type: "geojson", data: outlineUrl });
+    if (!map.getSource("eg-overlay")) {
+      map.addSource("eg-overlay", { type: "geojson", data: outlineUrl });
       map.addLayer({
-        id: "eg-parent-line",
+        id: "eg-overlay-line",
         type: "line",
-        source: "eg-parent",
+        source: "eg-overlay",
         paint: { "line-color": "#111", "line-width": lineWidth, "line-dasharray": [2, 1.5] },
       });
     } else {
-      setSource("eg-parent", outlineUrl);
+      setSource("eg-overlay", outlineUrl);
     }
   });
 
@@ -109,9 +109,9 @@
     resultUrl = URL.createObjectURL(new Blob([data], { type: "application/json" }));
     if (!map.getSource("eg-result")) {
       map.addSource("eg-result", { type: "geojson", data: resultUrl });
-      // Insert below the parent outline (if present) so the dashed reference
+      // Insert below the overlay feature outline (if present) so the dashed reference
       // boundary always stays visible on top of the filled result.
-      const beforeId = map.getLayer("eg-parent-line") ? "eg-parent-line" : undefined;
+      const beforeId = map.getLayer("eg-overlay-line") ? "eg-overlay-line" : undefined;
       map.addLayer(
         {
           id: "eg-result-fill",

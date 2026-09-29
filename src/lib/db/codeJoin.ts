@@ -3,96 +3,102 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 // Optional code-join precedence with spatial fallback, shared by
 // assignOne.ts and match/pipeline/assign.ts (docs/adr/0045).
 
+export const CODE_MISMATCH_REASON =
+  "code join picked a different overlay feature than spatial majority";
+export const CODE_FALLBACK_REASON = "no matching code; fell back to spatial majority";
+
 export interface MatchColumnOptions {
   matchColumn?: string;
-  parentMatchColumn?: string;
-  childMatchColumn?: string;
+  overlayMatchColumn?: string;
+  inputMatchColumn?: string;
 }
 
 export interface ResolvedMatchColumns {
-  parentMatchColumn: string;
-  childMatchColumn: string;
+  overlayMatchColumn: string;
+  inputMatchColumn: string;
 }
 
 export type AssignmentMethod = "code" | "spatial_fallback";
 
-// `matchColumn` and `parentMatchColumn`/`childMatchColumn` are mutually
+// `matchColumn` and `overlayMatchColumn`/`inputMatchColumn` are mutually
 // exclusive (docs/reference/shared.md). Null return means no code join.
 export function resolveMatchColumns(opts: MatchColumnOptions): ResolvedMatchColumns | null {
-  const { matchColumn, parentMatchColumn, childMatchColumn } = opts;
+  const { matchColumn, overlayMatchColumn, inputMatchColumn } = opts;
   if (matchColumn != null) {
-    if (parentMatchColumn != null || childMatchColumn != null) {
-      throw new Error("matchColumn is mutually exclusive with parentMatchColumn/childMatchColumn.");
+    if (overlayMatchColumn != null || inputMatchColumn != null) {
+      throw new Error(
+        "matchColumn is mutually exclusive with overlayMatchColumn/inputMatchColumn.",
+      );
     }
-    return { parentMatchColumn: matchColumn, childMatchColumn: matchColumn };
+    return { overlayMatchColumn: matchColumn, inputMatchColumn: matchColumn };
   }
-  if (parentMatchColumn != null || childMatchColumn != null) {
-    if (parentMatchColumn == null || childMatchColumn == null) {
-      throw new Error("parentMatchColumn and childMatchColumn must both be given.");
+  if (overlayMatchColumn != null || inputMatchColumn != null) {
+    if (overlayMatchColumn == null || inputMatchColumn == null) {
+      throw new Error("overlayMatchColumn and inputMatchColumn must both be given.");
     }
-    return { parentMatchColumn, childMatchColumn };
+    return { overlayMatchColumn, inputMatchColumn };
   }
   return null;
 }
 
 interface CodeCandidatesOptions {
-  childAttrTable: string;
-  parentAttrTable: string;
+  inputAttrTable: string;
+  overlayAttrTable: string;
   pairsTable: string;
-  pairsChildCol: string;
-  pairsParentCol: string;
+  pairsInputCol: string;
+  pairsOverlayCol: string;
   columns: ResolvedMatchColumns;
 }
 
 // Exact code join restricted to pairs already in pairsTable: a code match
-// against a non-overlapping parent doesn't count (docs/adr/0045).
+// against a non-overlapping overlay feature doesn't count (docs/adr/0045).
 function codeCandidatesSql(o: CodeCandidatesOptions): string {
-  const childCol = JSON.stringify(o.columns.childMatchColumn);
-  const parentCol = JSON.stringify(o.columns.parentMatchColumn);
+  const inputCol = JSON.stringify(o.columns.inputMatchColumn);
+  const overlayCol = JSON.stringify(o.columns.overlayMatchColumn);
   return `
-    SELECT c.fid AS child_fid, p.fid AS parent_fid
-    FROM ${o.childAttrTable} c
-    JOIN ${o.parentAttrTable} p ON c.${childCol} = p.${parentCol}
-    JOIN ${o.pairsTable} pr ON pr.${o.pairsChildCol} = c.fid AND pr.${o.pairsParentCol} = p.fid
+    SELECT c.fid AS input_fid, p.fid AS overlay_fid
+    FROM ${o.inputAttrTable} c
+    JOIN ${o.overlayAttrTable} p ON c.${inputCol} = p.${overlayCol}
+    JOIN ${o.pairsTable} pr ON pr.${o.pairsInputCol} = c.fid AND pr.${o.pairsOverlayCol} = p.fid
   `;
 }
 
-// Per-child code winner (match's granularity): one candidate parent per
-// child, ties broken by the lowest parent fid.
-export async function buildPerChildCodeWinners(
+// Per-input-feature code winner (match's granularity): one candidate overlay feature per
+// input feature, ties broken by the lowest overlay feature fid.
+export async function buildPerInputCodeWinners(
   conn: AsyncDuckDBConnection,
   o: CodeCandidatesOptions & { outputTable: string },
 ): Promise<void> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ${o.outputTable} AS
-    SELECT child_fid, parent_fid FROM (
-      SELECT child_fid, parent_fid,
-             ROW_NUMBER() OVER (PARTITION BY child_fid ORDER BY parent_fid ASC) AS rn
+    SELECT input_fid, overlay_fid FROM (
+      SELECT input_fid, overlay_fid,
+             ROW_NUMBER() OVER (PARTITION BY input_fid ORDER BY overlay_fid ASC) AS rn
       FROM (${codeCandidatesSql(o)})
     ) WHERE rn = 1
   `);
 }
 
-// Per-file/run code vote (assign-one granularity): winning parent by count
-// of code-matched children, ties broken by the lowest parent fid.
+// Per-file/run code vote (assign-one granularity): winning overlay feature by count
+// of code-matched input features, ties broken by the lowest overlay feature fid.
 export async function pickFileCodeWinner(
   conn: AsyncDuckDBConnection,
   o: CodeCandidatesOptions,
 ): Promise<number | null> {
   const rows = (
     await conn.query(`--sql
-      SELECT parent_fid, COUNT(DISTINCT child_fid) AS n_children
+      SELECT overlay_fid, COUNT(DISTINCT input_fid) AS n_inputs
       FROM (${codeCandidatesSql(o)})
-      GROUP BY parent_fid
-      ORDER BY n_children DESC, parent_fid ASC
+      GROUP BY overlay_fid
+      ORDER BY n_inputs DESC, overlay_fid ASC
       LIMIT 1
     `)
-  ).toArray() as Array<{ parent_fid: bigint | number }>;
-  return rows.length > 0 ? Number(rows[0].parent_fid) : null;
+  ).toArray() as Array<{ overlay_fid: bigint | number }>;
+  return rows.length > 0 ? Number(rows[0].overlay_fid) : null;
 }
 
 export interface AssignmentOutcome {
-  parentFid: number;
+  overlayFid: number;
   assignmentMethod: AssignmentMethod;
   spatialAgrees: boolean | null;
 }
@@ -100,33 +106,37 @@ export interface AssignmentOutcome {
 // Code wins whenever a match exists, even disagreeing with spatial;
 // spatial is the fallback when no code match exists (docs/adr/0045).
 export function resolveAssignment(
-  codeParentFid: number | null,
-  spatialParentFid: number,
+  codeOverlayFid: number | null,
+  spatialOverlayFid: number,
 ): AssignmentOutcome {
-  if (codeParentFid != null) {
+  if (codeOverlayFid != null) {
     return {
-      parentFid: codeParentFid,
+      overlayFid: codeOverlayFid,
       assignmentMethod: "code",
-      spatialAgrees: codeParentFid === spatialParentFid,
+      spatialAgrees: codeOverlayFid === spatialOverlayFid,
     };
   }
-  return { parentFid: spatialParentFid, assignmentMethod: "spatial_fallback", spatialAgrees: null };
+  return {
+    overlayFid: spatialOverlayFid,
+    assignmentMethod: "spatial_fallback",
+    spatialAgrees: null,
+  };
 }
 
-// Combines per-child code and spatial winners: code wins on disagreement,
-// spatial is the fallback. A child in neither table is absent here.
-export async function combinePerChildAssignment(
+// Combines per-input-feature code and spatial winners: code wins on disagreement,
+// spatial is the fallback. An input feature in neither table is absent here.
+export async function combinePerInputAssignment(
   conn: AsyncDuckDBConnection,
   o: { codeWinnersTable: string; spatialTable: string; outputTable: string },
 ): Promise<void> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ${o.outputTable} AS
     SELECT
-      COALESCE(code.child_fid, spatial.child_fid) AS child_fid,
-      COALESCE(code.parent_fid, spatial.parent_fid) AS parent_fid,
-      CASE WHEN code.parent_fid IS NOT NULL THEN 'code' ELSE 'spatial_fallback' END AS assignment_method,
-      CASE WHEN code.parent_fid IS NOT NULL THEN code.parent_fid = spatial.parent_fid END AS spatial_agrees
+      COALESCE(code.input_fid, spatial.input_fid) AS input_fid,
+      COALESCE(code.overlay_fid, spatial.overlay_fid) AS overlay_fid,
+      CASE WHEN code.overlay_fid IS NOT NULL THEN 'code' ELSE 'spatial_fallback' END AS assignment_method,
+      CASE WHEN code.overlay_fid IS NOT NULL THEN code.overlay_fid = spatial.overlay_fid END AS spatial_agrees
     FROM ${o.codeWinnersTable} code
-    FULL OUTER JOIN ${o.spatialTable} spatial USING (child_fid)
+    FULL OUTER JOIN ${o.spatialTable} spatial USING (input_fid)
   `);
 }

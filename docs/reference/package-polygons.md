@@ -7,7 +7,7 @@ tools.
 ## Inputs
 
 - `package-polygons` MUST read the input via the shared loader (see
-  `docs/reference/shared.md`).
+  `docs/reference/shared.md`), then merge its micro-polygons.
 - `package-polygons` MUST detect every admin level present, either
   structurally (`schema-map`'s cardinality/containment matcher, no naming
   convention assumed, the default when a target schema is omitted) or via
@@ -34,8 +34,9 @@ tools.
 
 - `package-polygons` MUST produce one output per detected level.
 - `package-polygons` MUST also build an issues report per level, using
-  the shared gap-only schema in `docs/reference/shared.md`; the finest
-  level's own output is never dissolved, so it never has one.
+  the shared gap-only schema in `docs/reference/shared.md`. The finest
+  level's own output is never dissolved, so its issues are only the
+  input's `micro-polygon` rows.
 - The finest level's own output MUST be the loaded input itself, not a
   separately exported file: `App.svelte` MUST NOT offer a download for it.
 

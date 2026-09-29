@@ -6,22 +6,22 @@ for rules `mosaic` shares with other tools.
 
 ## Inputs
 
-- `mosaic` MUST load the children layer and the parent/clip layer
+- `mosaic` MUST load the input layer and the overlay layer
   independently via the shared loader, without running `gatedCoverageClean`
   or any other clean pass on either — same as `clip`.
-- `mosaic` MUST NOT re-run Voronoi extension on any child; the children
+- `mosaic` MUST NOT re-run Voronoi extension on any input feature; the input features
   layer is expected to already be a finished Edge Extender output, though
   `mosaic` never verifies this.
-- `mosaic` MUST process exactly one children file and one parent file per
+- `mosaic` MUST process exactly one input file and one overlay file per
   run (see `docs/adr/0026`, which this tool shares with `clip`).
 
 ## Assigning and clipping
 
 - `mosaic`'s assign and clip stages MUST behave exactly as `clip`'s own
-  (`docs/reference/clip.md`): assign-one majority vote, drop children not
-  overlapping the winning parent, adaptively grid-tile a large parent
-  boundary, drop any assigned child whose clip result is empty, and fail
-  the run if zero children were ever assigned.
+  (`docs/reference/clip.md`): assign-one majority vote, drop input features not
+  overlapping the winning overlay feature, adaptively grid-tile a large overlay feature
+  boundary, drop any assigned input feature whose clip result is empty, and fail
+  the run if zero input features were ever assigned.
 
 ## Stitching
 
@@ -35,10 +35,11 @@ for rules `mosaic` shares with other tools.
   overlap or gap after the stitch pass is reported, not raised (see
   `docs/adr/0027`).
 - `mosaic` MUST export the final stitched layer.
-- `mosaic` MUST also produce a combined issues report listing every child
+- `mosaic` MUST also produce a combined issues report listing every input feature
   that never made it into the final output (kind `unassigned`, identified
   by its own fid), every leftover gap the stitch pass's own issues check
-  finds (kind `gap`), and any `code-mismatch`/`code-fallback` rows from a
+  finds (kind `gap`), every micro-polygon the stitch pass merged or
+  dropped (kind `micro-polygon`), and any `code-mismatch`/`code-fallback` rows from a
   supplied code-based assignment override (see `docs/reference/clip.md`,
   `docs/reference/shared.md`), and MUST produce it only when it has at
   least one row.
@@ -46,8 +47,9 @@ for rules `mosaic` shares with other tools.
 ## Configuration
 
 - `mosaic` MAY accept a `matchColumn` name or a
-  `parentMatchColumn`/`childMatchColumn` pair for the code-based
+  `overlayMatchColumn`/`inputMatchColumn` pair for the code-based
   assignment override (see `docs/adr/0029`).
-- `mosaic` MAY accept a list of parent attribute columns to carry into the
-  output, each joined onto every output row (prefixed `parent_`) from the
-  single winning parent's own attribute row.
+- `mosaic` MAY accept a list of overlay feature attribute columns to carry into the
+  output, each joined onto every output row, under its own name, from the
+  single winning overlay feature's own attribute row. A carried column whose
+  name already exists on the input layer MUST raise.

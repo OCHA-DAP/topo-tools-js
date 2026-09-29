@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
-import { checkNoErosion, gapRegionsQuery } from "$lib/db/coverage";
+import { checkNoErosion, buildGapTable, hasMicroPolygons } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { stageCleanInput } from "./clean";
 import { computeEffectiveDistance } from "./distance";
@@ -88,7 +88,7 @@ async function runValidation(
   }
 
   try {
-    await conn.query(gapRegionsQuery("ee_validate_gaps", finalTable));
+    await buildGapTable(conn, "ee_validate_gaps", finalTable);
     const r = await conn.query("SELECT COUNT(*) AS n FROM ee_validate_gaps");
     const n = Number((r.toArray()[0] as { n: bigint | number }).n ?? 0);
     if (n > 0) console.warn(`GAPS in ${finalTable}: ${n} regions`);
@@ -96,6 +96,12 @@ async function runValidation(
     console.warn("gap check failed:", e);
   } finally {
     await conn.query("DROP TABLE IF EXISTS ee_validate_gaps");
+  }
+
+  try {
+    if (await hasMicroPolygons(conn, finalTable)) console.warn(`MICRO-POLYGONS in ${finalTable}`);
+  } catch (e) {
+    console.warn("micro-polygon check failed:", e);
   }
 
   try {
@@ -121,12 +127,14 @@ export interface RunPipelineOptions {
   // runPipeline call) leaves this false: layer_05 genuinely is (one of) its
   // final outputs, so cleaning here is cleaning at the end, not the middle.
   skipOutputClean?: boolean;
+  // Edge Matcher already cleaned the whole input with the any-hole trigger.
+  skipInputHoleCheck?: boolean;
 }
 
 export async function runPipeline(
   conn: AsyncDuckDBConnection,
   onProgress: ProgressFn,
-  { skipOutputClean = false }: RunPipelineOptions = {},
+  { skipOutputClean = false, skipInputHoleCheck = false }: RunPipelineOptions = {},
 ): Promise<PipelineResult> {
   // Defensive sweep in case a prior run in this session left tables behind
   // (e.g. an Edge Matcher loop iterating over multiple groups).
@@ -136,7 +144,7 @@ export async function runPipeline(
   // — Voronoi generation assumes a clean starting coverage. No-op, and no
   // progress update, when the input already has no invalid edges.
   console.log("[EE-DEBUG] === stageCleanInput ===");
-  await stageCleanInput(conn);
+  await stageCleanInput(conn, !skipInputHoleCheck);
 
   // Stage 2: lines (single attempt; _02a is stable across retries)
   console.log("[EE-DEBUG] === stageLines ===");
