@@ -95,6 +95,8 @@
   let error = $state<string | null>(null);
 
   // Results
+  // True once detection finished, even if the first clean was rejected.
+  let analyzed = $state(false);
   let originalGeoJSON = $state<string | null>(null);
   let cleanedGeoJSON = $state<string | null>(null);
   let issuesGeoJSON = $state<string | null>(null);
@@ -152,6 +154,7 @@
   });
 
   function resetResults(): void {
+    analyzed = false;
     originalGeoJSON = null;
     cleanedGeoJSON = null;
     issuesGeoJSON = null;
@@ -214,6 +217,7 @@
         currentStage = stage;
         stageLabel = label;
       });
+      analyzed = true;
       originalGeoJSON = result.originalGeoJSON;
       cleanedGeoJSON = result.cleanedGeoJSON;
       issuesGeoJSON = result.issuesGeoJSON;
@@ -231,13 +235,24 @@
       error = e instanceof Error ? e.message : String(e);
       errorStage = e instanceof PipelineError ? (e as PipelineError).failedStage : currentStage;
       currentStage = 0;
+      const analysis = e instanceof PipelineError ? e.analysis : undefined;
+      if (analysis) {
+        analyzed = true;
+        originalGeoJSON = analysis.originalGeoJSON;
+        issuesGeoJSON = analysis.issuesGeoJSON;
+        issues = analysis.issues;
+        detectionFailed = analysis.detectionFailed;
+        bounds = analysis.bounds;
+        totalCount = analysis.totalCount;
+        showSide = "a";
+      }
     } finally {
       running = false;
     }
   }
 
   function scheduleReclean(): void {
-    if (cleanedGeoJSON == null) return;
+    if (!analyzed) return;
     if (recleanTimer) clearTimeout(recleanTimer);
     if (recleaning) {
       recleanPending = true;
@@ -249,6 +264,7 @@
   async function doReclean(): Promise<void> {
     recleaning = true;
     recleanPending = false;
+    const firstClean = cleanedGeoJSON == null;
     try {
       const result = await recleanOnly(duckdbState.conn!, {
         gapWidthM: effectiveGapWidthM,
@@ -261,6 +277,10 @@
       issuesGeoJSON = result.issuesGeoJSON;
       detectionFailed = result.detectionFailed;
       exportCheck = result.exportCheck;
+      error = null;
+      errorStage = 0;
+      currentStage = 5;
+      if (firstClean) showSide = "b";
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -337,7 +357,7 @@
       {#if loadError}<div class="tc-error">{loadError}</div>{/if}
     </section>
 
-    {#if cleanedGeoJSON}
+    {#if analyzed}
       <section class="tc-step">
         <h2 class="tc-step-heading">Gap width</h2>
         <div class="tc-mode-btns" role="group" aria-label="Gap-fill mode">
@@ -516,7 +536,7 @@
         onIssueClick={onMapIssueClick}
       />
     </div>
-    {#if cleanedGeoJSON}
+    {#if analyzed}
       <div class="tc-table-pane">
         <IssuesTable
           rows={issues}

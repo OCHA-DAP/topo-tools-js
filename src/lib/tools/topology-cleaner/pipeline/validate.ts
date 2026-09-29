@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { hasNoiseFloorGap } from "$lib/db/coverage";
 import { hasCoverageViolations } from "$lib/db/coverageClean";
 
 // Post-fix validation gate, matching topo-tools-py's _03_clean.py checks
@@ -74,7 +75,8 @@ async function badGeometryTypeCount(conn: AsyncDuckDBConnection, table: string):
 // result) if: the output still has coverage violations; its total area
 // falls below a floor anchored to the detected overlap area, not a flat
 // fraction of the dataset; a feature untouched by any detected defect
-// collapsed to nothing; or a feature's fixed shape isn't a valid polygon.
+// collapsed to nothing; a feature's fixed shape isn't a valid polygon; or a
+// gap at or below the requested fill width survived (an under-fill).
 export async function validateCleanOutput(
   conn: AsyncDuckDBConnection,
   targetTable: string,
@@ -87,13 +89,15 @@ export async function validateCleanOutput(
   const collapsed = await collapsedUnrelatedCount(conn, targetTable);
   const badTypes = await badGeometryTypeCount(conn, targetTable);
   const stillViolating = await hasCoverageViolations(conn, targetTable);
+  const underFilled = gapDeg > 0 && (await hasNoiseFloorGap(conn, targetTable, gapDeg));
 
-  if (stillViolating || outputArea < minArea || collapsed > 0 || badTypes > 0) {
+  if (stillViolating || underFilled || outputArea < minArea || collapsed > 0 || badTypes > 0) {
     throw new Error(
       `Coverage-clean output rejected: area ${outputArea.toFixed(6)} vs input ` +
         `${inputArea.toFixed(6)} (floor ${minArea.toFixed(6)}), ${collapsed} feature(s) with no ` +
         `detected defect collapsed to empty, ${badTypes} feature(s) with a non-polygon geometry ` +
-        `type${stillViolating ? ", output still has coverage violations" : ""} ` +
+        `type${stillViolating ? ", output still has coverage violations" : ""}` +
+        `${underFilled ? ", a gap at or below the fill width remains" : ""} ` +
         `(gap_maximum_width=${gapDeg}).`,
     );
   }
