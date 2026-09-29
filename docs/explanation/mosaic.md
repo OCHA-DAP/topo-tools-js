@@ -27,8 +27,9 @@ usual `layer_01`). Ported from topo-tools-py's `mosaic`.
    seams between the (already-extended, but freshly-clipped-to-a-new-
    boundary) input feature pieces.
 5. **Assemble issues** (`pipeline/issues.ts`), combines every input feature that
-   never reached the final output (kind `unassigned`, whichever stage
-   dropped it: not overlapping the winner overlay feature, or clipping to empty)
+   never reached the final output (kind `clip-empty` for one clipped to
+   nothing, including every one outside the winner overlay feature, or
+   `unassigned` when no overlay feature won)
    with every leftover gap `runStitch`'s own issues check finds (kind
    `gap`) and any `code-mismatch`/`code-fallback` rows from an optional
    code-based assignment override (same override Clip's assign-one

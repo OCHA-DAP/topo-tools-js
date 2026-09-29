@@ -20,18 +20,24 @@ with other tools.
 - `match` MUST compute area-overlap pairs between every input feature and every
   bounding-box-nearby overlay feature, via the shared overlap measurement contract
   (`docs/reference/shared.md`).
-- `match` MUST assign each input feature to the single overlay feature it shares the
-  largest overlap area with (plurality, not necessarily more than half the
-  input feature's own area).
-- A tie between two candidate overlay features for the same input feature MUST be broken by
-  the lower overlay feature fid.
-- An input feature with zero overlap with any overlay feature MUST be recorded as
+- By default (assign-one), `match` MUST assign every input feature to the
+  one overlay feature that wins `clip`'s majority vote
+  (`docs/reference/clip.md`), including an input feature that does not
+  overlap it.
+- With the per-feature option, `match` MUST instead assign each input
+  feature to the single overlay feature it shares the largest overlap area
+  with (plurality, not necessarily more than half the input feature's own
+  area). A tie between two candidate overlay features for the same input
+  feature MUST be broken by the lower overlay feature fid.
+- An input feature left without an overlay feature (assign-one: no overlay
+  feature won; per-feature: zero overlap with any) MUST be recorded as
   unassigned, not silently dropped and not treated as fatal to the run.
 - When the opt-in passthrough flag is set (see Configuration), every
   unassigned input feature MUST instead be tagged with a sentinel overlay feature id and
   processed as its own group (see Per-group extension), landing in the
   output unclipped rather than only in the issues export.
-- `match` MAY accept a code-based assignment override, evaluated per input feature;
+- `match` MAY accept a code-based assignment override, evaluated per file
+  in assign-one mode and per input feature in per-feature mode;
   see `docs/reference/shared.md`'s "Code-based assignment override" section
   and `docs/adr/0029`. `code-mismatch`/`code-fallback` issues rows join
   `match`'s existing failed-group/unassigned issues rows in the same
@@ -79,20 +85,25 @@ with other tools.
 
 - `match` MUST export the assembled, clipped result, plus a separate
   combined export of every unassigned input feature, every input feature
-  belonging to a failed group, and a `gap` row for every interior hole in
+  belonging to a failed group, every input feature whose extended geometry
+  clipped to empty against its overlay feature (`kind='clip-empty'`, with
+  that pre-clip geometry), and a `gap` row for every interior hole in
   the final result wider than `SNAP_TOLERANCE`, each tagged with which kind
   it is, available independently of the main result export. A residual gap
   MUST NOT fail the run.
 - `match` MUST report, per group, whether it succeeded or failed, and MUST
   report the total count of unassigned input features, the total count of
-  input features excluded via a failed group, and the count of residual
-  gaps.
+  input features excluded via a failed group, the count clipped to empty,
+  and the count of residual gaps. In assign-one mode it MUST also report
+  the winning overlay feature.
 - `match` MUST report the assembled result's bounding box for map fit,
   whenever the bounds are finite.
 
 ## Configuration
 
 - `match` MUST process exactly one input file and one overlay file per run.
+- `match` MUST accept a per-feature option selecting per-feature
+  assignment, and MUST default to assign-one without it.
 - `match` MAY accept a `matchColumn` name or a
   `overlayMatchColumn`/`inputMatchColumn` pair for the code-based
   assignment override; both are optional, and omitting them runs

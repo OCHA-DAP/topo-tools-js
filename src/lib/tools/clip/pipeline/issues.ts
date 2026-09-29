@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { assignOneDropIssuesSql } from "$lib/db/assignOne";
 import {
   CODE_FALLBACK_REASON,
   CODE_MISMATCH_REASON,
@@ -35,26 +36,9 @@ export async function buildClipIssues(
   conn: AsyncDuckDBConnection,
   assignment: AssignmentOutcomeInfo = {},
 ): Promise<ClipIssuesResult> {
-  // A fid missing from cl_assign was never spatially/code-matched; a fid in
-  // cl_assign but not cl_clip was assigned but its clip intersection was empty.
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_unassigned_issues AS
-    SELECT 'unassigned-' || c.fid AS key, 'unassigned' AS kind,
-           c.fid AS unit_a, NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason,
-           c.geom,
-           ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
-    FROM input_layer_01 c
-    WHERE c.fid NOT IN (SELECT fid FROM cl_clip)
-      AND c.fid NOT IN (SELECT input_fid FROM cl_assign)
-    UNION ALL
-    SELECT 'clip-empty-' || a.input_fid AS key, 'clip-empty' AS kind,
-           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid,
-           'clip intersection with its overlay feature was empty' AS reason,
-           c.geom,
-           ST_XMin(c.geom) AS xmin, ST_YMin(c.geom) AS ymin, ST_XMax(c.geom) AS xmax, ST_YMax(c.geom) AS ymax
-    FROM cl_assign a JOIN input_layer_01 c ON c.fid = a.input_fid
-    WHERE a.input_fid NOT IN (SELECT fid FROM cl_clip)
-      AND a.input_fid NOT IN (SELECT unit_a FROM cl_micro)
+    ${assignOneDropIssuesSql("cl_clip", "cl_micro")}
   `);
 
   // Every assigned input feature shares the single run-wide assignment_method

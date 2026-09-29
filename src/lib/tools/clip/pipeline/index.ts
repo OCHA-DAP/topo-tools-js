@@ -31,7 +31,7 @@ export interface ClipResult {
   bounds: [number, number, number, number] | null;
   overlayFid: number;
   assignedCount: number;
-  droppedAssignCount: number; // input features that didn't overlap the winner overlay feature, dropped before clipping
+  overlappingCount: number; // assigned input features overlapping the winner
   emptyClipCount: number; // assigned input features whose clipped result was empty, dropped after clipping
   issues: ClipIssueRow[];
   issuesGeoJSON: string;
@@ -90,6 +90,12 @@ export async function runClip(
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
   }
+  if (assign.overlayFid === null) {
+    throw new PipelineError(
+      "No input features overlap any overlay feature, so there is nothing to clip.",
+      2,
+    );
+  }
   try {
     await carryOverlayColumns(conn, carryColumns, assign.overlayFid, inputColumns.all);
   } catch (e) {
@@ -131,7 +137,7 @@ export async function runClip(
     bounds,
     overlayFid: assign.overlayFid,
     assignedCount: assign.assignedCount,
-    droppedAssignCount: assign.droppedCount,
+    overlappingCount: assign.overlappingCount,
     emptyClipCount: engineResult.emptyCount,
     issues,
     issuesGeoJSON,

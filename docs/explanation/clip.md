@@ -26,14 +26,15 @@ scoping decisions the port required.
    overshoot. The overlay feature boundary's parts are grid-tiled first if their
    vertex count exceeds `CLIP_TILE_MIN_VERTICES`, so input features are matched
    against bounding-box-nearby tiles instead of one huge polygon.
+   Every input feature is assigned to the winner, including one that does
+   not overlap it, as topo-tools-py's `assign_one` does (its ADR 0082).
 3. **Clip** (`pipeline/engine.ts`, `clipEngine`), every input feature assigned to
    the winning overlay feature is intersected against that overlay feature's own geometry
    (tiled the same way as the assign stage), and any assigned input feature whose
-   clip result comes out empty is dropped from the output. `pipeline/issues.ts`
-   reports these two drop reasons as distinct kinds, `unassigned` for a
-   input feature that never overlapped the winning overlay feature at all and `clip-empty`
-   for one that was assigned but whose intersection came out empty, since
-   they point at different causes.
+   clip result comes out empty, including every one lying outside the
+   winner, is dropped from the output. `pipeline/issues.ts` reports these
+   as `clip-empty` rows with their pre-clip geometry; `unassigned` rows
+   only arise when no overlay feature wins at all.
 
 ## Single winning overlay feature, no per-overlay-feature loop
 

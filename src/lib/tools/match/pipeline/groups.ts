@@ -83,6 +83,9 @@ export async function runGroups(
   await conn.query(
     "CREATE OR REPLACE TABLE ge_dropped (unit_a BIGINT, overlay_fid BIGINT, reason VARCHAR, geom GEOMETRY)",
   );
+  await conn.query(
+    "CREATE OR REPLACE TABLE ge_clip_empty (unit_a BIGINT, overlay_fid BIGINT, geom GEOMETRY)",
+  );
   const results: GroupResult[] = [];
 
   for (let i = 0; i < groups.length; i++) {
@@ -130,6 +133,11 @@ export async function runGroups(
           INSERT INTO ge_results
           SELECT fid, geom FROM ge_group_clip
           WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+        `);
+        await conn.query(`--sql
+          INSERT INTO ge_clip_empty
+          SELECT fid AS unit_a, ${group.overlayFid} AS overlay_fid, geom FROM layer_05
+          WHERE fid NOT IN (SELECT fid FROM ge_group_clip)
         `);
       }
 

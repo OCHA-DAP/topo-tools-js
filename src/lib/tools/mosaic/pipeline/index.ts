@@ -89,6 +89,12 @@ export async function runMosaic(
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 2);
   }
+  if (assign.overlayFid === null) {
+    throw new PipelineError(
+      "No input features overlap any overlay feature, so there is nothing to clip.",
+      2,
+    );
+  }
 
   try {
     await carryOverlayColumns(conn, carryColumns, assign.overlayFid, inputColumns.all);

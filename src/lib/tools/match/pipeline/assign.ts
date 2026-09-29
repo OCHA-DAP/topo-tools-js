@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { assignBestOverlap } from "$lib/db/assignBestOverlap";
+import { assignOne } from "$lib/db/assignOne";
 import {
   buildPerInputCodeWinners,
   combinePerInputAssignment,
@@ -14,43 +15,33 @@ export interface AssignResult {
   unassignedCount: number;
   codeMismatchCount: number;
   codeFallbackCount: number;
+  // Assign-one only: the majority-vote winner.
+  overlayFid: number | null;
 }
 
-// Assigns each input feature to its largest-overlap overlay feature (plurality); an optional
-// code join wins over that pick wherever it disagrees (docs/adr/0045).
+// Assign-one (the default) puts the whole input onto its majority-vote overlay
+// feature; perFeature assigns each input feature to its largest overlap instead.
 export async function computeAssignment(
   conn: AsyncDuckDBConnection,
   matchColumns: MatchColumnOptions = {},
   passthrough = false,
+  perFeature = false,
 ): Promise<AssignResult> {
-  await assignBestOverlap(conn, "input_layer_01", "overlay_layer_01", "ge_pairs", "ge_spatial");
-
-  const resolvedCols = resolveMatchColumns(matchColumns);
-  if (resolvedCols) {
-    await buildPerInputCodeWinners(conn, {
-      inputAttrTable: "input_layer_attr",
-      overlayAttrTable: "overlay_layer_attr",
-      pairsTable: "ge_pairs",
-      pairsInputCol: "a_fid",
-      pairsOverlayCol: "b_fid",
-      columns: resolvedCols,
-      outputTable: "ge_code_winner",
-    });
-    await combinePerInputAssignment(conn, {
-      codeWinnersTable: "ge_code_winner",
-      spatialTable: "ge_spatial",
-      outputTable: "ge_assignment",
-    });
-    await conn.query("DROP TABLE IF EXISTS ge_code_winner");
+  let one: Awaited<ReturnType<typeof assignOne>> | null = null;
+  if (perFeature) {
+    await assignPerFeature(conn, matchColumns);
   } else {
+    one = await assignOne(conn, matchColumns);
+    const method = one.assignmentMethod ? `'${one.assignmentMethod}'` : "NULL";
+    const agrees = one.spatialAgrees == null ? "NULL" : String(one.spatialAgrees);
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ge_assignment AS
       SELECT input_fid, overlay_fid,
-             NULL::VARCHAR AS assignment_method, NULL::BOOLEAN AS spatial_agrees
-      FROM ge_spatial
+             ${method}::VARCHAR AS assignment_method, ${agrees}::BOOLEAN AS spatial_agrees
+      FROM cl_assign
     `);
+    await conn.query("DROP TABLE IF EXISTS cl_assign");
   }
-  await conn.query("DROP TABLE IF EXISTS ge_spatial");
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_unassigned AS
@@ -89,10 +80,6 @@ export async function computeAssignment(
     `),
   ]);
 
-  // ge_pairs is only an intermediate for the tables above; free it now
-  // rather than letting it sit through the rest of the pipeline.
-  await conn.query("DROP TABLE IF EXISTS ge_pairs");
-
   const codeRow = codeStats.toArray()[0] as {
     mismatch: bigint | number;
     fallback: bigint | number;
@@ -103,5 +90,43 @@ export async function computeAssignment(
     groupCount: Number((groups.toArray()[0] as { n: bigint | number }).n),
     codeMismatchCount: Number(codeRow.mismatch),
     codeFallbackCount: Number(codeRow.fallback),
+    overlayFid: one?.overlayFid ?? null,
   };
+}
+
+// Each input feature to its largest-overlap overlay feature (plurality); an optional
+// code join wins over that pick wherever it disagrees (docs/adr/0045).
+async function assignPerFeature(
+  conn: AsyncDuckDBConnection,
+  matchColumns: MatchColumnOptions,
+): Promise<void> {
+  await assignBestOverlap(conn, "input_layer_01", "overlay_layer_01", "ge_pairs", "ge_spatial");
+
+  const resolvedCols = resolveMatchColumns(matchColumns);
+  if (resolvedCols) {
+    await buildPerInputCodeWinners(conn, {
+      inputAttrTable: "input_layer_attr",
+      overlayAttrTable: "overlay_layer_attr",
+      pairsTable: "ge_pairs",
+      pairsInputCol: "a_fid",
+      pairsOverlayCol: "b_fid",
+      columns: resolvedCols,
+      outputTable: "ge_code_winner",
+    });
+    await combinePerInputAssignment(conn, {
+      codeWinnersTable: "ge_code_winner",
+      spatialTable: "ge_spatial",
+      outputTable: "ge_assignment",
+    });
+    await conn.query("DROP TABLE IF EXISTS ge_code_winner");
+  } else {
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ge_assignment AS
+      SELECT input_fid, overlay_fid,
+             NULL::VARCHAR AS assignment_method, NULL::BOOLEAN AS spatial_agrees
+      FROM ge_spatial
+    `);
+  }
+  await conn.query("DROP TABLE IF EXISTS ge_spatial");
+  await conn.query("DROP TABLE IF EXISTS ge_pairs");
 }

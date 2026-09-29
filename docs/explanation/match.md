@@ -1,7 +1,9 @@
 # Edge Matcher
 
-Assigns every polygon in a fine (input) layer to the coarse (overlay)
-polygon it overlaps most, groups input features by their assigned overlay feature, then
+Assigns a fine (input) layer to coarse (overlay) polygons, by default all of
+it to the one overlay feature most input features overlap (assign-one, as
+topo-tools-py's `edge-match`), optionally each input feature to the overlay
+feature it overlaps most (per-feature). Groups input features by their assigned overlay feature, then
 runs Edge Extender's pipeline independently within each group so the
 group's result meets its own overlay feature boundary exactly. Automatic by default;
 an optional code-based assignment override is available (see below).
@@ -13,11 +15,15 @@ an optional code-based assignment override is available (see below).
    [`0012`](../adr/0012-match-cleans-parent-and-child-inputs-on-load.md)).
    Real source data commonly carries pre-existing seam imprecision that this
    pipeline's later per-group clip step has no way to fix downstream.
-2. **Assign** (`pipeline/assign.ts`), computes area-overlap pairs between
-   every input feature and nearby overlay feature (`src/lib/db/overlap.ts`, shared with the
-   Changelog tool), then assigns each input feature to the overlay feature with the largest
-   shared area (plurality, not necessarily >50%). Input features with zero overlay feature
-   overlap go to `ge_unassigned` instead of being silently dropped. With
+2. **Assign** (`pipeline/assign.ts`), by default runs Clip's `assignOne`
+   (`docs/explanation/clip.md`), assigning every input feature, overlapping
+   or not, to the majority-vote winner. With the per-feature option it
+   instead computes area-overlap pairs between every input feature and
+   nearby overlay feature (`src/lib/db/overlap.ts`, shared with the Changelog
+   tool) and assigns each input feature to the overlay feature with the
+   largest shared area (plurality, not necessarily >50%). Input features
+   left without an overlay feature go to `ge_unassigned` instead of being
+   silently dropped. With
    the opt-in passthrough toggle, those same input features are also inserted
    into `ge_assignment` under a sentinel `PASSTHROUGH_OVERLAY_FID` (`-1`,
    `pipeline/groups.ts`), turning them into their own pseudo-group instead
@@ -33,7 +39,10 @@ an optional code-based assignment override is available (see below).
    failure, then clipped against the known overlay feature geometry by the
    shared clip engine (`src/lib/db/clipEngine.ts`, the same one Clip and
    Mosaic use, as in topo-tools-py), except the passthrough group, which
-   has no real overlay feature boundary and lands in `ge_results` unclipped. A
+   has no real overlay feature boundary and lands in `ge_results` unclipped.
+   An extended input feature whose clip comes out empty is recorded in
+   `ge_clip_empty`, which in assign-one mode is every input feature lying
+   outside the winning overlay feature. A
    failing group's input features are recorded in `ge_dropped` (with the overlay feature
    fid and error message) rather than aborting the whole batch.
 4. **Assemble** (`pipeline/index.ts`) — join clipped group results into
@@ -46,9 +55,10 @@ an optional code-based assignment override is available (see below).
 
 ## Issues export
 
-`ge_unassigned` (input features with no overlay feature overlap) and `ge_dropped` (input features
-whose whole group's extension failed) are combined into one `ge_issues`
-table, each row tagged with a `kind` (`unassigned` or `dropped_group`) and,
+`ge_unassigned` (input features left without an overlay feature), `ge_dropped` (input features
+whose whole group's extension failed) and `ge_clip_empty` (input features
+clipped to nothing) are combined into one `ge_issues` table, each row
+tagged with a `kind` (`unassigned`, `dropped_group` or `clip-empty`) and,
 for dropped groups, the overlay feature fid and the error that caused the drop. When
 the passthrough toggle is on and a formerly-unassigned input feature made it through
 its pseudo-group into `ge_results`, it's also surfaced as a `passthrough`
@@ -64,7 +74,8 @@ Given a `matchColumn` (same column name on both layers) or a
 `overlayMatchColumn`/`inputMatchColumn` pair, `pipeline/assign.ts`'s
 `computeAssignment` also computes an exact code join, restricted to
 `(input feature, overlay feature)` pairs that already spatially overlap, alongside the
-plurality vote above. The code result wins whenever one exists, even on
+spatial vote above (per file in assign-one mode, per input feature in
+per-feature mode). The code result wins whenever one exists, even on
 disagreement; an input feature whose code has no overlapping overlay match falls back
 to the spatial result. Both outcomes are recorded on `ge_assignment`
 (`assignment_method`, `spatial_agrees`) and surfaced as `ge_issues` rows

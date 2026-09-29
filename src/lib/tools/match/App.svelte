@@ -41,7 +41,10 @@
   let codeFallbackCount = $state<number | null>(null);
   let microCount = $state<number | null>(null);
   let gapCount = $state<number | null>(null);
+  let clipEmptyCount = $state<number | null>(null);
+  let assignedOverlayLabel = $state<string | null>(null);
   let passthrough = $state(false);
+  let perFeature = $state(false);
 
   // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
   // first auto-run never changes behavior, even when a plausible code column
@@ -104,6 +107,7 @@
 
   $effect(() => {
     const _p = passthrough;
+    const _f = perFeature;
     untrack(() => {
       if (!resultGeoJSON || running) return;
       handleRun();
@@ -164,6 +168,8 @@
     codeFallbackCount = null;
     microCount = null;
     gapCount = null;
+    clipEmptyCount = null;
+    assignedOverlayLabel = null;
     groupRows = [];
     activeGroupIndex = -1;
     activeStage = 0;
@@ -188,6 +194,7 @@
         { overlayMatchColumn: overlayMatchColumn ?? undefined, inputMatchColumn: inputMatchColumn ?? undefined },
         passthrough,
         fillOptions,
+        perFeature,
       );
       resultGeoJSON = result.geojson;
       overlayOutlineGeoJSON = result.overlayOutlineGeojson;
@@ -199,6 +206,8 @@
       codeFallbackCount = result.codeFallbackCount;
       microCount = result.microCount;
       gapCount = result.gapCount;
+      clipEmptyCount = result.clipEmptyCount;
+      assignedOverlayLabel = result.assignedOverlayLabel;
       inputColumns = result.inputColumns;
       overlayColumns = result.overlayColumns;
       phaseLabel = "Done";
@@ -264,6 +273,18 @@
         disabled={running}
         helpText="The boundary to match and clip against, one level up or many."
       />
+    </section>
+
+    <section class="step">
+      <h2 class="step-heading">Fitting</h2>
+      <p class="fit-mode">
+        {perFeature
+          ? "Each input feature goes into the overlay feature it overlaps most."
+          : "All input features go into the one overlay feature most of them overlap."}
+        <button class="link-btn" disabled={running} onclick={() => (perFeature = !perFeature)}>
+          {perFeature ? "Fit all into one" : "Fit each separately"}
+        </button>
+      </p>
     </section>
 
     {#if inputColumns && overlayColumns}
@@ -386,8 +407,24 @@
       <div class="error-panel">{error}</div>
     {/if}
 
-    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0) || (microCount !== null && microCount > 0) || (gapCount !== null && gapCount > 0)}
+    {#if resultGeoJSON && !perFeature && assignedOverlayLabel}
+      <p class="fit-mode">Fitted into {assignedOverlayLabel}.</p>
+    {/if}
+
+    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0) || (microCount !== null && microCount > 0) || (gapCount !== null && gapCount > 0) || (clipEmptyCount !== null && clipEmptyCount > 0)}
       <div class="warn-panel">
+        {#if clipEmptyCount !== null && clipEmptyCount > 0}
+          <p>
+            {clipEmptyCount} input feature{clipEmptyCount === 1 ? " falls" : "s fall"} outside
+            {perFeature ? "their overlay feature" : "it"} and {clipEmptyCount === 1 ? "was" : "were"} clipped
+            away.
+            {#if !perFeature}
+              <button class="link-btn" disabled={running} onclick={() => (perFeature = true)}>
+                Fit each separately
+              </button>
+            {/if}
+          </p>
+        {/if}
         {#if unassignedCount !== null && unassignedCount > 0}
           <p>
             {unassignedCount} fine unit{unassignedCount === 1 ? "" : "s"} had no overlap with any
@@ -515,6 +552,28 @@
     gap: 0.75rem;
     padding-top: 0.75rem;
     border-top: 1px solid #e5e7eb;
+  }
+
+  .fit-mode {
+    font-size: 0.8rem;
+    color: #374151;
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: #2563eb;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .link-btn:disabled {
+    color: #9ca3af;
+    cursor: default;
   }
 
   .step-heading {

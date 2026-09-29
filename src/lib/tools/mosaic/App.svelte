@@ -188,7 +188,7 @@
     return file.name.replace(/\.[^.]+$/, "");
   }
 
-  const unassignedCount = $derived(issues.filter((i) => i.kind === "unassigned").length);
+  const clipEmptyCount = $derived(issues.filter((i) => i.kind === "clip-empty").length);
   const gapCount = $derived(issues.filter((i) => i.kind === "gap").length);
   const microCount = $derived(issues.filter((i) => i.kind === "micro-polygon").length);
   const codeMismatchCount = $derived(issues.filter((i) => i.kind === "code-mismatch").length);
@@ -340,12 +340,15 @@
     {#if resultGeoJSON && overlayFid !== null}
       <section class="step">
         <p class="info-line">Fitted to overlay feature fid {overlayFid}.</p>
-        {#if unassignedCount > 0 || gapCount > 0}
+        {#if clipEmptyCount > 0}
           <p class="warn-line">
-            {unassignedCount} input feature{unassignedCount === 1 ? "" : "s"} unassigned, {gapCount} gap{gapCount ===
-            1
-              ? ""
-              : "s"} remaining — see the issues download.
+            {clipEmptyCount} input feature{clipEmptyCount === 1 ? " falls" : "s fall"} outside it and
+            {clipEmptyCount === 1 ? "was" : "were"} clipped away, see the issues download.
+          </p>
+        {/if}
+        {#if gapCount > 0}
+          <p class="warn-line">
+            {gapCount} gap{gapCount === 1 ? "" : "s"} remaining, see the issues download.
           </p>
         {/if}
         {#if microCount > 0}
