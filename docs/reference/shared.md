@@ -69,9 +69,10 @@ name instead of repeating them.
 ## Coverage-topology checks
 
 - The shared overlap/mismatched-edge check (`ST_CoverageInvalidEdges_Agg`)
-  MUST NOT be treated as a gap check: it reports "no violations" both when
-  a real, fully-enclosed gap exists with no overlaps, and when the input
-  has collapsed to nothing.
+  MUST run at `SNAP_TOLERANCE`, so non-matching edges within that distance
+  count as violations. It MUST NOT be treated as a gap check: it reports
+  "no violations" both when a real, fully-enclosed gap exists with no
+  overlaps, and when the input has collapsed to nothing.
 - The shared gap check (`buildGapTable`) MUST detect fully-enclosed interior
   holes only, in the union of a layer's own geometries. An open,
   non-enclosed inlet between two polygons MUST NOT be reported as a gap.

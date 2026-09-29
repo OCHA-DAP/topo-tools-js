@@ -87,7 +87,7 @@ export async function hasCoverageViolations(
   table: string,
 ): Promise<boolean> {
   const r = await conn.query(`--sql
-    SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL AS bad
+    SELECT ST_CoverageInvalidEdges_Agg(geom, ${SNAP_TOLERANCE}) IS NOT NULL AS bad
     FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${table})
   `);
   return Boolean(r.toArray()[0].bad);
