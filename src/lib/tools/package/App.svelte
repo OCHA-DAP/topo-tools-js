@@ -217,12 +217,14 @@
           {/each}
         </div>
         {#if selectedPolygonLevel}
+          {@const gaps = selectedPolygonLevel.issues.filter((i) => i.kind === "gap").length}
+          {@const micro = selectedPolygonLevel.issues.length - gaps}
           <p class="summary-line">
             {selectedPolygonLevel.keptColumns.length} kept, {selectedPolygonLevel.summedColumns
               .length} summed, {selectedPolygonLevel.droppedColumns.length} dropped.
-            {selectedPolygonLevel.issues.length} gap issue{selectedPolygonLevel.issues.length === 1
-              ? ""
-              : "s"}.
+            {gaps} gap issue{gaps === 1 ? "" : "s"}{micro > 0
+              ? `, ${micro} micro-polygon${micro === 1 ? "" : "s"} merged or dropped`
+              : ""}.
           </p>
           {#if selectedPolygonLevel.exportable}
             {@const src = levelExportSource(selectedPolygonLevel.level)}

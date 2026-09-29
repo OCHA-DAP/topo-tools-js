@@ -6,7 +6,8 @@ tools.
 
 ## Inputs
 
-- `package-points` MUST read the input via the shared loader.
+- `package-points` MUST read the input via the shared loader, then merge
+  its micro-polygons (see `docs/reference/shared.md`), logging the count.
 - `package-points` MUST detect every admin level present, either
   structurally or via an explicit `nameField`/`codeField` pair, raising if
   no level is found.

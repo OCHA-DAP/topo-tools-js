@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { buildCoverageCleanEscalating, hasCoverageViolations } from "$lib/db/coverageClean";
-import { hasNoiseFloorGap } from "$lib/db/coverage";
+import { hasMicroPolygons, hasNoiseFloorGap } from "$lib/db/coverage";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
@@ -79,6 +79,7 @@ export async function runStitch(
     await buildCoverageCleanEscalating(conn, sourceTable, "st_clean", {
       gap: SNAP_TOLERANCE,
       preserveOriginal: true,
+      microIssuesTable: "st_micro",
     });
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 3);
@@ -96,6 +97,9 @@ export async function runStitch(
   // wider (possibly legitimate) gaps below.
   if (await hasNoiseFloorGap(conn, "st_clean")) {
     console.warn("stitch: a noise-floor gap remains in st_clean after ST_CoverageClean");
+  }
+  if (await hasMicroPolygons(conn, "st_clean")) {
+    console.warn("stitch: a micro-polygon remains in st_clean after ST_CoverageClean");
   }
 
   const { rows, geojson } = await buildStitchIssues(conn, "st_clean");

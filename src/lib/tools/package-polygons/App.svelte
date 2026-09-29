@@ -200,10 +200,14 @@
         </div>
 
         {#if selected}
+          {@const gaps = selected.issues.filter((i) => i.kind === "gap").length}
+          {@const micro = selected.issues.length - gaps}
           <p class="summary-line">
             {selected.keptColumns.length} kept, {selected.summedColumns.length} summed,
             {selected.droppedColumns.length} dropped.
-            {selected.issues.length} gap issue{selected.issues.length === 1 ? "" : "s"}.
+            {gaps} gap issue{gaps === 1 ? "" : "s"}{micro > 0
+              ? `, ${micro} micro-polygon${micro === 1 ? "" : "s"} merged or dropped`
+              : ""}.
           </p>
           {#if selected.exportable}
             {@const src = levelExportSource(selected.level)}

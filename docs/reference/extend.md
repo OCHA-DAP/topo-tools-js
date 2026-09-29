@@ -8,8 +8,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `extend` MUST read the input via the shared loader (see
   `docs/reference/shared.md`).
 - If the loaded input has any coverage violation (an overlap or a
-  mismatched shared edge), `extend` MUST correct it via `gatedCoverageClean`
-  before continuing; otherwise it MUST leave the input unmodified.
+  mismatched shared edge), a micro-polygon or an enclosed hole, `extend`
+  MUST correct it via `gatedCoverageClean` before continuing; otherwise it
+  MUST leave the input unmodified. Run from `match`, `extend` MUST skip the
+  hole check, since `match` already cleaned the whole input.
 - Correcting a violation MAY shift any polygon's boundary, not just the
   violating one.
 - `extend` MUST NOT distinguish a real hole from a digitization gap at this

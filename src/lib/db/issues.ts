@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { buildGapTable, buildOverlapTable, emptyRegions } from "./coverage";
+import { buildGapTable, buildOverlapTable, emptyRegions, isMicroSql } from "./coverage";
 import { degSqToM2, degToM } from "./units";
 
 // Shared gap/overlap issues-table assembly, used by topology-cleaner (against
@@ -11,15 +11,15 @@ import { degSqToM2, degToM } from "./units";
 
 export interface IssueRow {
   key: string; // "gap-3" / "overlap-7" — stable id, also the map feature id
-  kind: "gap" | "overlap";
+  kind: IssueKind;
   areaM2: number; // approximate, for display/sorting
   maxWidthM: number; // Maximum Inscribed Circle diameter, approximate
   thinnessRatio: number | null; // Polsby-Popper compactness; gap rows only, null for overlaps
-  units: number[]; // fids involved (overlaps: two units; gaps: none)
+  units: number[]; // fids involved (overlaps: two units; micro-polygons: one; gaps: none)
   bbox: [number, number, number, number];
 }
 
-export type IssueKind = "gap" | "overlap";
+export type IssueKind = "gap" | "overlap" | "micro-polygon";
 
 export interface IssuesResult {
   rows: IssueRow[];
@@ -74,10 +74,34 @@ export async function buildOverlapRegions(
   }
 }
 
+// Every micro-polygon part of sourceTable, written to targetTable (n, unit_a,
+// geom). Returns false when detection threw and was degraded to empty.
+export async function buildMicroRegions(
+  conn: AsyncDuckDBConnection,
+  targetTable: string,
+  sourceTable: string,
+): Promise<boolean> {
+  try {
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${targetTable} AS
+      SELECT row_number() OVER () AS n, fid AS unit_a, geom
+      FROM (SELECT fid, UNNEST(ST_Dump(geom)).geom AS geom FROM ${sourceTable}
+            WHERE geom IS NOT NULL)
+      WHERE ${isMicroSql("geom")}
+    `);
+    return true;
+  } catch (e) {
+    console.warn("micro-polygon detection failed; skipping micro-polygons:", e);
+    await emptyRegions(conn, targetTable, ", NULL::BIGINT AS unit_a");
+    return false;
+  }
+}
+
 export interface AssembleIssuesTables {
   issuesTable: string;
   gapRegionsTable: string;
   overlapRegionsTable: string;
+  microRegionsTable?: string;
 }
 
 // Union a gap-regions table and an overlap-regions table (built by
@@ -85,7 +109,7 @@ export interface AssembleIssuesTables {
 // row list + map GeoJSON from it.
 export async function assembleIssues(
   conn: AsyncDuckDBConnection,
-  { issuesTable, gapRegionsTable, overlapRegionsTable }: AssembleIssuesTables,
+  { issuesTable, gapRegionsTable, overlapRegionsTable, microRegionsTable }: AssembleIssuesTables,
   failedKinds: Set<IssueKind>,
 ): Promise<IssuesResult> {
   // Linear scalings (degSqToM2(x) = x * areaFactor, degToM(x) = x * widthFactor) —
@@ -118,6 +142,17 @@ export async function assembleIssues(
              fa, fb, geom,
              ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
       FROM ${overlapRegionsTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+      ${
+        microRegionsTable
+          ? `UNION ALL
+      SELECT 'micro-polygon-' || n, 'micro-polygon', ST_Area(geom),
+             (ST_MaximumInscribedCircle(geom)).radius,
+             NULL::DOUBLE,
+             unit_a, NULL::BIGINT, geom,
+             ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
+      FROM ${microRegionsTable}`
+          : ""
+      }
     ) t
   `);
 
@@ -131,7 +166,7 @@ export async function assembleIssues(
   const rows: IssueRow[] = (
     meta.toArray() as Array<{
       key: string;
-      kind: "gap" | "overlap";
+      kind: IssueKind;
       area_m2: number | null;
       max_width_m: number | null;
       thinness_ratio: number | null;

@@ -38,11 +38,11 @@ export async function loadLayers(
   await loadFile(db, conn, inputFiles, { prefix: "input_" });
   await loadFile(db, conn, overlayFiles, { prefix: "overlay_" });
 
-  // Clean both input layers up front, gated so untouched inputs pay only the
-  // cheap invalid-edges check. The overlay feature is never cleaned elsewhere in this
+  // Clean both input layers up front, gated so untouched inputs skip the
+  // clean itself. The overlay feature is never cleaned elsewhere in this
   // pipeline, and the input feature's per-group clean (edge-extender's
   // stageCleanInput) can't see defects between units assigned to different
   // groups, so both need their own whole-layer pass here.
-  await gatedCoverageClean(conn, "overlay_layer_01");
-  await gatedCoverageClean(conn, "input_layer_01");
+  await gatedCoverageClean(conn, "overlay_layer_01", { anyHole: true });
+  await gatedCoverageClean(conn, "input_layer_01", { anyHole: true });
 }

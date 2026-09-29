@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { mergeMicroPolygons } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
 import {
@@ -103,6 +104,7 @@ export async function runPackagePolygons(
   conn: AsyncDuckDBConnection,
   schema: TargetSchema | null,
 ): Promise<PackagePolygonsResult> {
+  await mergeMicroPolygons(conn, "layer_01", "layer_01", "pp_micro");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE pp_input AS
     SELECT a.fid, a.geom, b.* EXCLUDE (fid)
@@ -151,7 +153,12 @@ export async function runPackagePolygons(
 
     const bounds = await computeBounds(conn, geomTable);
     const resultGeoJSON = await tableToGeoJSON(conn, geomTable, attrTable);
-    const { rows, geojson } = await buildPolygonIssues(conn, geomTable, plan.level);
+    const { rows, geojson } = await buildPolygonIssues(
+      conn,
+      geomTable,
+      plan.level,
+      exportable ? null : "pp_micro",
+    );
 
     levels.push({
       level: plan.level,
@@ -167,6 +174,7 @@ export async function runPackagePolygons(
   }
 
   await conn.query(`DROP TABLE IF EXISTS pp_input`);
+  await conn.query(`DROP TABLE IF EXISTS pp_micro`);
 
   return { levels };
 }

@@ -38,7 +38,8 @@ for rules `mosaic` shares with other tools.
 - `mosaic` MUST also produce a combined issues report listing every input feature
   that never made it into the final output (kind `unassigned`, identified
   by its own fid), every leftover gap the stitch pass's own issues check
-  finds (kind `gap`), and any `code-mismatch`/`code-fallback` rows from a
+  finds (kind `gap`), every micro-polygon the stitch pass merged or
+  dropped (kind `micro-polygon`), and any `code-mismatch`/`code-fallback` rows from a
   supplied code-based assignment override (see `docs/reference/clip.md`,
   `docs/reference/shared.md`), and MUST produce it only when it has at
   least one row.

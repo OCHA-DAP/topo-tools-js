@@ -9,7 +9,8 @@ with other tools.
 - `match` MUST load the input (fine) layer and the overlay (coarse) layer
   independently via the shared loader (see `docs/reference/shared.md`).
 - `match` MUST run a gated whole-layer `gatedCoverageClean` pass over both
-  the overlay layer and the input layer immediately after loading, at
+  the overlay layer and the input layer immediately after loading, also
+  triggered by any enclosed hole, at
   default settings (`SNAP_TOLERANCE` snap, no gap-fill), before assignment — a defect
   between two input features later assigned to different groups would
   otherwise be invisible to any later per-group check.
@@ -70,7 +71,9 @@ with other tools.
 - `match` MUST attempt exactly one final `gatedCoverageClean` pass over the
   fully assembled batch, to catch cross-group boundary seams no per-group
   clip could see, and MUST only replace the pre-clean export with the
-  post-clean one if that pass and its re-export both succeed.
+  post-clean one if that pass and its re-export both succeed. Each
+  micro-polygon that pass merges MUST be added to the issues export as a
+  `micro-polygon` row (see `docs/reference/shared.md`).
 
 ## Outputs
 

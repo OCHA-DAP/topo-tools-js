@@ -39,6 +39,7 @@
   let passthroughCount = $state<number | null>(null);
   let codeMismatchCount = $state<number | null>(null);
   let codeFallbackCount = $state<number | null>(null);
+  let microCount = $state<number | null>(null);
   let passthrough = $state(false);
 
   // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
@@ -160,6 +161,7 @@
     passthroughCount = null;
     codeMismatchCount = null;
     codeFallbackCount = null;
+    microCount = null;
     groupRows = [];
     activeGroupIndex = -1;
     activeStage = 0;
@@ -193,6 +195,7 @@
       passthroughCount = result.passthroughCount;
       codeMismatchCount = result.codeMismatchCount;
       codeFallbackCount = result.codeFallbackCount;
+      microCount = result.microCount;
       inputColumns = result.inputColumns;
       overlayColumns = result.overlayColumns;
       phaseLabel = "Done";
@@ -380,7 +383,7 @@
       <div class="error-panel">{error}</div>
     {/if}
 
-    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0)}
+    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0) || (microCount !== null && microCount > 0)}
       <div class="warn-panel">
         {#if unassignedCount !== null && unassignedCount > 0}
           <p>
@@ -406,6 +409,12 @@
           <p>
             {codeFallbackCount} unit{codeFallbackCount === 1 ? "" : "s"} had no overlapping code
             match and fell back to the spatial pick.
+          </p>
+        {/if}
+        {#if microCount !== null && microCount > 0}
+          <p>
+            {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance)
+            merged into a neighbouring feature or dropped.
           </p>
         {/if}
         <DownloadMenu

@@ -39,6 +39,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - An assigned input feature whose clipped result is empty MUST be dropped from the
   output, not exported as an empty geometry.
 - `clip` MUST fail the run if the clipped result has zero rows.
+- `clip` MUST merge or drop every micro-polygon in the clipped result (see
+  `docs/reference/shared.md`), recording each as a `micro-polygon` row.
 
 ## Outputs
 
@@ -51,7 +53,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   combining every input feature dropped for not overlapping the winning overlay feature
   (`kind='unassigned'`) with every assigned input feature whose clip result came
   out empty (`kind='clip-empty'`, `reason`
-  `clip intersection with its overlay feature was empty`), plus any
+  `clip intersection with its overlay feature was empty`), every merged
+  or dropped micro-polygon (`kind='micro-polygon'`), plus any
   `code-mismatch`/`code-fallback`
   row from a supplied code-based assignment override (see
   `docs/reference/shared.md`).

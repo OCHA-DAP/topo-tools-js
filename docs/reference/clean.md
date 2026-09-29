@@ -8,6 +8,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `clean` MUST read the input and reproject it via the shared loader (see
   `docs/reference/shared.md`) without correcting any topology defect first,
   so the issues stage sees the original, unmodified geometry.
+- `clean` MUST merge micro-polygons in the loaded input (see
+  `docs/reference/shared.md`) before freezing it, without listing them in
+  the issues panel.
 - `clean` MUST freeze the loaded input into an array shape once per load
   (`buildInput`) and MUST cache whether that input has any coverage
   violation (`inputHasViolations`), reusing both across every reclean
@@ -97,8 +100,12 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   count as resolved; a gap MUST count as resolved only if a representative
   interior point of the gap is now covered by some polygon in the cleaned
   output.
+- `clean` MUST merge or drop every micro-polygon left in its output,
+  including when the clean was skipped.
 - `clean` MUST report a collapsed-feature count (input row count minus
-  surviving cleaned row count) whenever a clean or reclean runs.
+  surviving cleaned row count) whenever a clean or reclean runs. A feature
+  removed by the micro-polygon merge MUST NOT count toward the validation
+  gate's unrelated-collapse check.
 
 ## Configuration (UI)
 

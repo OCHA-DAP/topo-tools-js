@@ -190,6 +190,7 @@
 
   const unassignedCount = $derived(issues.filter((i) => i.kind === "unassigned").length);
   const gapCount = $derived(issues.filter((i) => i.kind === "gap").length);
+  const microCount = $derived(issues.filter((i) => i.kind === "micro-polygon").length);
   const codeMismatchCount = $derived(issues.filter((i) => i.kind === "code-mismatch").length);
   const codeFallbackCount = $derived(issues.filter((i) => i.kind === "code-fallback").length);
 </script>
@@ -345,6 +346,12 @@
             1
               ? ""
               : "s"} remaining — see the issues download.
+          </p>
+        {/if}
+        {#if microCount > 0}
+          <p class="warn-line">
+            {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance) merged
+            into a neighbouring feature or dropped.
           </p>
         {/if}
         {#if hadResidualOverlaps}

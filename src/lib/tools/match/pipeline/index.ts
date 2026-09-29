@@ -1,6 +1,6 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
-import { hasNoiseFloorGap } from "$lib/db/coverage";
+import { hasMicroPolygons, hasNoiseFloorGap } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
 import {
@@ -45,6 +45,7 @@ export interface EdgeMatchResult {
   passthroughCount: number;
   codeMismatchCount: number;
   codeFallbackCount: number;
+  microCount: number;
   inputColumns: ColumnGuess;
   overlayColumns: ColumnGuess;
   // Geometry-only outline of the overlay layer, so the map can show it as a
@@ -60,26 +61,27 @@ async function buildIssuesTable(
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_issues AS
     SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
-           fid AS unit_a, NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason, geom
+           fid AS unit_a, NULL::BIGINT AS unit_b, NULL::BIGINT AS overlay_fid,
+           NULL::VARCHAR AS reason, geom
     FROM ge_unassigned
     WHERE fid NOT IN (SELECT input_fid FROM ge_assignment)
     UNION ALL
     SELECT 'dropped_group-' || unit_a AS key, 'dropped_group' AS kind,
-           unit_a, overlay_fid AS overlay_fid, reason, geom
+           unit_a, NULL, overlay_fid AS overlay_fid, reason, geom
     FROM ge_dropped
     UNION ALL
     SELECT 'passthrough-' || ga.input_fid AS key, 'passthrough' AS kind,
-           ga.input_fid AS unit_a, ga.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason, c.geom
+           ga.input_fid AS unit_a, NULL, ga.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason, c.geom
     FROM ge_assignment ga JOIN input_layer_01 c ON c.fid = ga.input_fid
     WHERE ga.overlay_fid = ${PASSTHROUGH_OVERLAY_FID} AND ga.input_fid IN (SELECT fid FROM ge_results)
     UNION ALL
     SELECT 'code_mismatch-' || a.input_fid AS key, 'code-mismatch' AS kind,
-           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, '${CODE_MISMATCH_REASON}' AS reason, c.geom
+           a.input_fid AS unit_a, NULL, a.overlay_fid AS overlay_fid, '${CODE_MISMATCH_REASON}' AS reason, c.geom
     FROM ge_assignment a JOIN input_layer_01 c ON c.fid = a.input_fid
     WHERE a.assignment_method = 'code' AND a.spatial_agrees = FALSE
     UNION ALL
     SELECT 'code_fallback-' || a.input_fid AS key, 'code-fallback' AS kind,
-           a.input_fid AS unit_a, a.overlay_fid AS overlay_fid, '${CODE_FALLBACK_REASON}' AS reason, c.geom
+           a.input_fid AS unit_a, NULL, a.overlay_fid AS overlay_fid, '${CODE_FALLBACK_REASON}' AS reason, c.geom
     FROM ge_assignment a JOIN input_layer_01 c ON c.fid = a.input_fid
     WHERE a.assignment_method = 'spatial_fallback'
   `);
@@ -91,6 +93,20 @@ async function buildIssuesTable(
     dropped: Number((droppedRes.toArray()[0] as { n: bigint | number }).n),
     passthrough: Number((passthroughRes.toArray()[0] as { n: bigint | number }).n),
   };
+}
+
+async function appendMicroIssues(conn: AsyncDuckDBConnection): Promise<number> {
+  const r = await conn.query(
+    "SELECT COUNT(*) AS n FROM duckdb_tables() WHERE table_name = 'ge_micro'",
+  );
+  if (Number((r.toArray()[0] as { n: bigint | number }).n) === 0) return 0;
+  await conn.query(`--sql
+    INSERT INTO ge_issues BY NAME
+    SELECT key, kind, unit_a, unit_b, reason, geom FROM ge_micro
+  `);
+  const n = await conn.query("SELECT COUNT(*) AS n FROM ge_micro");
+  await conn.query("DROP TABLE ge_micro");
+  return Number((n.toArray()[0] as { n: bigint | number }).n);
 }
 
 async function buildResultsAttrTable(conn: AsyncDuckDBConnection): Promise<void> {
@@ -135,6 +151,14 @@ async function runValidation(conn: AsyncDuckDBConnection, table: string): Promis
     }
   } catch (e) {
     console.warn("gap check failed:", e);
+  }
+
+  try {
+    if (await hasMicroPolygons(conn, table)) {
+      console.warn(`match: a micro-polygon remains in ${table} after CoverageClean`);
+    }
+  } catch (e) {
+    console.warn("micro-polygon check failed:", e);
   }
 }
 
@@ -234,10 +258,13 @@ export async function runEdgeMatch(
   // clean could see. Only replaces the export above if it and the re-export
   // both succeed; skipped if the attribute join already failed, since that's
   // a sign the connection is already poisoned.
+  let microCount = 0;
   if (hasAttrTable) {
     try {
-      await gatedCoverageClean(conn, "ge_results");
+      await conn.query("DROP TABLE IF EXISTS ge_micro");
+      await gatedCoverageClean(conn, "ge_results", { microIssuesTable: "ge_micro" });
       geojson = await tableToGeoJSON(conn, "ge_results", attrTable);
+      microCount = await appendMicroIssues(conn);
     } catch (e) {
       console.warn("Output CoverageClean/re-export failed, keeping pre-clean export:", e);
     }
@@ -254,6 +281,7 @@ export async function runEdgeMatch(
     passthroughCount,
     codeMismatchCount: assignment.codeMismatchCount,
     codeFallbackCount: assignment.codeFallbackCount,
+    microCount,
     inputColumns,
     overlayColumns,
     overlayOutlineGeojson,

@@ -169,7 +169,7 @@
       <section class="dt-step">
         <h2 class="dt-step-heading">Download</h2>
         <p class="dt-hint">
-          Every detected gap and overlap, regardless of size — open in QGIS or ArcGIS to inspect
+          Every detected gap, overlap and micro-polygon, regardless of size. Open in QGIS or ArcGIS to inspect
           them yourself.
         </p>
         <DownloadMenu

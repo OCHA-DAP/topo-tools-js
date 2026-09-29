@@ -83,14 +83,49 @@ name instead of repeating them.
   whose interiors overlap or where one contains the other, through
   `intersectPairs` (see Overlap measurement).
 - A "clean this derived output" pass MUST first check for a coverage
-  violation and skip `ST_CoverageClean` entirely when none is found. Every
-  caller that wants this behavior MUST go through `gatedCoverageClean`
-  rather than calling `ST_CoverageClean` directly.
-- `gatedCoverageClean` MUST preserve the input's fid set: a feature that
+  violation or a micro-polygon and skip `ST_CoverageClean` entirely when
+  neither is found. On a freshly loaded input (`match`, `code-update`,
+  `change`, `extend`), the check MUST also fire on any enclosed hole,
+  however narrow. Every caller that wants this behavior MUST go through
+  `gatedCoverageClean` rather than calling `ST_CoverageClean` directly.
+- `gatedCoverageClean` MUST preserve the input's fid set, apart from
+  features the micro-polygon merge removes: a feature that
   `ST_CoverageClean` collapses to empty MUST fall back to its pre-clean
   geometry rather than being dropped.
 - A `gatedCoverageClean` failure MUST be caught and logged, leaving the
   target table untouched, rather than propagated to the caller.
+
+## Micro-polygons (`$lib/db/coverage.ts::mergeMicroPolygons`)
+
+- A micro-polygon is any single polygon part (after splitting
+  MultiPolygons) whose maximum inscribed circle is at most
+  `SNAP_TOLERANCE` across. A wider part MUST be kept, however small its
+  area.
+- A tool that modifies geometry MUST NOT output a micro-polygon. Where it
+  finds one, it MUST merge the part into the feature whose non-micro part
+  it overlaps most once buffered by `SNAP_TOLERANCE` (ties to the lowest
+  fid, including the part's own feature), or drop it when it touches no
+  feature. A feature left with no parts MUST be removed.
+- When the set-based union that rebuilds the receiving features throws,
+  the merge MUST rebuild them one by one, retrying a feature that still
+  throws with its own parts snapped onto its incoming micro parts at
+  `SNAP_TOLERANCE`.
+- Every `buildCoverageClean` call MUST merge micro-polygons before
+  `ST_CoverageClean` runs, so `extend`, `stitch`, `match`, `mosaic`,
+  `clean` and every cleaned input apply this rule. `clip` applies it to
+  its clipped output, `clean` again after its fix, and `package-polygons`,
+  `package-points` and `package-lines` to their input.
+- Each merged or dropped part MUST be reported as a `micro-polygon` row
+  by `clip`, `stitch`, `mosaic`, `match` and `package-polygons`, with the
+  part's own fid in `unit_a`, the receiving fid in `unit_b` (null when
+  dropped), `reason` `merged into neighbouring feature` or
+  `dropped: touches no feature`, and the part itself as `geom`.
+  `package-points` and `package-lines` MUST log the count instead. `clean`
+  MUST NOT list them in its issues panel.
+- `detect` MUST report micro-polygons unfixed (see
+  `docs/reference/detect.md`).
+- `schema-join` and `schema-map` MUST NOT apply this rule, since they
+  never modify geometry.
 
 ## No-erosion guard (`$lib/db/coverage.ts::checkNoErosion`)
 

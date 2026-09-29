@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { mergeMicroPolygons } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
 import { runDissolveCore } from "$lib/tools/package-polygons/pipeline/dissolveCore";
@@ -115,6 +116,8 @@ export async function runPackagePoints(
     throw new Error(`depthColumn "${depthColumn}" already exists on layer_attr`);
   }
 
+  await mergeMicroPolygons(conn, "layer_01", "layer_01", "pkpt_micro");
+  await conn.query("DROP TABLE IF EXISTS pkpt_micro");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE pkpt_input AS
     SELECT a.fid, a.geom, b.* EXCLUDE (fid)

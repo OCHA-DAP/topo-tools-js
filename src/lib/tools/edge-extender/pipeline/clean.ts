@@ -1,18 +1,17 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { buildCoverageClean } from "$lib/db/coverageClean";
+import { buildCoverageClean, needsCoverageClean } from "$lib/db/coverageClean";
 
-// Only cleans layer_01 when ST_CoverageInvalidEdges_Agg actually flags a
-// defect — an unconditional clean was tried and made WASM failure rates
-// worse, not better. Lives here rather than in the shared loader because
-// Topology Cleaner reuses that same loader and needs the raw, un-cleaned
-// input to detect and report violations itself.
-export async function stageCleanInput(conn: AsyncDuckDBConnection): Promise<void> {
-  console.log("[EE-DEBUG] clean:1 invalid-edges-check");
-  const r = await conn.query(`--sql
-    SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL AS bad
-    FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM layer_01)
-  `);
-  if (!r.toArray()[0].bad) return;
+// Only cleans layer_01 when needsCoverageClean flags a defect: an
+// unconditional clean was tried and made WASM failure rates worse, not
+// better. Lives here rather than in the shared loader because Topology
+// Cleaner reuses that same loader and needs the raw, un-cleaned input to
+// detect and report violations itself.
+export async function stageCleanInput(
+  conn: AsyncDuckDBConnection,
+  anyHole: boolean,
+): Promise<void> {
+  console.log("[EE-DEBUG] clean:1 needs-clean-check");
+  if (!(await needsCoverageClean(conn, "layer_01", anyHole))) return;
 
   console.log("[EE-DEBUG] clean:2 buildCoverageClean");
   await buildCoverageClean(conn, "layer_01", "layer_01_tmp_clean", { preserveOriginal: true });

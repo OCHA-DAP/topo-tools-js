@@ -2,6 +2,7 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { assignOne } from "$lib/db/assignOne";
 import { carryOverlayColumns } from "$lib/db/carryColumns";
 import { clipEngine } from "$lib/db/clipEngine";
+import { mergeMicroPolygons } from "$lib/db/coverage";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
@@ -109,6 +110,11 @@ export async function runClip(
   }
   if (engineResult.outputCount === 0) {
     throw new PipelineError("Clipping produced no output rows.", 3);
+  }
+  try {
+    await mergeMicroPolygons(conn, "cl_clip", "cl_clip", "cl_micro");
+  } catch (e) {
+    throw new PipelineError(e instanceof Error ? e.message : String(e), 3);
   }
 
   const clippedGeoJSON = await tableToGeoJSON(conn, "cl_clip", "input_layer_attr");

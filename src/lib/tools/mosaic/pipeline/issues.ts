@@ -6,16 +6,17 @@ import {
 } from "$lib/db/codeJoin";
 import { buildStitchIssues } from "../../stitch/pipeline/issues";
 
-// Combined issues report: dropped input features, leftover stitch gaps, and (when
-// a code join was supplied) code-mismatch/code-fallback rows (docs/adr/0045).
+// Combined issues report: dropped input features, stitch's leftover gaps and
+// micro-polygons, and code-join rows when one was supplied (docs/adr/0045).
 
 export interface MosaicIssueRow {
   key: string;
-  kind: "unassigned" | "gap" | "code-mismatch" | "code-fallback";
+  kind: "unassigned" | "gap" | "micro-polygon" | "code-mismatch" | "code-fallback";
   areaM2: number | null;
   maxWidthM: number | null;
   thinnessRatio: number | null;
   unitA: number | null;
+  unitB?: number | null;
   overlayFid?: number | null;
   reason?: string | null;
   bbox: [number, number, number, number];
@@ -23,7 +24,7 @@ export interface MosaicIssueRow {
 
 export interface MosaicIssuesResult {
   rows: MosaicIssueRow[];
-  geojson: string; // FeatureCollection, props {key, kind, area_m2, max_width_m, unit_a, overlay_fid, reason}
+  geojson: string; // FeatureCollection, props {key, kind, area_m2, max_width_m, unit_a, unit_b, overlay_fid, reason}
 }
 
 export interface AssignmentOutcomeInfo {
@@ -71,17 +72,16 @@ export async function buildMosaicIssues(
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ms_issues AS
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, overlay_fid, reason,
-           geom, xmin, ymin, xmax, ymax
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, NULL::BIGINT AS unit_b,
+           overlay_fid, reason, geom, xmin, ymin, xmax, ymax
     FROM ms_unassigned
     UNION ALL
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, overlay_fid, reason,
-           geom, xmin, ymin, xmax, ymax
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, NULL::BIGINT,
+           overlay_fid, reason, geom, xmin, ymin, xmax, ymax
     FROM ms_code_issues
     UNION ALL
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a,
-           NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason,
-           geom, xmin, ymin, xmax, ymax
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, unit_b,
+           NULL::BIGINT AS overlay_fid, reason, geom, xmin, ymin, xmax, ymax
     FROM st_issues
   `);
   await conn.query("DROP TABLE IF EXISTS ms_code_issues");
@@ -117,19 +117,21 @@ export async function buildMosaicIssues(
     })),
     ...gapRows.map((r) => ({
       key: r.key,
-      kind: "gap" as const,
+      kind: r.kind,
       areaM2: r.areaM2,
       maxWidthM: r.maxWidthM,
-      thinnessRatio: r.thinnessRatio,
-      unitA: null,
+      thinnessRatio: r.kind === "gap" ? r.thinnessRatio : null,
+      unitA: r.unitA,
+      unitB: r.unitB,
       overlayFid: null,
-      reason: null,
+      reason: r.reason,
       bbox: r.bbox,
     })),
   ];
 
   const gj = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, unit_a, overlay_fid, reason, ST_AsGeoJSON(geom) AS _geom
+    SELECT key, kind, area_m2, max_width_m, unit_a, unit_b, overlay_fid, reason,
+           ST_AsGeoJSON(geom) AS _geom
     FROM ms_issues
   `);
   const features = (
@@ -139,6 +141,7 @@ export async function buildMosaicIssues(
       area_m2: number | null;
       max_width_m: number | null;
       unit_a: bigint | number | null;
+      unit_b: bigint | number | null;
       overlay_fid: bigint | number | null;
       reason: string | null;
       _geom: string;
@@ -152,6 +155,7 @@ export async function buildMosaicIssues(
       area_m2: r.area_m2,
       max_width_m: r.max_width_m,
       unit_a: r.unit_a == null ? null : Number(r.unit_a),
+      unit_b: r.unit_b == null ? null : Number(r.unit_b),
       overlay_fid: r.overlay_fid == null ? null : Number(r.overlay_fid),
       reason: r.reason,
     },

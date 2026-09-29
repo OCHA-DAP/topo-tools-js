@@ -10,7 +10,7 @@ shares with `code-refactor`.
 - `code-update` MUST accept exactly two inputs, OLD (already coded) and
   NEW (uncoded candidate), each loaded via the shared loader and coverage-
   cleaned independently (`gatedCoverageClean` on each side's own
-  finest-level geometry table).
+  finest-level geometry table, also triggered by any enclosed hole).
 
 ## Level resolution and format detection
 

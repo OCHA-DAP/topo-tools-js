@@ -2,6 +2,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
 import { NODING_FALLBACK_GRID, SNAP_TOLERANCE } from "./constants";
 import { intersectPairs } from "./overlap";
+import { degSqToM2, degToM } from "./units";
 
 export async function emptyRegions(
   conn: AsyncDuckDBConnection,
@@ -108,6 +109,178 @@ export async function hasNoiseFloorGap(
     return Boolean(r.toArray()[0].bad);
   } finally {
     await conn.query(`DROP TABLE IF EXISTS ${scratch}`);
+  }
+}
+
+export const MICRO_MERGED_REASON = "merged into neighbouring feature";
+export const MICRO_DROPPED_REASON = "dropped: touches no feature";
+
+// Ported from topo-tools-py's is_micro_sql: 2*area/perimeter bounds the
+// inscribed-circle diameter from below, so CASE skips it for every wide part.
+export function isMicroSql(geom: string, width: number = SNAP_TOLERANCE): string {
+  return (
+    `CASE WHEN ST_IsEmpty(${geom}) THEN FALSE ` +
+    `WHEN 2 * ST_Area(${geom}) <= ${width} * ST_Perimeter(${geom}) ` +
+    `THEN (ST_MaximumInscribedCircle(${geom})).radius * 2 <= ${width} ` +
+    "ELSE FALSE END"
+  );
+}
+
+export async function hasMicroPolygons(
+  conn: AsyncDuckDBConnection,
+  table: string,
+): Promise<boolean> {
+  const r = await conn.query(`--sql
+    SELECT EXISTS (
+      SELECT 1 FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM ${table}
+                     WHERE geom IS NOT NULL)
+      WHERE ${isMicroSql("geom")}
+    ) AS bad
+  `);
+  return Boolean(r.toArray()[0].bad);
+}
+
+async function emptyMicroIssues(conn: AsyncDuckDBConnection, issuesTable: string): Promise<void> {
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE ${issuesTable} AS
+    SELECT NULL::VARCHAR AS key, NULL::VARCHAR AS kind, NULL::BIGINT AS unit_a,
+           NULL::BIGINT AS unit_b, NULL::VARCHAR AS reason, NULL::DOUBLE AS area_m2,
+           NULL::DOUBLE AS max_width_m, NULL::BOOLEAN AS fixed, NULL::GEOMETRY AS geom,
+           NULL::DOUBLE AS xmin, NULL::DOUBLE AS xmax, NULL::DOUBLE AS ymin, NULL::DOUBLE AS ymax
+    WHERE FALSE
+  `);
+}
+
+// Per-row rebuild of `rebuilt` after the set-based union throws: a row that still
+// throws is retried with its own parts snapped onto the incoming micro parts.
+async function rebuildRowwise(
+  conn: AsyncDuckDBConnection,
+  parts: string,
+  dest: string,
+  touched: string,
+  rebuilt: string,
+): Promise<number> {
+  const rnids = (await conn.query(`SELECT rnid FROM ${touched}`)).toArray() as Array<{
+    rnid: bigint | number;
+  }>;
+  await conn.query(`CREATE OR REPLACE TABLE ${rebuilt} (rnid BIGINT, geom GEOMETRY)`);
+  let snapped = 0;
+  for (const { rnid } of rnids) {
+    const insert = (combine: string) => `--sql
+      INSERT INTO ${rebuilt}
+      WITH own AS (SELECT ST_Union_Agg(geom) AS g FROM ${parts} WHERE rnid = ${rnid} AND NOT micro),
+      incoming AS (SELECT ST_Union_Agg(geom) AS g FROM ${dest} WHERE dest_rnid = ${rnid})
+      SELECT * FROM (SELECT ${rnid}, ${combine} AS geom FROM own, incoming)
+      WHERE NOT ST_IsEmpty(geom)
+    `;
+    try {
+      await conn.query(insert("COALESCE(ST_Union(own.g, incoming.g), own.g, incoming.g)"));
+    } catch {
+      await conn.query(
+        insert(`ST_Union(ST_Snap(own.g, incoming.g, ${SNAP_TOLERANCE}), incoming.g)`),
+      );
+      snapped++;
+    }
+  }
+  return snapped;
+}
+
+// Ported from topo-tools-py's merge_micro_polygons, which holds the merge rule;
+// writes one micro-polygon row per part to issuesTable and returns the count.
+export async function mergeMicroPolygons(
+  conn: AsyncDuckDBConnection,
+  tableIn: string,
+  tableOut: string,
+  issuesTable: string,
+): Promise<number> {
+  if (!(await hasMicroPolygons(conn, tableIn))) {
+    await emptyMicroIssues(conn, issuesTable);
+    if (tableOut !== tableIn) {
+      await conn.query(`CREATE OR REPLACE TABLE ${tableOut} AS SELECT * FROM ${tableIn}`);
+    }
+    return 0;
+  }
+  const tol = SNAP_TOLERANCE;
+  const areaFactor = degSqToM2(1).toExponential();
+  const widthFactor = degToM(1).toExponential();
+  const all = `${issuesTable}_all`;
+  const parts = `${issuesTable}_parts`;
+  const dest = `${issuesTable}_dest`;
+  const touched = `${issuesTable}_touched`;
+  const rebuilt = `${issuesTable}_rebuilt`;
+  try {
+    await conn.query(
+      `CREATE OR REPLACE TABLE ${all} AS SELECT row_number() OVER () AS rnid, * FROM ${tableIn}`,
+    );
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${parts} AS
+      WITH p AS (
+        SELECT rnid, fid, UNNEST(ST_Dump(geom)).geom AS geom FROM ${all} WHERE geom IS NOT NULL
+      )
+      SELECT row_number() OVER () AS pid, *, ${isMicroSql("geom")} AS micro, ${bboxColumnsSql()}
+      FROM p
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${dest} AS
+      WITH m AS (SELECT * FROM ${parts} WHERE micro),
+      n AS (SELECT * FROM ${parts} WHERE NOT micro),
+      pairs AS (
+        SELECT m.pid, n.rnid AS dest_rnid, n.fid AS dest_fid,
+               ST_Area(ST_Intersection(ST_Buffer(m.geom, ${tol}), n.geom)) AS w
+        FROM m JOIN n
+          ON n.xmin <= m.xmax + ${tol} AND n.xmax >= m.xmin - ${tol}
+         AND n.ymin <= m.ymax + ${tol} AND n.ymax >= m.ymin - ${tol}
+      )
+      SELECT m.pid, m.rnid, m.fid, m.geom, p.dest_rnid, p.dest_fid
+      FROM m LEFT JOIN (
+        SELECT * FROM pairs WHERE w > 0
+        QUALIFY row_number() OVER (PARTITION BY pid ORDER BY w DESC, dest_fid) = 1
+      ) p USING (pid)
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${issuesTable} AS
+      SELECT 'micro-polygon-' || pid AS key, 'micro-polygon' AS kind,
+             fid AS unit_a, dest_fid AS unit_b,
+             CASE WHEN dest_rnid IS NULL THEN '${MICRO_DROPPED_REASON}'
+                  ELSE '${MICRO_MERGED_REASON}' END AS reason,
+             ST_Area(geom) * ${areaFactor} AS area_m2,
+             (ST_MaximumInscribedCircle(geom)).radius * 2 * ${widthFactor} AS max_width_m,
+             TRUE AS fixed, geom, ${bboxColumnsSql()}
+      FROM ${dest}
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${touched} AS
+      SELECT rnid FROM ${dest}
+      UNION SELECT dest_rnid FROM ${dest} WHERE dest_rnid IS NOT NULL
+    `);
+    try {
+      await conn.query(`--sql
+        CREATE OR REPLACE TABLE ${rebuilt} AS
+        WITH pieces AS (
+          SELECT p.rnid, p.geom FROM ${parts} p SEMI JOIN ${touched} USING (rnid) WHERE NOT p.micro
+          UNION ALL
+          SELECT dest_rnid, geom FROM ${dest} WHERE dest_rnid IS NOT NULL
+        )
+        SELECT rnid, ST_Union_Agg(geom) AS geom FROM pieces GROUP BY rnid
+      `);
+    } catch {
+      // WASM GEOS throws "non-noded intersection" on some near-coincident edges.
+      const snapped = await rebuildRowwise(conn, parts, dest, touched, rebuilt);
+      if (snapped > 0) console.warn(`mergeMicroPolygons: ${snapped} row(s) unioned after snapping`);
+    }
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${tableOut} AS
+      SELECT t.* EXCLUDE (geom, rnid), COALESCE(r.geom, t.geom) AS geom
+      FROM ${all} t LEFT JOIN ${rebuilt} r USING (rnid)
+      WHERE r.rnid IS NOT NULL OR t.rnid NOT IN (SELECT rnid FROM ${touched})
+    `);
+    const r = await conn.query(`SELECT COUNT(*) AS n FROM ${issuesTable}`);
+    const count = Number((r.toArray()[0] as { n: bigint | number }).n);
+    console.log(`merged or dropped ${count} micro-polygon part(s) in ${tableIn}`);
+    return count;
+  } finally {
+    for (const t of [all, parts, dest, touched, rebuilt])
+      await conn.query(`DROP TABLE IF EXISTS ${t}`);
   }
 }
 

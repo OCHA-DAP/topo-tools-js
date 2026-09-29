@@ -152,6 +152,7 @@
     return file.name.replace(/\.[^.]+$/, "");
   }
 
+  const microCount = $derived(issues.filter((i) => i.kind === "micro-polygon").length);
   const codeMismatchCount = $derived(issues.filter((i) => i.kind === "code-mismatch").length);
   const codeFallbackCount = $derived(issues.filter((i) => i.kind === "code-fallback").length);
 </script>
@@ -272,6 +273,12 @@
         {#if emptyClipCount > 0}
           <p class="warn-line">
             {emptyClipCount} more dropped, clipped to an empty result.
+          </p>
+        {/if}
+        {#if microCount > 0}
+          <p class="warn-line">
+            {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance) merged
+            into a neighbouring feature or dropped.
           </p>
         {/if}
         {#if codeMismatchCount > 0}

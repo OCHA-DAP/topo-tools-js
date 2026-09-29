@@ -105,7 +105,7 @@ export async function runGroups(
       await runPipeline(
         conn,
         (stage, stageLabel) => onStage(i, groups.length, group, stage, stageLabel),
-        { skipOutputClean: true },
+        { skipOutputClean: true, skipInputHoleCheck: true },
       );
 
       if (group.overlayFid === PASSTHROUGH_OVERLAY_FID) {

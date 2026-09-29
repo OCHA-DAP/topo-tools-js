@@ -23,6 +23,8 @@ prefixed `cw_`) compares two versions of a polygon layer ("Version A" = old,
 
 - `change` MUST reproject each side's geometry to EPSG:4326, run `ST_MakeValid`,
   and force it to 2D, independently of the other side.
+- `change` MUST run `gatedCoverageClean` over each side, triggered by any
+  coverage violation, micro-polygon or enclosed hole.
 - `change` MUST let the user pick a code column and a name column
   independently for each side, defaulting to the shared column
   auto-detector's guess (`src/lib/db/columns.ts`) for that side's attribute

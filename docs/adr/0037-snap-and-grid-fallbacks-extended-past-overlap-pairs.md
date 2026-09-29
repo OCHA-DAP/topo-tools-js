@@ -56,8 +56,9 @@ real gap's does not.
   Python's. JS writes 80 features to Python's 79. The extra one is a
   4.6e-15 deg² Amersfoort sliver: WASM and native PROJ disagree by up to
   5.7e-14° on reprojected vertices, so a border that only touches natively
-  overlaps by a sliver in WASM. Clip keeps any non-empty intersection, so
-  this remains a known difference.
+  overlaps by a sliver in WASM.
+  [0040](0040-micro-polygons-merged-like-micro-gaps.md) merges it, along
+  with every other micro-polygon.
 - Detect NLD admin4 matches Python issue for issue, 5 gaps and 10 overlaps,
   each within 1.1e-14 deg² symmetric difference.
 - Every other caller of the shared gap and overlap checks (Topology Cleaner,
