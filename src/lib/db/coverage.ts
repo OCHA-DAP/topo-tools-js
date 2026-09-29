@@ -208,6 +208,9 @@ export async function mergeMicroPolygons(
   const dest = `${issuesTable}_dest`;
   const touched = `${issuesTable}_touched`;
   const rebuilt = `${issuesTable}_rebuilt`;
+  const microBuf = `${issuesTable}_mbuf`;
+  const nonMicro = `${issuesTable}_nonmicro`;
+  const weights = `${issuesTable}_weights`;
   try {
     await conn.query(
       `CREATE OR REPLACE TABLE ${all} AS SELECT row_number() OVER () AS rnid, * FROM ${tableIn}`,
@@ -221,18 +224,23 @@ export async function mergeMicroPolygons(
       FROM p
     `);
     await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${microBuf} AS
+      SELECT pid AS id, geom, ${bboxColumnsSql("geom")}
+      FROM (SELECT pid, ST_Buffer(geom, ${tol}) AS geom FROM ${parts} WHERE micro)
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${nonMicro} AS
+      SELECT pid AS id, geom, xmin, xmax, ymin, ymax FROM ${parts} WHERE NOT micro
+    `);
+    await intersectPairs(conn, "mergeMicroPolygons", microBuf, nonMicro, weights);
+    await conn.query(`--sql
       CREATE OR REPLACE TABLE ${dest} AS
-      WITH m AS (SELECT * FROM ${parts} WHERE micro),
-      n AS (SELECT * FROM ${parts} WHERE NOT micro),
-      pairs AS (
-        SELECT m.pid, n.rnid AS dest_rnid, n.fid AS dest_fid,
-               ST_Area(ST_Intersection(ST_Buffer(m.geom, ${tol}), n.geom)) AS w
-        FROM m JOIN n
-          ON n.xmin <= m.xmax + ${tol} AND n.xmax >= m.xmin - ${tol}
-         AND n.ymin <= m.ymax + ${tol} AND n.ymax >= m.ymin - ${tol}
+      WITH pairs AS (
+        SELECT w.a_id AS pid, n.rnid AS dest_rnid, n.fid AS dest_fid, ST_Area(w.geom) AS w
+        FROM ${weights} w JOIN ${parts} n ON n.pid = w.b_id
       )
       SELECT m.pid, m.rnid, m.fid, m.geom, p.dest_rnid, p.dest_fid
-      FROM m LEFT JOIN (
+      FROM (SELECT * FROM ${parts} WHERE micro) m LEFT JOIN (
         SELECT * FROM pairs WHERE w > 0
         QUALIFY row_number() OVER (PARTITION BY pid ORDER BY w DESC, dest_fid) = 1
       ) p USING (pid)
@@ -279,7 +287,7 @@ export async function mergeMicroPolygons(
     console.log(`merged or dropped ${count} micro-polygon part(s) in ${tableIn}`);
     return count;
   } finally {
-    for (const t of [all, parts, dest, touched, rebuilt])
+    for (const t of [all, parts, dest, touched, rebuilt, microBuf, nonMicro, weights])
       await conn.query(`DROP TABLE IF EXISTS ${t}`);
   }
 }

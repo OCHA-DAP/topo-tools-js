@@ -36,7 +36,9 @@ target and issue row in `docs/reference/shared.md`.
   features on NLD Clip. The rebuild falls back row by row, snapping the
   receiving feature onto its incoming micro parts, the pattern of
   [0036](0036-overlap-pairs-snap-fallback-on-wasm-noding-failure.md).
-  Snapping the micro part onto the feature instead still threw.
+  Snapping the micro part onto the feature instead still threw. The
+  buffered-overlap weights go through `intersectPairs`, so they share its
+  snap and grid retries.
 
 ## Consequences
 

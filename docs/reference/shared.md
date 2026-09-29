@@ -106,10 +106,12 @@ name instead of repeating them.
   it overlaps most once buffered by `SNAP_TOLERANCE` (ties to the lowest
   fid, including the part's own feature), or drop it when it touches no
   feature. A feature left with no parts MUST be removed.
-- When the set-based union that rebuilds the receiving features throws,
-  the merge MUST rebuild them one by one, retrying a feature that still
-  throws with its own parts snapped onto its incoming micro parts at
-  `SNAP_TOLERANCE`.
+- The merge MUST measure each buffered micro part's overlap with its
+  candidate features through `intersectPairs` (see Overlap measurement),
+  with its snap and grid retries. When the set-based union that rebuilds
+  the receiving features throws, the merge MUST rebuild them one by one,
+  retrying a feature that still throws with its own parts snapped onto its
+  incoming micro parts at `SNAP_TOLERANCE`.
 - Every `buildCoverageClean` call MUST merge micro-polygons before
   `ST_CoverageClean` runs, so `extend`, `stitch`, `match`, `mosaic`,
   `clean` and every cleaned input apply this rule. `clip` applies it to
