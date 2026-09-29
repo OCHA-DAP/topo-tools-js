@@ -78,13 +78,7 @@ export async function assignOne(
   // Area-weighted overlap per piece pair. A touch-only pair (shared edge or
   // corner) has zero area and is dropped below, matching topo-tools-py's
   // assign_one, which only counts shared_area > 0.
-  const { snapped } = await intersectPairs(
-    conn,
-    "cl_input_parts",
-    "cl_overlay_pieces",
-    "cl_pairs_geom",
-  );
-  if (snapped > 0) console.warn(`assignOne: ${snapped} pair(s) intersected after snapping`);
+  await intersectPairs(conn, "assignOne", "cl_input_parts", "cl_overlay_pieces", "cl_pairs_geom");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_pairs_raw AS
     SELECT c.fid AS input_fid, p.overlay_fid, ST_Area(g.geom) AS shared_area

@@ -99,7 +99,12 @@ export async function runMosaic(
   onProgress(3, "Clipping to overlay boundary");
   let engineResult;
   try {
-    engineResult = await clipEngine(conn, assign.overlayFid);
+    engineResult = await clipEngine(
+      conn,
+      "SELECT c.fid, c.geom FROM input_layer_01 c JOIN cl_assign a ON a.input_fid = c.fid",
+      `SELECT geom FROM overlay_layer_01 WHERE fid = ${assign.overlayFid}`,
+      "cl_clip",
+    );
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 3);
   }

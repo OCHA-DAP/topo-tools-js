@@ -50,9 +50,10 @@ with other tools.
   that group's own pre-extension input feature subset, and MUST treat a violation
   as a hard failure of that group.
 - `match` MUST clip each group's extended result to that group's own known
-  overlay feature polygon (an exact-boundary clip, not another extension pass),
-  except for the passthrough pseudo-group (see Configuration), which is
-  never clipped.
+  overlay feature polygon (an exact-boundary clip, not another extension pass)
+  through the same clip engine as `clip` (see `docs/reference/clip.md`,
+  Clipping), except for the passthrough pseudo-group (see Configuration),
+  which is never clipped.
 - A group whose extension or clip fails MUST be recorded as a failed group
   and skipped, without aborting the run. Every input feature belonging to a failed
   group MUST be recorded with the overlay feature fid and the failure reason, for

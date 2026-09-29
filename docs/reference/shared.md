@@ -109,17 +109,18 @@ Shared by `extend` (whole-file) and `match` (per-group).
 Shared by `match` (input/overlay assignment), `change` (version-to-version
 comparison), `code-update` (per-level classify and reparent), and
 `schema-join` (join assignment). Its pairwise intersection (`intersectPairs`)
-is also shared by assign-one and the clip step (`clip`, `mosaic`) and the
-shared overlap check (`detect`, `clean`).
+is also shared by assign-one, the clip engine (`clip`, `mosaic`, and `match`'s
+per-group clip) and the shared overlap check (`detect`, `clean`).
 
 - Overlap measurement MUST compute exact geometric intersection
   (`ST_Intersection`) for every candidate pair.
 - A pair whose exact intersection throws MUST be retried once as
-  `ST_Intersection(ST_Snap(a, b, SNAP_TOLERANCE), b)`. A pair that still
-  throws MUST propagate the failure to the caller.
-- `computeOverlapPairs`, assign-one, the clip step and the shared overlap
-  check MUST log the number of snapped pairs to the console when it is
-  non-zero.
+  `ST_Intersection(ST_Snap(a, b, SNAP_TOLERANCE), b)`. A pair whose snapped
+  intersection also throws MUST be retried once with both sides on
+  `ST_ReducePrecision(geom, 1e-11)`. A pair that still throws MUST propagate
+  the failure to the caller.
+- Whenever any pair falls back, `intersectPairs` MUST log the number of
+  snapped and gridded pairs to the console, labelled with its caller.
 - In `computeOverlapPairs`, an intersection piece with area below the
   sliver threshold (~1cm²) MUST be discarded before it contributes to any
   pair's shared area. Assign-one MUST count any pair with shared area above

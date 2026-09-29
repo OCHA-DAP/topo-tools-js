@@ -8,22 +8,18 @@ export interface ClipEngineResult {
   emptyCount: number; // rows dropped because their clip result was empty
 }
 
-// Clips every input feature in cl_assign to overlayFid's own geometry, adaptively
-// grid-tiling the overlay feature boundary first if it's large — ported from
-// topo-tools-py's core/clip/_engine.py, minus the per-overlay-fid subprocess
-// isolation (unneeded in WASM, see docs/adr/0025) and minus the per-fid
-// loop itself: both clip and mosaic (the only two callers) work from a
-// single-input-upload scope, so assignOne always produces exactly one
-// winner overlay feature (see docs/adr/0026), and there is only ever one overlay
-// geometry to tile and clip against.
+// Clips every (fid, geom) row of `sourceSql` to the single polygon `boundarySql`
+// selects, writing (fid, geom) to `targetTable`, adaptively grid-tiling the
+// boundary first if it's large. Ported from topo-tools-py's core/clip/_engine.py,
+// minus the per-overlay-fid subprocess isolation (unneeded in WASM, see
+// docs/adr/0025): every caller clips against exactly one known boundary.
 export async function clipEngine(
   conn: AsyncDuckDBConnection,
-  overlayFid: number,
+  sourceSql: string,
+  boundarySql: string,
+  targetTable: string,
 ): Promise<ClipEngineResult> {
-  await conn.query(`--sql
-    CREATE OR REPLACE TABLE cl_overlay_one AS
-    SELECT geom FROM overlay_layer_01 WHERE fid = ${overlayFid}
-  `);
+  await conn.query(`CREATE OR REPLACE TABLE cl_overlay_one AS SELECT geom FROM (${boundarySql})`);
   await subdivideBoundary(conn, "cl_overlay_one", "geom", "cl_btile_raw");
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_btile AS
@@ -32,15 +28,12 @@ export async function clipEngine(
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_input_bbox AS
-    SELECT ch.fid AS id, ch.geom, ${bboxColumnsSql("ch.geom")}
-    FROM input_layer_01 ch
-    JOIN cl_assign a ON a.input_fid = ch.fid
+    SELECT fid AS id, geom, ${bboxColumnsSql("geom")} FROM (${sourceSql})
   `);
 
-  const { snapped } = await intersectPairs(conn, "cl_input_bbox", "cl_btile", "cl_clip_pieces");
-  if (snapped > 0) console.warn(`clipEngine: ${snapped} pair(s) intersected after snapping`);
+  await intersectPairs(conn, "clipEngine", "cl_input_bbox", "cl_btile", "cl_clip_pieces");
   await conn.query(`--sql
-    CREATE OR REPLACE TABLE cl_clip AS
+    CREATE OR REPLACE TABLE ${targetTable} AS
     SELECT * FROM (
       SELECT a_id AS fid, ST_Multi(ST_CollectionExtract(ST_Union_Agg(geom), 3)) AS geom
       FROM cl_clip_pieces
@@ -54,7 +47,7 @@ export async function clipEngine(
   await conn.query("DROP TABLE IF EXISTS cl_btile");
 
   const [outputRes, assignedRes] = await Promise.all([
-    conn.query("SELECT COUNT(*) AS n FROM cl_clip"),
+    conn.query(`SELECT COUNT(*) AS n FROM ${targetTable}`),
     conn.query("SELECT COUNT(*) AS n FROM cl_input_bbox"),
   ]);
   const outputCount = Number((outputRes.toArray()[0] as { n: bigint | number }).n);

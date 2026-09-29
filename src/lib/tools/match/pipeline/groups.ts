@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { PipelineError, runPipeline } from "$lib/tools/edge-extender/pipeline/index";
-import { clipToBoundary } from "$lib/db/clipToBoundary";
+import { clipEngine } from "$lib/db/clipEngine";
 
 // Sentinel overlay_fid for the orphan passthrough pseudo-group (ported from
 // topo-tools-py's PASSTHROUGH_OVERLAY_FID).
@@ -119,9 +119,9 @@ export async function runGroups(
         `);
       } else {
         console.log("[EE-DEBUG] group:2 clip vs overlay feature geometry (ge_group_clip)");
-        await clipToBoundary(
+        await clipEngine(
           conn,
-          "layer_05",
+          "SELECT fid, geom FROM layer_05",
           `SELECT geom FROM overlay_layer_01 WHERE fid = ${group.overlayFid}`,
           "ge_group_clip",
         );

@@ -30,8 +30,9 @@ an optional code-based assignment override is available (see below).
    [`0004`](../adr/0004-consolidate-coverageclean-to-single-final-call.md)).
    The extended result is checked against its own pre-extension subset by
    the shared no-erosion guard (`docs/reference/shared.md`) as a hard
-   failure, then clipped against the known overlay feature geometry
-   (`src/lib/db/clipToBoundary.ts`), except the passthrough group, which
+   failure, then clipped against the known overlay feature geometry by the
+   shared clip engine (`src/lib/db/clipEngine.ts`, the same one Clip and
+   Mosaic use, as in topo-tools-py), except the passthrough group, which
    has no real overlay feature boundary and lands in `ge_results` unclipped. A
    failing group's input features are recorded in `ge_dropped` (with the overlay feature
    fid and error message) rather than aborting the whole batch.

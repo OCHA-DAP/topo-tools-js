@@ -29,12 +29,14 @@ Its per-fid dissolve retries a failing fid's union on a 1e-11° grid
 ([`0038`](../adr/0038-extend-merge-union-grid-fallback.md)).
 `src/lib/db/overlap.ts`'s `intersectPairs`, behind `computeOverlapPairs`
 (Edge Matcher, Changelog, Code Update, Schema Join), assign-one and the clip
-step (Clip, Mosaic), and the shared overlap check (Detect, Topology Cleaner),
-runs its exact `ST_Intersection` set-based first; if that throws, it
-recomputes pair by pair and snaps only the failing pairs at `SNAP_TOLERANCE`,
-which reproduces native areas to ~1e-10 relative
+engine (Clip, Mosaic, Edge Matcher's per-group clip), and the shared overlap
+check (Detect, Topology Cleaner), runs its exact `ST_Intersection` set-based
+first; if that throws, it recomputes pair by pair and snaps only the failing
+pairs at `SNAP_TOLERANCE`, which reproduces native areas to ~1e-10 relative,
+and a pair the snap doesn't rescue is intersected on a 1e-11° grid
 ([`0036`](../adr/0036-overlap-pairs-snap-fallback-on-wasm-noding-failure.md),
-[`0037`](../adr/0037-snap-and-grid-fallbacks-extended-past-overlap-pairs.md)).
+[`0037`](../adr/0037-snap-and-grid-fallbacks-extended-past-overlap-pairs.md),
+[`0039`](../adr/0039-match-group-clip-uses-clip-engine-and-grid-tier.md)).
 The shared gap check has no pair to snap, since its failure is in one
 whole-layer union: it retries the union on a 1e-11° grid, three orders of
 magnitude below `SNAP_TOLERANCE`, and drops each hole an input polygon

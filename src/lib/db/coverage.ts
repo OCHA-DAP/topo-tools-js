@@ -150,15 +150,14 @@ export async function buildOverlapTable(
     `CREATE OR REPLACE TABLE ${bboxed} AS SELECT fid AS id, geom, ${bboxColumnsSql()} FROM ${sourceTable}`,
   );
   try {
-    const { snapped } = await intersectPairs(
+    await intersectPairs(
       conn,
+      "buildOverlapTable",
       bboxed,
       bboxed,
       pieces,
       `a.id < b.id AND (ST_Overlaps(a.geom, b.geom) OR ST_Contains(a.geom, b.geom) OR ST_Contains(b.geom, a.geom))`,
     );
-    if (snapped > 0)
-      console.warn(`buildOverlapTable: ${snapped} pair(s) intersected after snapping`);
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ${targetTable} AS
       SELECT row_number() OVER () AS n, a_id AS fa, b_id AS fb, geom
