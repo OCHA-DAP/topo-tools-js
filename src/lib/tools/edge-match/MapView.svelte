@@ -1,6 +1,7 @@
 <script lang="ts">
   import type {
     ExpressionSpecification,
+    FilterSpecification,
     GeoJSONSource,
     Map as MaplibreMap,
   } from "maplibre-gl";
@@ -15,6 +16,7 @@
     streamGeojson = null,
     overlayOutlineGeojson = null,
     activeOverlayFid = null,
+    replacedGroupIds = [],
     showSide = "b",
     bounds = null,
     processing = false,
@@ -25,6 +27,8 @@
     streamGeojson?: string | null;
     overlayOutlineGeojson?: string | null;
     activeOverlayFid?: number | null;
+    // Groups whose input features are hidden because their streamed result covers them.
+    replacedGroupIds?: number[];
     showSide?: "a" | "b";
     bounds?: [number, number, number, number] | null;
     processing?: boolean;
@@ -96,9 +100,14 @@
     );
   }
 
+  // While running, the input shows underneath the streamed groups regardless of side.
   function applySide(): void {
     if (!map) return;
-    const visible = { "eg-input": showSide === "a", "eg-result": showSide === "b", "eg-stream": showSide === "b" };
+    const visible = {
+      "eg-input": showSide === "a" || processing,
+      "eg-result": showSide === "b",
+      "eg-stream": showSide === "b" || processing,
+    };
     for (const [source, on] of Object.entries(visible)) {
       for (const layer of [`${source}-fill`, `${source}-line`]) {
         if (map.getLayer(layer)) map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
@@ -150,6 +159,7 @@
     if (!map || !styleReady || (!data && !map.getSource(source))) return;
     if (upsertSource(source, data ?? EMPTY)) addPolygonLayers(source, fill);
     applySide();
+    applyReplaced();
   }
 
   $effect(() => syncPolygons("eg-input", inputGeojson, "#8dc65a"));
@@ -158,7 +168,25 @@
 
   $effect(() => {
     const _side = showSide;
+    const _running = processing;
     if (map && styleReady) applySide();
+  });
+
+  function applyReplaced(): void {
+    if (!map) return;
+    const filter = (
+      replacedGroupIds.length === 0
+        ? polyFilter
+        : ["all", polyFilter, ["!", ["in", ["get", "group_id"], ["literal", replacedGroupIds]]]]
+    ) as FilterSpecification;
+    for (const layer of ["eg-input-fill", "eg-input-line"]) {
+      if (map.getLayer(layer)) map.setFilter(layer, filter);
+    }
+  }
+
+  $effect(() => {
+    const _ids = replacedGroupIds;
+    if (map && styleReady) applyReplaced();
   });
 
   onMount(async () => {

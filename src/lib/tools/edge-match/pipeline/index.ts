@@ -28,6 +28,8 @@ export type EdgeMatchPhase =
   | {
       phase: "groups-listed";
       groups: GroupInfo[];
+      // Input features with the group_id they're assigned to (null when unassigned).
+      inputGeojson: string;
       overlayOutlineGeojson: string;
       bounds: [number, number, number, number] | null;
     }
@@ -45,7 +47,6 @@ export type EdgeMatchProgressFn = (event: EdgeMatchPhase) => void;
 
 export interface EdgeMatchResult {
   geojson: string;
-  inputGeojson: string;
   bounds: [number, number, number, number] | null;
   groupResults: GroupResult[];
   unassignedCount: number;
@@ -228,7 +229,6 @@ export async function runEdgeMatch(
 ): Promise<EdgeMatchResult> {
   onProgress({ phase: "loading" });
   await loadLayers(db, conn, inputFiles, overlayFiles);
-  const inputGeojson = await tableToGeoJSON(conn, "input_layer_01", null);
   const overlayOutlineGeojson = await queryToGeoJSON(
     conn,
     "SELECT ST_AsGeoJSON(geom) AS _geom, fid FROM overlay_layer_01 WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)",
@@ -236,6 +236,12 @@ export async function runEdgeMatch(
 
   onProgress({ phase: "assigning" });
   const assignment = await computeAssignment(conn, matchColumns, passthrough, perFeature);
+  const inputGeojson = await queryToGeoJSON(
+    conn,
+    `SELECT ST_AsGeoJSON(i.geom) AS _geom, ga.overlay_fid AS group_id FROM input_layer_01 i
+     LEFT JOIN ge_assignment ga ON ga.input_fid = i.fid
+     WHERE i.geom IS NOT NULL AND NOT ST_IsEmpty(i.geom)`,
+  );
 
   const nameGuess = await detectColumns(conn, "overlay_layer_attr");
   const inputColumns = await detectColumns(conn, "input_layer_attr");
@@ -244,6 +250,7 @@ export async function runEdgeMatch(
   onProgress({
     phase: "groups-listed",
     groups,
+    inputGeojson,
     overlayOutlineGeojson,
     bounds: await computeBounds(conn, "overlay_layer_01"),
   });
@@ -329,7 +336,6 @@ export async function runEdgeMatch(
 
   return {
     geojson,
-    inputGeojson,
     bounds,
     groupResults,
     unassignedCount: assignment.unassignedCount,
