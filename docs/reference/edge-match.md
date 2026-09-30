@@ -98,10 +98,12 @@ with other tools.
   the winning overlay feature.
 - `edge-match` MUST report the assembled result's bounding box for map fit,
   whenever the bounds are finite.
-- During a run, the map MUST fit to the overlay layer, highlight the
-  overlay feature of the running group, and add each finished group's
-  result as it completes. The final result MUST replace those streamed
-  groups. A failure to preview a group MUST NOT fail that group.
+- During a run, the map MUST fit to the overlay layer, show the input
+  layer from assignment onward, and highlight the overlay feature of the
+  running group. Each finished group's result MUST replace that group's
+  input features as it completes, and the final result MUST replace the
+  streamed groups. A failed group's input MUST stay visible until the run
+  ends. A failure to preview a group MUST NOT fail that group.
 
 ## Configuration
 

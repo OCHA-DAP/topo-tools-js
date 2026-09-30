@@ -39,6 +39,7 @@
   let inputGeoJSON = $state<string | null>(null);
   let streamGeoJSON = $state<string | null>(null);
   let activeOverlayFid = $state<number | null>(null);
+  let replacedGroupIds = $state<number[]>([]);
   let showSide = $state<"a" | "b">("b");
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let unassignedCount = $state<number | null>(null);
@@ -151,18 +152,23 @@
 
   // Finished groups' features, flushed to the map at most every 500 ms.
   let streamFeatures: unknown[] = [];
+  let streamGroupIds: number[] = [];
   let streamTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // Swaps a group's input for its result in the same flush, so neither shows alone.
   function flushStream(): void {
     streamTimer = undefined;
     streamGeoJSON = JSON.stringify({ type: "FeatureCollection", features: streamFeatures });
+    replacedGroupIds = [...streamGroupIds];
   }
 
   function resetStream(): void {
     clearTimeout(streamTimer);
     streamTimer = undefined;
     streamFeatures = [];
+    streamGroupIds = [];
     streamGeoJSON = null;
+    replacedGroupIds = [];
   }
 
   function onProgress(event: EdgeMatchPhase): void {
@@ -177,6 +183,7 @@
         phaseLabel = `Running ${event.groups.length} group${event.groups.length === 1 ? "" : "s"}…`;
         groupRows = event.groups.map((g) => ({ ...g, status: "pending" as const }));
         overlayOutlineGeoJSON = event.overlayOutlineGeojson;
+        inputGeoJSON = event.inputGeojson;
         resultBounds = event.bounds;
         break;
       case "group-stage":
@@ -189,6 +196,7 @@
         groupRows[event.groupIndex] = event.result;
         if (event.result.geojson) {
           streamFeatures.push(...JSON.parse(event.result.geojson).features);
+          streamGroupIds.push(event.result.overlayFid);
           streamTimer ??= setTimeout(flushStream, 500);
         }
         if (activeGroupIndex === event.groupIndex) activeStage = 0;
@@ -241,7 +249,6 @@
         perFeature,
       );
       resultGeoJSON = result.geojson;
-      inputGeoJSON = result.inputGeojson;
       showSide = "b";
       overlayOutlineGeoJSON = result.overlayOutlineGeojson;
       resultBounds = result.bounds;
