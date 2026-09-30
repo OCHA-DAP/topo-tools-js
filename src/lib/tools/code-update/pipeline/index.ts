@@ -1,7 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { quoteIdent } from "$lib/db/code";
 import { tableToGeoJSON } from "$lib/db/geojson";
-import type { ClassifyOptions } from "$lib/tools/polygon-changelog/pipeline/classify";
+import type { ClassifyOptions } from "$lib/tools/change/pipeline/classify";
 import type { TargetSchema } from "$lib/tools/schema-map/pipeline/targetSchema";
 import { assignLevel, type ChangeRow } from "./assign";
 import { classifyLevel } from "./classify";

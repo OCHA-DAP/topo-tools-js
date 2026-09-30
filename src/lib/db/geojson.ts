@@ -3,7 +3,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 // Shared GeoJSON serialization. ST_AsGeoJSON emits each geometry as a JSON
 // string, which we splice in raw — this avoids GDAL driver type/geometry
 // incompatibilities that the streaming export path would otherwise hit, and
-// it's the same approach the edge-extender and topology-cleaner pipelines use
+// it's the same approach the edge-extend and topo-clean pipelines use
 // to hand results to MapLibre.
 //
 // When `attrTable` is null the features carry empty properties (geometry-only

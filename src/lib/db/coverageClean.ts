@@ -3,7 +3,7 @@ import { SNAP_TOLERANCE } from "./constants";
 import { buildGapTable, hasMicroPolygons, mergeMicroPolygons } from "./coverage";
 
 // Shared ST_CoverageClean plumbing used by both the Topology Cleaner tool
-// (topology-cleaner/pipeline/clean.ts) and Edge Extender's input-clean gate and
+// (topo-clean/pipeline/clean.ts) and Edge Extender's input-clean gate and
 // merge finalization. ST_CoverageClean takes a GEOMETRY[] and returns a
 // GeometryCollection in the SAME order as the input list, so every caller here
 // follows the same shape: freeze an (fid, geom) table into an ORDER BY fid

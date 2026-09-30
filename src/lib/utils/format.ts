@@ -1,5 +1,5 @@
 // Shared display formatting for issue-table area/length columns, used by
-// topology-cleaner and detect's IssuesTable components.
+// topo-clean and detect's IssuesTable components.
 
 export function fmtArea(m2: number): string {
   if (!Number.isFinite(m2)) return "—";

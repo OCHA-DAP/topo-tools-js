@@ -58,7 +58,7 @@ shares with `code-refactor`.
 - For every level finer than the coarsest, `code-update` MUST re-derive
   each NEW unit's true current parent spatially against the immediately-
   coarser level's NEW, already-dissolved units (`assignBestOverlap`,
-  per-child best overlap, shared with `match`); it MUST NOT trust a stale
+  per-child best overlap, shared with `edge-match`); it MUST NOT trust a stale
   embedded parent column.
 
 ## Assign (retention policy)

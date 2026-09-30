@@ -56,7 +56,7 @@ grouped by its own resolved (structural or explicit) raw column.
 ## Classify: reusing `change`'s stage function directly, per level
 
 Each level's two dissolved tables are copied into the fixed table names
-`polygon-changelog`'s own `stageClassify` expects
+`change`'s own `stageClassify` expects
 (`cw_a_keyed`/`cw_b_keyed`), which then runs unmodified, producing
 `cw_pairs_classified` (`a_fid`, `b_fid`, `match_method`) and
 `cw_polygon_class` (`side`, `fid`, `cluster_id`, `relationship_class`).
@@ -73,7 +73,7 @@ it.
 For every level finer than the coarsest, each NEW unit's true current
 parent is re-derived spatially against the immediately-coarser level's
 NEW, already-dissolved units, via `assignBestOverlap` (`$lib/db`, shared
-with `match`'s own per-child best-overlap assignment), never read off a
+with `edge-match`'s own per-child best-overlap assignment), never read off a
 raw embedded parent column. A raw parent-reference column goes stale
 exactly when the coarser unit was itself split, merged, or relocated this
 same version.

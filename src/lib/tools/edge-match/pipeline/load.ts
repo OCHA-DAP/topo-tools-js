@@ -1,0 +1,48 @@
+import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { loadFile } from "$lib/db/loader";
+import { gatedCoverageClean } from "$lib/db/coverageClean";
+
+// Tables this tool owns, dropped defensively before every run so re-running
+// with different inputs in the same session starts clean. input_*/overlay_*
+// are also dropped internally by loadFile itself, but listed here too for a
+// complete, self-documenting sweep.
+const OWNED_TABLES = [
+  "input_raw_layer",
+  "input_layer_01",
+  "input_layer_attr",
+  "overlay_raw_layer",
+  "overlay_layer_01",
+  "overlay_layer_attr",
+  "ge_pairs",
+  "ge_assignment",
+  "ge_unassigned",
+  "ge_groups",
+  "ge_group_clip",
+  "ge_results",
+  "ge_results_attr",
+];
+
+export async function dropPriorRun(conn: AsyncDuckDBConnection): Promise<void> {
+  for (const t of OWNED_TABLES) {
+    await conn.query(`DROP TABLE IF EXISTS ${t}`);
+  }
+}
+
+export async function loadLayers(
+  db: AsyncDuckDB,
+  conn: AsyncDuckDBConnection,
+  inputFiles: File[],
+  overlayFiles: File[],
+): Promise<void> {
+  await dropPriorRun(conn);
+  await loadFile(db, conn, inputFiles, { prefix: "input_" });
+  await loadFile(db, conn, overlayFiles, { prefix: "overlay_" });
+
+  // Clean both input layers up front, gated so untouched inputs skip the
+  // clean itself. The overlay feature is never cleaned elsewhere in this
+  // pipeline, and the input feature's per-group clean (edge-extend's
+  // stageCleanInput) can't see defects between units assigned to different
+  // groups, so both need their own whole-layer pass here.
+  await gatedCoverageClean(conn, "overlay_layer_01", { anyHole: true });
+  await gatedCoverageClean(conn, "input_layer_01", { anyHole: true });
+}

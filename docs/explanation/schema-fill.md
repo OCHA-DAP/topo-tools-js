@@ -65,12 +65,12 @@ it look.
 
 Schema Fill only touches attribute columns, geometry passes straight through
 from `layer_01`. There is nothing here for a topology check to gate: unlike
-`clip`/`mosaic`/`match`, this tool never re-clips, re-extends, or otherwise
+`edge-clip`/`edge-mosaic`/`edge-match`, this tool never re-clips, re-extends, or otherwise
 mutates geometry.
 
 ## Where this fits in a pipeline
 
-Intended to run after `match`/`mosaic`, on already-matched-and-clipped
+Intended to run after `edge-match`/`edge-mosaic`, on already-matched-and-clipped
 output, the same position topo-tools-py's `schema-fill` occupies. Running it
 on raw pre-match source data works mechanically (it only needs the code
 columns to exist) but produces a depth column describing the _source_ data's

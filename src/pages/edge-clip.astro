@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/edge-clip/App.svelte";
+---
+
+<Layout
+  title="Clip — assign and clip a polygon layer to one overlay feature boundary in your browser"
+  description="Browser-only tool that assigns an input layer to its one best-overlapping overlay feature by majority vote, then clips every input feature to that overlay feature's boundary."
+>
+  <App client:load />
+</Layout>

@@ -74,13 +74,13 @@ Notes:
 
 ## Architecture
 
-**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly, and no data leaves the browser. The root `/` is a landing page that lists tools. Seventeen tools ship today: **Topology Cleaner** at `/clean`, **Edge Extender** at `/extend`, **Changelog** at `/change`, **Edge Matcher** at `/match`, **Stitch** at `/stitch`, **Detect** at `/detect`, **Clip** at `/clip`, **Mosaic** at `/mosaic`, **Package** at `/package`, **Package Polygons** at `/package-polygons`, **Package Points** at `/package-points`, **Package Lines** at `/package-lines`, **Schema Map** at `/schema-map`, **Schema Join** at `/schema-join`, **Schema Fill** at `/schema-fill`, **Code Refactor** at `/code-refactor`, and **Code Update** at `/code-update`; see `docs/explanation/{clean,extend,change,match,stitch,detect,clip,mosaic,package,package-polygons,package-points,package-lines,schema-map,schema-refactor,schema-join,schema-fill,code,code-refactor,code-update}.md` for what each does and how, and `docs/reference/{clean,extend,change,match,stitch,detect,clip,mosaic,package,package-polygons,package-points,package-lines,schema-map,schema-refactor,schema-join,schema-fill,code-refactor,code-update}.md` for their behavior contracts.
+**Topology Tools** is a browser-only suite of geospatial topology utilities. Each tool runs client-side via WebAssembly, and no data leaves the browser. The root `/` is a landing page that lists tools. Seventeen tools ship today: **Topology Cleaner** at `/topo-clean`, **Edge Extender** at `/edge-extend`, **Changelog** at `/change`, **Edge Matcher** at `/edge-match`, **Stitch** at `/edge-stitch`, **Detect** at `/topo-detect`, **Clip** at `/edge-clip`, **Mosaic** at `/edge-mosaic`, **Package** at `/package`, **Package Polygons** at `/package-polygons`, **Package Points** at `/package-points`, **Package Lines** at `/package-lines`, **Schema Map** at `/schema-map`, **Schema Join** at `/schema-join`, **Schema Fill** at `/schema-fill`, **Code Refactor** at `/code-refactor`, and **Code Update** at `/code-update`; see `docs/explanation/{topo-clean,edge-extend,change,edge-match,edge-stitch,topo-detect,edge-clip,edge-mosaic,package,package-polygons,package-points,package-lines,schema-map,schema-refactor,schema-join,schema-fill,code,code-refactor,code-update}.md` for what each does and how, and `docs/reference/{topo-clean,edge-extend,change,edge-match,edge-stitch,topo-detect,edge-clip,edge-mosaic,package,package-polygons,package-points,package-lines,schema-map,schema-refactor,schema-join,schema-fill,code-refactor,code-update}.md` for their behavior contracts.
 
 **Stack:** Astro 6 (static site) + Svelte 5 (interactive islands) + DuckDB WASM (spatial SQL engine) + MapLibre GL (map rendering)
 
 ### Key design decisions
 
-- All geospatial logic is SQL, run inside DuckDB's spatial extension, not JavaScript. See `docs/explanation/extend.md` for the 5-stage Voronoi pipeline.
+- All geospatial logic is SQL, run inside DuckDB's spatial extension, not JavaScript. See `docs/explanation/edge-extend.md` for the 5-stage Voronoi pipeline.
 - DuckDB WASM runs single-threaded with no COEP/COOP — see `docs/explanation/performance.md` for the memory model this implies and why COEP stays off.
 - **Tool layout convention:** each tool lives at `src/lib/tools/<slug>/` (its `App.svelte` + a `pipeline/` directory if it has one) and has a route at `src/pages/<slug>.astro`. Shared infrastructure stays in `src/lib/db/` (DuckDB singleton + loader + export, plus `assignOne.ts`/`clipEngine.ts`/`clipTiling.ts` — assign-one and clip logic shared between Clip and Mosaic) and `src/lib/components/` (DropZone, MapView, DownloadMenu, OfflineToggle, ToolCard). Adding a tool = new folder under `tools/`, new entry in `src/lib/tools.ts`, new page, optionally an icon under `public/icons/tools/`. No infrastructure changes. Every `<DropZone>` takes a `urlParam` (`url`, `old`/`new`, `input`/`join`, `input`/`overlay`, `crosswalk`), the query-string key for its URL input.
 - Svelte 5 runes (`$state()`, `$effect()`, `untrack()`) — not legacy Svelte reactivity.
@@ -89,14 +89,14 @@ Notes:
 ## Reference Docs
 
 - `docs/reference/` — behavior contracts per tool (`shared.md` for common settings/formats/gates)
-- `docs/explanation/clean.md` — defect detection, `ST_CoverageClean` semantics, gap-fill modes
-- `docs/explanation/extend.md` — Voronoi-extension algorithm, stage-by-stage detail, point-spacing derivation
-- `docs/explanation/match.md` — assignment algorithm, per-group extension, cross-group seams
+- `docs/explanation/topo-clean.md` — defect detection, `ST_CoverageClean` semantics, gap-fill modes
+- `docs/explanation/edge-extend.md` — Voronoi-extension algorithm, stage-by-stage detail, point-spacing derivation
+- `docs/explanation/edge-match.md` — assignment algorithm, per-group extension, cross-group seams
 - `docs/explanation/change.md` — overlap/classification algorithm, union-find, output schema
-- `docs/explanation/stitch.md` — whole-table CoverageClean seam-closing pass, gap-only issues report
-- `docs/explanation/detect.md` — read-only gap/overlap scan, shared with Topology Cleaner's own detection stage
-- `docs/explanation/clip.md` — assign-one majority vote, per-parent clip, single-winner-parent scope in this app
-- `docs/explanation/mosaic.md` — thin assign-one -> clip -> stitch orchestrator, no re-extension
+- `docs/explanation/edge-stitch.md` — whole-table CoverageClean seam-closing pass, gap-only issues report
+- `docs/explanation/topo-detect.md` — read-only gap/overlap scan, shared with Topology Cleaner's own detection stage
+- `docs/explanation/edge-clip.md` — assign-one majority vote, per-parent clip, single-winner-parent scope in this app
+- `docs/explanation/edge-mosaic.md` — thin assign-one -> clip -> stitch orchestrator, no re-extension
 - `docs/explanation/package.md`: thin package-polygons/points/lines orchestrator, no table-name collisions
 - `docs/explanation/package-polygons.md`: per-level group-by dissolve, auto column keep/sum/drop, gap-only issues report
 - `docs/explanation/package-points.md`: one representative point per level, generalizable-columns gate

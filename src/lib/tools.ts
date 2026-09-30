@@ -9,60 +9,60 @@ export interface Tool {
 
 export const tools: Tool[] = [
   {
-    slug: "clean",
+    slug: "topo-clean",
     name: "Topology Cleaner",
     tagline:
       "Detect overlaps and gaps in a polygon coverage and clean them automatically, with an adjustable gap-width threshold.",
-    iconHref: "/icons/tools/topology-cleaner.svg",
+    iconHref: "/icons/tools/topo-clean.svg",
   },
   {
-    slug: "extend",
+    slug: "edge-extend",
     name: "Edge Extender",
     tagline:
       "Fill gaps between adjacent polygons by extending boundaries outward with Voronoi diagrams.",
-    iconHref: "/icons/tools/edge-extender.svg",
+    iconHref: "/icons/tools/edge-extend.svg",
   },
   {
-    slug: "match",
+    slug: "edge-match",
     name: "Edge Matcher",
     tagline:
       "Match fine polygons to their best-overlapping coarse boundary (admin 4 into 3, admin 4 into 0, or any other pair), then extend each group to fit its boundary exactly.",
-    iconHref: "/icons/tools/match.svg",
+    iconHref: "/icons/tools/edge-match.svg",
   },
   {
     slug: "change",
     name: "Changelog",
     tagline:
       "Compare two versions of a polygon layer and classify each unit as unchanged, modified, merged, split, created, or removed.",
-    iconHref: "/icons/tools/polygon-changelog.svg",
+    iconHref: "/icons/tools/change.svg",
   },
   {
-    slug: "stitch",
+    slug: "edge-stitch",
     name: "Stitch",
     tagline:
       "Close seams in an already-tiled polygon layer with a single whole-table coverage-clean pass.",
-    iconHref: "/icons/tools/stitch.svg",
+    iconHref: "/icons/tools/edge-stitch.svg",
   },
   {
-    slug: "detect",
+    slug: "topo-detect",
     name: "Detect",
     tagline:
       "Scan a polygon layer for gaps and overlaps and report them without fixing anything (read-only).",
-    iconHref: "/icons/tools/detect.svg",
+    iconHref: "/icons/tools/topo-detect.svg",
   },
   {
-    slug: "clip",
+    slug: "edge-clip",
     name: "Clip",
     tagline:
       "Assign an input layer to its one best-overlapping overlay feature by majority vote, then clip every input feature to that boundary.",
-    iconHref: "/icons/tools/clip.svg",
+    iconHref: "/icons/tools/edge-clip.svg",
   },
   {
-    slug: "mosaic",
+    slug: "edge-mosaic",
     name: "Mosaic",
     tagline:
       "Fit an already-extended input layer into a new overlay boundary. Assign, clip, and close seams in one pass, no re-extension.",
-    iconHref: "/icons/tools/mosaic.svg",
+    iconHref: "/icons/tools/edge-mosaic.svg",
   },
   {
     slug: "package",

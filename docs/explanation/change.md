@@ -3,9 +3,8 @@
 `change` compares two versions of a polygon layer and classifies every unit
 as `unchanged` / `renamed` / `modified` / `relocated` / `split` / `merge` /
 `complex` / `created` / `removed`. Source lives at
-`src/lib/tools/polygon-changelog/`, still internally named `polygon-changelog`
-(tables/columns prefixed `cw_`) from the tool's original name, "Boundary
-Cross-walk".
+`src/lib/tools/change/`, with tables/columns prefixed `cw_` from the tool's
+original name, "Boundary Cross-walk".
 
 ## Pipeline
 

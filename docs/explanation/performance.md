@@ -85,7 +85,7 @@ help.
 - **Bbox-prefiltered self-join.** Replace `JOIN b ON ST_Intersects(a.geom, b.geom)` with explicit scalar bbox-overlap predicates: `ST_XMax(b) >= ST_XMin(a) AND ST_XMin(b) <= ST_XMax(a) AND ST_YMax(b) >= ST_YMin(a) AND ST_YMin(b) <= ST_YMax(a)`. DuckDB plans this as `PIECEWISE_MERGE_JOIN` (range join), not `SPATIAL_JOIN`.
 - **Bbox-prefiltered point-in-polygon.** For `JOIN ... ON ST_Within(p.pt, c.geom)`, add `ST_X(p.pt) >= ST_XMin(c.geom) AND ... AND ST_Within(p.pt, c.geom)`. The bbox predicates are necessary conditions for `ST_Within`, so semantics are preserved; the planner uses them as the join keys and `ST_Within` becomes a residual `FILTER`. Same for `NOT EXISTS` correlated subqueries.
 
-These bbox-prefilter patterns are what make most of the pipeline WASM-safe without `memory_limit` overrides. They were profiled in edge-extender as identical-output and faster than the LATERAL+`ST_Intersects` forms they replaced. Topology Cleaner's own overlap detection uses the same bbox prefilter, combined with `ST_Overlaps`/`ST_Contains` instead of bare `ST_Intersects` — see [`docs/explanation/clean.md`](clean.md#gapoverlap-detection-at-scale) for why plain `ST_Intersects` would also match every ordinary touching-edge pair.
+These bbox-prefilter patterns are what make most of the pipeline WASM-safe without `memory_limit` overrides. They were profiled in edge-extender as identical-output and faster than the LATERAL+`ST_Intersects` forms they replaced. Topology Cleaner's own overlap detection uses the same bbox prefilter, combined with `ST_Overlaps`/`ST_Contains` instead of bare `ST_Intersects` — see [`docs/explanation/topo-clean.md`](clean.md#gapoverlap-detection-at-scale) for why plain `ST_Intersects` would also match every ordinary touching-edge pair.
 
 ---
 
@@ -163,13 +163,13 @@ Confirmed clean end-to-end runs against real portolan-catalog data (see the
 
 | Tool      | Dataset            | Scale                                      | Result                                                                                             |
 | --------- | ------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `/match`  | `bgd` adm3→adm2    | 507 fine / 64 coarse groups                | ~5m24s, 0 invalid edges, area conserved                                                            |
-| `/extend` | `eth` adm3         | 1,148 features                             | ~100s, 0 retries                                                                                   |
-| `/clean`  | `bgd` adm3         | 507 features (12 MB)                       | ~35s, 0 overlaps, 0 gaps, 5 slivers                                                                |
-| `/clean`  | `cod` adm3         | 519 features (4.8 MB)                      | ~35s, 0 overlaps, 0 gaps, 6 slivers                                                                |
-| `/clean`  | `eth` adm3         | 1,148 features (9.3 MB)                    | ~25s, 0 overlaps, 0 gaps, 2 slivers                                                                |
+| `/edge-match`  | `bgd` adm3→adm2    | 507 fine / 64 coarse groups                | ~5m24s, 0 invalid edges, area conserved                                                            |
+| `/edge-extend` | `eth` adm3         | 1,148 features                             | ~100s, 0 retries                                                                                   |
+| `/topo-clean`  | `bgd` adm3         | 507 features (12 MB)                       | ~35s, 0 overlaps, 0 gaps, 5 slivers                                                                |
+| `/topo-clean`  | `cod` adm3         | 519 features (4.8 MB)                      | ~35s, 0 overlaps, 0 gaps, 6 slivers                                                                |
+| `/topo-clean`  | `eth` adm3         | 1,148 features (9.3 MB)                    | ~25s, 0 overlaps, 0 gaps, 2 slivers                                                                |
 | `/change` | `ukr` adm3 v02→v04 | 1,770 A / 1,769 B features (14–15 MB each) | ~45s, 1287 unchanged / 481 modified / 1 merge / 0 created or removed, row totals exactly conserved |
 
-`/match`'s `cod` adm3→adm2 combination hits the 3 GiB WASM ceiling at higher
+`/edge-match`'s `cod` adm3→adm2 combination hits the 3 GiB WASM ceiling at higher
 scale (519 fine / **164 coarse** groups) — see
 [`docs/adr/0008`](../adr/0008-wasm-coverageclean-oom-ceiling-mitigated-not-fixed.md).
