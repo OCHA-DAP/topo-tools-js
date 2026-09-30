@@ -1,5 +1,6 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { numberParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import { runCodeRefactor, type CodeIssueRow, type TargetSchema } from "./pipeline/index";
@@ -22,6 +23,11 @@
   let minWidth = $state(3);
   let nameField = $state("");
   let codeField = $state("");
+  syncParam("root", textParam, () => rootCode, (v) => (rootCode = v));
+  syncParam("delim", textParam, () => delimiter, (v) => (delimiter = v));
+  syncParam("width", numberParam, () => minWidth, (v) => (minWidth = v));
+  syncParam("name", textParam, () => nameField, (v) => (nameField = v));
+  syncParam("code", textParam, () => codeField, (v) => (codeField = v));
 
   let running = $state(false);
   let error = $state<string | null>(null);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import { runSchemaFill, DEFAULT_DEPTH_COLUMN, type TargetSchema } from "./pipeline/index";
@@ -20,6 +21,9 @@
   let nameField = $state("");
   let codeField = $state("");
   let depthColumn = $state(DEFAULT_DEPTH_COLUMN);
+  syncParam("name", textParam, () => nameField, (v) => (nameField = v));
+  syncParam("code", textParam, () => codeField, (v) => (codeField = v));
+  syncParam("depth", textParam, () => depthColumn, (v) => (depthColumn = v));
 
   let running = $state(false);
   let error = $state<string | null>(null);

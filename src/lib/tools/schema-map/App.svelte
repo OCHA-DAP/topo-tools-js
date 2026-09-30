@@ -1,5 +1,6 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import { attributesAt, layerBounds, type Bounds } from "$lib/db/layerView";
@@ -46,6 +47,8 @@
 
   let nameField = $state(DEFAULT_TARGET_SCHEMA.nameField);
   let codeField = $state(DEFAULT_TARGET_SCHEMA.codeField);
+  syncParam("name", textParam, () => nameField, (v) => (nameField = v));
+  syncParam("code", textParam, () => codeField, (v) => (codeField = v));
 
   let inferred = $state.raw<CrosswalkRow[]>([]);
   // Templates the current `inferred` came from; applying orders columns by them too.

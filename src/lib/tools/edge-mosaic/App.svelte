@@ -3,7 +3,9 @@
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
+  import SideToggle from "$lib/components/SideToggle.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { boolParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { onMount, untrack } from "svelte";
   import { PipelineError, runMosaic, type MosaicIssueRow } from "./pipeline/index";
   import type { ColumnGuess } from "$lib/db/columns";
@@ -29,6 +31,7 @@
   let error = $state<string | null>(null);
 
   let resultGeoJSON = $state<string | null>(null);
+  let showSide = $state<"a" | "b">("b");
   let originalGeoJSON = $state<string | null>(null);
   let overlayOutlineGeoJSON = $state<string | null>(null);
   let resultBounds = $state<[number, number, number, number] | null>(null);
@@ -49,6 +52,10 @@
   let fillNameField = $state("");
   let fillCodeField = $state("");
   let fillDepthColumn = $state("adm_lvl");
+  syncParam("fill", boolParam, () => fillSchema, (v) => (fillSchema = v));
+  syncParam("name", textParam, () => fillNameField, (v) => (fillNameField = v));
+  syncParam("code", textParam, () => fillCodeField, (v) => (fillCodeField = v));
+  syncParam("depth", textParam, () => fillDepthColumn, (v) => (fillDepthColumn = v));
 
   let clearMap: (() => void) | undefined;
 
@@ -150,6 +157,7 @@
       );
 
       resultGeoJSON = result.mosaicGeoJSON;
+      showSide = "b";
       originalGeoJSON = result.inputGeoJSON;
       overlayOutlineGeoJSON = result.overlayOutlineGeoJSON;
       resultBounds = result.bounds;
@@ -399,7 +407,11 @@
   </aside>
 
   <div class="map-container">
+    {#if resultGeoJSON}
+      <SideToggle bind:side={showSide} labels={["Original", "Mosaic"]} disabled={running} />
+    {/if}
     <MapView
+      showSide={resultGeoJSON ? showSide : undefined}
       geojson={resultGeoJSON}
       originalGeojson={originalGeoJSON ?? overlayOutlineGeoJSON}
       bounds={resultBounds}
@@ -620,6 +632,7 @@
   }
 
   .map-container {
+    position: relative;
     height: 100%;
     overflow: hidden;
   }

@@ -11,20 +11,26 @@
 
   let {
     resultGeojson = null,
+    inputGeojson = null,
+    streamGeojson = null,
     overlayOutlineGeojson = null,
+    activeOverlayFid = null,
+    showSide = "b",
     bounds = null,
     processing = false,
   }: {
     resultGeojson?: string | null;
+    inputGeojson?: string | null;
+    // Groups finished so far in a running match, replaced by resultGeojson at the end.
+    streamGeojson?: string | null;
     overlayOutlineGeojson?: string | null;
+    activeOverlayFid?: number | null;
+    showSide?: "a" | "b";
     bounds?: [number, number, number, number] | null;
     processing?: boolean;
   } = $props();
 
-  // Categorical palette cycled by group_id — group count is dynamic (unknown
-  // until the overlay layer is loaded), unlike a fixed set of relationship
-  // classes, so stops are generated at runtime from the distinct group_ids
-  // actually present in the result rather than a hardcoded list.
+  // Cycled by group_id, since the group count is only known once the overlay loads.
   const PALETTE = [
     "#4e79a7",
     "#f28e2b",
@@ -37,12 +43,14 @@
     "#9c755f",
     "#bab0ac",
   ];
+  const EMPTY = JSON.stringify({ type: "FeatureCollection", features: [] });
+  // Everything else is inserted below this, so the reference boundary stays on top.
+  const TOP = "eg-overlay-line";
 
   let container: HTMLDivElement | undefined;
-  let map: MaplibreMap | undefined;
-  let resultUrl: string | undefined;
-  let outlineUrl: string | undefined;
-  let styleReady = false;
+  let map = $state.raw<MaplibreMap | undefined>();
+  let styleReady = $state(false);
+  const urls: Record<string, string> = {};
   const { start: startSpin, stop: stopSpin } = createSpin(() => map);
 
   $effect(() => {
@@ -59,82 +67,98 @@
     ] as unknown as ExpressionSpecification;
   }
 
-  function setSource(id: string, dataUrl: string): void {
-    if (!map) return;
+  // Returns true when the source is new, so the caller adds its layers.
+  function upsertSource(id: string, data: string): boolean {
+    if (!map) return false;
+    if (urls[id]) URL.revokeObjectURL(urls[id]);
+    urls[id] = URL.createObjectURL(new Blob([data], { type: "application/json" }));
     const src = map.getSource(id) as GeoJSONSource | undefined;
-    if (src) src.setData(dataUrl);
+    if (src) {
+      src.setData(urls[id]);
+      return false;
+    }
+    map.addSource(id, { type: "geojson", data: urls[id] });
+    return true;
+  }
+
+  function below(): string | undefined {
+    return map?.getLayer(TOP) ? TOP : undefined;
+  }
+
+  function addPolygonLayers(source: string, fill: ExpressionSpecification | string): void {
+    map!.addLayer(
+      { id: `${source}-fill`, type: "fill", source, filter: polyFilter, paint: { "fill-color": fill, "fill-opacity": 0.75 } },
+      below(),
+    );
+    map!.addLayer(
+      { id: `${source}-line`, type: "line", source, filter: polyFilter, paint: { "line-color": "rgba(0,0,0,0.35)", "line-width": lineWidth } },
+      below(),
+    );
+  }
+
+  function applySide(): void {
+    if (!map) return;
+    const visible = { "eg-input": showSide === "a", "eg-result": showSide === "b", "eg-stream": showSide === "b" };
+    for (const [source, on] of Object.entries(visible)) {
+      for (const layer of [`${source}-fill`, `${source}-line`]) {
+        if (map.getLayer(layer)) map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
+      }
+    }
   }
 
   $effect(() => {
     const b = bounds;
-    if (!b || !map) return;
-    function apply() {
-      if (!map || !b) return;
-      const [minLng, minLat, maxLng, maxLat] = b;
-      stopSpin();
-      map.fitBounds(
-        [
-          [minLng, minLat],
-          [maxLng, maxLat],
-        ],
-        { padding: 40, animate: true },
-      );
-    }
-    if (map.isStyleLoaded()) apply();
-    else map.once("load", apply);
+    if (!b || !map || !styleReady) return;
+    stopSpin();
+    map.fitBounds(
+      [
+        [b[0], b[1]],
+        [b[2], b[3]],
+      ],
+      { padding: 40, animate: true },
+    );
   });
 
   $effect(() => {
     const data = overlayOutlineGeojson;
     if (!data || !map || !styleReady) return;
-    if (outlineUrl) URL.revokeObjectURL(outlineUrl);
-    outlineUrl = URL.createObjectURL(new Blob([data], { type: "application/json" }));
-    if (!map.getSource("eg-overlay")) {
-      map.addSource("eg-overlay", { type: "geojson", data: outlineUrl });
+    if (upsertSource("eg-overlay", data)) {
       map.addLayer({
-        id: "eg-overlay-line",
+        id: TOP,
         type: "line",
         source: "eg-overlay",
         paint: { "line-color": "#111", "line-width": lineWidth, "line-dasharray": [2, 1.5] },
       });
-    } else {
-      setSource("eg-overlay", outlineUrl);
+      map.addLayer({
+        id: "eg-active-line",
+        type: "line",
+        source: "eg-overlay",
+        filter: ["==", ["get", "fid"], activeOverlayFid ?? -2],
+        paint: { "line-color": "#dc2626", "line-width": 3 },
+      });
     }
   });
 
   $effect(() => {
-    const data = resultGeojson;
-    if (!data || !map || !styleReady) return;
-    if (resultUrl) URL.revokeObjectURL(resultUrl);
-    resultUrl = URL.createObjectURL(new Blob([data], { type: "application/json" }));
-    if (!map.getSource("eg-result")) {
-      map.addSource("eg-result", { type: "geojson", data: resultUrl });
-      // Insert below the overlay feature outline (if present) so the dashed reference
-      // boundary always stays visible on top of the filled result.
-      const beforeId = map.getLayer("eg-overlay-line") ? "eg-overlay-line" : undefined;
-      map.addLayer(
-        {
-          id: "eg-result-fill",
-          type: "fill",
-          source: "eg-result",
-          filter: polyFilter,
-          paint: { "fill-color": fillColorExpr(), "fill-opacity": 0.75 },
-        },
-        beforeId,
-      );
-      map.addLayer(
-        {
-          id: "eg-result-line",
-          type: "line",
-          source: "eg-result",
-          filter: polyFilter,
-          paint: { "line-color": "rgba(0,0,0,0.35)", "line-width": lineWidth },
-        },
-        beforeId,
-      );
-    } else {
-      setSource("eg-result", resultUrl);
-    }
+    const fid = activeOverlayFid;
+    if (!map || !styleReady || !map.getLayer("eg-active-line")) return;
+    map.setFilter("eg-active-line", ["==", ["get", "fid"], fid ?? -2]);
+  });
+
+  // null clears a source that already exists, so a rerun doesn't show the last run's layers.
+  function syncPolygons(source: string, data: string | null, fill: ExpressionSpecification | string): void {
+    if (!map || !styleReady || (!data && !map.getSource(source))) return;
+    if (upsertSource(source, data ?? EMPTY)) addPolygonLayers(source, fill);
+    applySide();
+  }
+
+  $effect(() => syncPolygons("eg-input", inputGeojson, "#8dc65a"));
+  $effect(() => syncPolygons("eg-stream", streamGeojson, fillColorExpr()));
+  $effect(() => syncPolygons("eg-result", resultGeojson, fillColorExpr()));
+
+  $effect(() => {
+    const _side = showSide;
+    if (map && styleReady) applySide();
   });
 
   onMount(async () => {
@@ -160,8 +184,7 @@
   onDestroy(() => {
     stopSpin();
     map?.remove();
-    if (resultUrl) URL.revokeObjectURL(resultUrl);
-    if (outlineUrl) URL.revokeObjectURL(outlineUrl);
+    for (const url of Object.values(urls)) URL.revokeObjectURL(url);
   });
 </script>
 

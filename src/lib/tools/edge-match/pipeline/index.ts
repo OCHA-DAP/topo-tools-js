@@ -2,7 +2,7 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
 import { buildGapTable, hasMicroPolygons, hasNoiseFloorGap } from "$lib/db/coverage";
 import { gapIssuesSql } from "$lib/db/issues";
-import { tableToGeoJSON } from "$lib/db/geojson";
+import { queryToGeoJSON, tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
 import {
   CODE_FALLBACK_REASON,
@@ -25,7 +25,12 @@ import {
 export type EdgeMatchPhase =
   | { phase: "loading" }
   | { phase: "assigning" }
-  | { phase: "groups-listed"; groups: GroupInfo[] }
+  | {
+      phase: "groups-listed";
+      groups: GroupInfo[];
+      overlayOutlineGeojson: string;
+      bounds: [number, number, number, number] | null;
+    }
   | {
       phase: "group-stage";
       groupIndex: number;
@@ -40,6 +45,7 @@ export type EdgeMatchProgressFn = (event: EdgeMatchPhase) => void;
 
 export interface EdgeMatchResult {
   geojson: string;
+  inputGeojson: string;
   bounds: [number, number, number, number] | null;
   groupResults: GroupResult[];
   unassignedCount: number;
@@ -54,8 +60,7 @@ export interface EdgeMatchResult {
   assignedOverlayLabel: string | null;
   inputColumns: ColumnGuess;
   overlayColumns: ColumnGuess;
-  // Geometry-only outline of the overlay layer, so the map can show it as a
-  // static reference layer alongside the per-group colored result.
+  // Overlay layer outline with `fid`, a reference layer over the per-group colored result.
   overlayOutlineGeojson: string;
 }
 
@@ -191,12 +196,13 @@ async function runValidation(conn: AsyncDuckDBConnection, table: string): Promis
 
 async function computeBounds(
   conn: AsyncDuckDBConnection,
+  table = "ge_results",
 ): Promise<[number, number, number, number] | null> {
   try {
     const r = await conn.query(`--sql
       SELECT MIN(ST_XMin(geom)) AS xmin, MIN(ST_YMin(geom)) AS ymin,
              MAX(ST_XMax(geom)) AS xmax, MAX(ST_YMax(geom)) AS ymax
-      FROM ge_results WHERE geom IS NOT NULL
+      FROM ${table} WHERE geom IS NOT NULL
     `);
     const row = r.toArray()[0] as Record<string, number>;
     const { xmin, ymin, xmax, ymax } = row;
@@ -222,7 +228,11 @@ export async function runEdgeMatch(
 ): Promise<EdgeMatchResult> {
   onProgress({ phase: "loading" });
   await loadLayers(db, conn, inputFiles, overlayFiles);
-  const overlayOutlineGeojson = await tableToGeoJSON(conn, "overlay_layer_01", null);
+  const inputGeojson = await tableToGeoJSON(conn, "input_layer_01", null);
+  const overlayOutlineGeojson = await queryToGeoJSON(
+    conn,
+    "SELECT ST_AsGeoJSON(geom) AS _geom, fid FROM overlay_layer_01 WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)",
+  );
 
   onProgress({ phase: "assigning" });
   const assignment = await computeAssignment(conn, matchColumns, passthrough, perFeature);
@@ -231,7 +241,12 @@ export async function runEdgeMatch(
   const inputColumns = await detectColumns(conn, "input_layer_attr");
   const overlayColumns = nameGuess;
   const groups = await listGroups(conn, nameGuess.name);
-  onProgress({ phase: "groups-listed", groups });
+  onProgress({
+    phase: "groups-listed",
+    groups,
+    overlayOutlineGeojson,
+    bounds: await computeBounds(conn, "overlay_layer_01"),
+  });
   // ge_groups only exists to build the groups list above — nothing later
   // reads it.
   await conn.query("DROP TABLE IF EXISTS ge_groups");
@@ -314,6 +329,7 @@ export async function runEdgeMatch(
 
   return {
     geojson,
+    inputGeojson,
     bounds,
     groupResults,
     unassignedCount: assignment.unassignedCount,

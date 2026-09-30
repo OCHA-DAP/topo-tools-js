@@ -1,5 +1,6 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { boolParam, choiceParam, numberParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
@@ -32,6 +33,18 @@
   let linkByCode = $state(false);
   let linkByName = $state(false);
   let linkMode = $state<"either" | "both">("either");
+  syncParam("root", textParam, () => rootCode, (v) => (rootCode = v));
+  syncParam("delim", textParam, () => delimiter, (v) => (delimiter = v));
+  syncParam("width", textParam, () => minWidth, (v) => (minWidth = v));
+  syncParam("name-a", textParam, () => nameFieldA, (v) => (nameFieldA = v));
+  syncParam("code-a", textParam, () => codeFieldA, (v) => (codeFieldA = v));
+  syncParam("name-b", textParam, () => nameFieldB, (v) => (nameFieldB = v));
+  syncParam("code-b", textParam, () => codeFieldB, (v) => (codeFieldB = v));
+  syncParam("match", numberParam, () => tauMatch, (v) => (tauMatch = v));
+  syncParam("same", numberParam, () => tauSame, (v) => (tauSame = v));
+  syncParam("by-code", boolParam, () => linkByCode, (v) => (linkByCode = v));
+  syncParam("by-name", boolParam, () => linkByName, (v) => (linkByName = v));
+  syncParam("link", choiceParam(["either", "both"] as const), () => linkMode, (v) => (linkMode = v));
 
   let running = $state(false);
   let error = $state<string | null>(null);

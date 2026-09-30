@@ -12,6 +12,7 @@
     geojson = null,
     originalGeojson = null,
     originalOutline = false,
+    showSide = undefined,
     bounds = null,
     processing = false,
     registerClear = undefined,
@@ -21,6 +22,8 @@
     originalGeojson?: string | null;
     // Draws originalGeojson as outlines above the result instead of a fill.
     originalOutline?: boolean;
+    // Shows only the original ("a") or only the result ("b") instead of stacking them.
+    showSide?: "a" | "b";
     bounds?: [number, number, number, number] | null;
     processing?: boolean;
     registerClear?: (fn: () => void) => void;
@@ -58,6 +61,22 @@
     if (processing) stopSpin();
   });
 
+  function applySide() {
+    if (!map) return;
+    const sides = { original: showSide !== "b", result: showSide !== "a" };
+    for (const [source, visible] of Object.entries(sides)) {
+      for (const suffix of ["fill", "line", "selected"]) {
+        const id = `${source}-${suffix}`;
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+      }
+    }
+  }
+
+  $effect(() => {
+    const _side = showSide;
+    if (map && styleReady) applySide();
+  });
+
   // Effects gate on styleReady, not isStyleLoaded(): adding a GeoJSON source flips
   // isStyleLoaded() false, and the one-shot "load" event has already fired.
   $effect(() => {
@@ -90,6 +109,7 @@
           map.addLayer({ id: "original-line", type: "line", source: "original", paint: { "line-color": "#222222", "line-width": lineWidth } });
           addSelectedLayer("original");
         }
+        applySide();
       }
     }
 
@@ -116,6 +136,7 @@
         map.addLayer({ id: "result-fill", type: "fill", source: "result", filter: polyFilter, paint: { "fill-color": "#aad4e0", "fill-opacity": 1 } }, before);
         map.addLayer({ id: "result-line", type: "line", source: "result", paint: { "line-color": "#222222", "line-width": lineWidth } }, before);
         addSelectedLayer("result");
+        applySide();
       }
     }
 
