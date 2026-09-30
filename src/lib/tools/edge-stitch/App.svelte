@@ -1,5 +1,6 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { boolParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { loadFile } from "$lib/db/loader";
   import { PipelineError, runStitch, type StitchIssueRow } from "./pipeline/index";
   import type { ApplyFillOptions } from "$lib/db/fillCompose";
@@ -7,6 +8,7 @@
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
+  import SideToggle from "$lib/components/SideToggle.svelte";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -18,6 +20,7 @@
   let errorStage = $state(0); // stage number that failed, 0=none
   let stageLabel = $state("");
   let resultGeoJSON = $state<string | null>(null);
+  let showSide = $state<"a" | "b">("b");
   let originalGeoJSON = $state<string | null>(null);
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let issues = $state<StitchIssueRow[]>([]);
@@ -31,6 +34,10 @@
   let fillNameField = $state("");
   let fillCodeField = $state("");
   let fillDepthColumn = $state("adm_lvl");
+  syncParam("fill", boolParam, () => fillSchema, (v) => (fillSchema = v));
+  syncParam("name", textParam, () => fillNameField, (v) => (fillNameField = v));
+  syncParam("code", textParam, () => fillCodeField, (v) => (fillCodeField = v));
+  syncParam("depth", textParam, () => fillDepthColumn, (v) => (fillDepthColumn = v));
 
   let clearMap: (() => void) | undefined;
 
@@ -106,6 +113,7 @@
       );
 
       resultGeoJSON = result.stitchedGeoJSON;
+      showSide = "b";
       originalGeoJSON = result.originalGeoJSON;
       resultBounds = result.bounds;
       issues = result.issues;
@@ -273,7 +281,11 @@
   </aside>
 
   <div class="map-container">
+    {#if resultGeoJSON}
+      <SideToggle bind:side={showSide} labels={["Original", "Stitched"]} disabled={running} />
+    {/if}
     <MapView
+      showSide={resultGeoJSON ? showSide : undefined}
       geojson={resultGeoJSON}
       originalGeojson={originalGeoJSON}
       bounds={resultBounds}
@@ -466,6 +478,7 @@
   }
 
   .map-container {
+    position: relative;
     height: 100%;
     overflow: hidden;
   }

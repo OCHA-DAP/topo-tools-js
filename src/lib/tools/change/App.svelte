@@ -2,8 +2,10 @@
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { choiceParam, numberParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { onMount, untrack } from "svelte";
   import CrosswalkTable from "./CrosswalkTable.svelte";
+  import SideToggle from "$lib/components/SideToggle.svelte";
   import MapView from "./MapView.svelte";
   import {
     PipelineError,
@@ -52,6 +54,10 @@
   // code/name columns the user has already selected on each side.
   let matchMode = $state<"geometry" | "identity">("geometry");
   let linkMode = $state<"either" | "both">("either");
+  syncParam("match", numberParam, () => tauMatch, (v) => (tauMatch = v));
+  syncParam("same", numberParam, () => tauSame, (v) => (tauSame = v));
+  syncParam("by", choiceParam(["geometry", "identity"] as const), () => matchMode, (v) => (matchMode = v));
+  syncParam("link", choiceParam(["either", "both"] as const), () => linkMode, (v) => (linkMode = v));
   const linkByCode = $derived(
     matchMode === "identity" && aCodeCol !== null && bCodeCol !== null,
   );
@@ -89,19 +95,8 @@
   // Comparison mode
   let showSide = $state<"a" | "b">("b");
 
-  function handleKey(e: KeyboardEvent): void {
-    if (!overlayGeoJSON) return;
-    const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
-    if (e.key === "]" || e.key === "[") {
-      showSide = showSide === "a" ? "b" : "a";
-    }
-  }
-
   onMount(() => {
     initDuckDB();
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
   });
 
   // Debounced reclassify on slider changes
@@ -660,21 +655,7 @@
   <div class="cw-result">
     <div class="cw-map-pane">
       {#if overlayGeoJSON}
-        <div class="cw-view-toolbar">
-          <div class="cw-mode-btns" role="group" aria-label="View mode">
-            <button
-              class="cw-mode-btn"
-              class:active={showSide === "a"}
-              onclick={() => (showSide = "a")}>Version A</button
-            >
-            <button
-              class="cw-mode-btn"
-              class:active={showSide === "b"}
-              onclick={() => (showSide = "b")}>Version B</button
-            >
-          </div>
-          <p class="cw-kbd-hint"><kbd>[</kbd><kbd>]</kbd> to cycle</p>
-        </div>
+        <SideToggle bind:side={showSide} labels={["Version A", "Version B"]} />
       {/if}
 
       <MapView
@@ -953,77 +934,6 @@
     min-height: 0;
     border-bottom: 1px solid #e5e7eb;
     position: relative;
-  }
-
-  .cw-view-toolbar {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.35rem;
-    pointer-events: auto;
-  }
-
-  .cw-mode-btns {
-    display: flex;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    overflow: hidden;
-    background: #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  .cw-mode-btn {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    border: none;
-    background: #fff;
-    color: #6b7280;
-    cursor: pointer;
-    border-left: 1px solid #e5e7eb;
-    transition:
-      background 0.1s,
-      color 0.1s;
-  }
-
-  .cw-mode-btn:first-child {
-    border-left: none;
-  }
-
-  .cw-kbd-hint {
-    margin: 0;
-    font-size: 0.7rem;
-    color: #6b7280;
-    text-align: right;
-    background: #fff;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 0.2rem 0.45rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  .cw-kbd-hint kbd {
-    font-family: inherit;
-    font-size: 0.7rem;
-    padding: 0.05rem 0.2rem;
-    border: 1px solid #d1d5db;
-    border-radius: 3px;
-    background: #f3f4f6;
-    color: #4b5563;
-  }
-
-  .cw-mode-btn:hover {
-    background: #f3f4f6;
-    color: #111;
-  }
-
-  .cw-mode-btn.active {
-    background: #111;
-    color: #fff;
   }
 
   .cw-table-pane {

@@ -1,6 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { PipelineError, runPipeline } from "$lib/tools/edge-extend/pipeline/index";
 import { clipEngine } from "$lib/db/clipEngine";
+import { queryToGeoJSON } from "$lib/db/geojson";
 
 // Sentinel overlay_fid for the orphan passthrough pseudo-group (ported from
 // topo-tools-py's PASSTHROUGH_OVERLAY_FID).
@@ -14,6 +15,8 @@ export interface GroupInfo {
 
 export interface GroupResult extends GroupInfo {
   status: "done" | "error";
+  // This group's rows in ge_results, colored by group_id like the final output.
+  geojson?: string;
   error?: string;
   failedStage?: number;
 }
@@ -27,6 +30,20 @@ export type GroupStageFn = (
 ) => void;
 
 export type GroupDoneFn = (groupIndex: number, groupTotal: number, result: GroupResult) => void;
+
+// Map preview only, so a failure leaves the group done without one.
+async function groupGeoJSON(conn: AsyncDuckDBConnection, overlayFid: number): Promise<string | undefined> {
+  try {
+    return await queryToGeoJSON(
+      conn,
+      `SELECT ST_AsGeoJSON(geom) AS _geom, ${overlayFid} AS group_id FROM ge_results
+       WHERE fid IN (SELECT input_fid FROM ge_assignment WHERE overlay_fid = ${overlayFid})`,
+    );
+  } catch (e) {
+    console.warn("group preview failed:", e);
+    return undefined;
+  }
+}
 
 // One row per non-empty group, joined against an optional human-readable
 // label column on the overlay layer (see detectColumns in $lib/db/columns).
@@ -142,7 +159,7 @@ export async function runGroups(
       }
 
       console.log(`[EE-DEBUG] ##### GROUP DONE (success): ${group.label} #####`);
-      result = { ...group, status: "done" };
+      result = { ...group, status: "done", geojson: await groupGeoJSON(conn, group.overlayFid) };
     } catch (e) {
       console.log(
         `[EE-DEBUG] ##### GROUP DONE (error): ${group.label}: ${e instanceof Error ? e.message : String(e)} #####`,

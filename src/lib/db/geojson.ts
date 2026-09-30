@@ -71,3 +71,16 @@ export async function tableToGeoJSON(
     typeof v === "bigint" ? Number(v) : v,
   );
 }
+
+// `sql` must select `ST_AsGeoJSON(geom) AS _geom`; every other column becomes a property.
+export async function queryToGeoJSON(conn: AsyncDuckDBConnection, sql: string): Promise<string> {
+  const rows = (await conn.query(sql)).toArray() as Array<Record<string, unknown>>;
+  const features = rows.map(({ _geom, ...properties }) => ({
+    type: "Feature",
+    geometry: JSON.parse(_geom as string),
+    properties,
+  }));
+  return JSON.stringify({ type: "FeatureCollection", features }, (_, v) =>
+    typeof v === "bigint" ? Number(v) : v,
+  );
+}

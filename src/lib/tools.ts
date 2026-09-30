@@ -32,6 +32,11 @@ export const tools: Tool[] = [
     tagline:
       "Match fine polygons to their best-overlapping coarse boundary (admin 4 into 3, admin 4 into 0, or any other pair), then extend each group to fit its boundary exactly.",
     iconHref: "/icons/tools/edge-match.svg",
+    demo: {
+      input: "https://data.source.coop/hdx/topo-tools/nld/demo/edge/nld_admin2.parquet",
+      overlay: "https://data.source.coop/hdx/topo-tools/nld/demo/edge/nld_admin1.parquet",
+      fit: "each",
+    },
   },
   {
     slug: "change",

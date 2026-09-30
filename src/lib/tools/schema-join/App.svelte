@@ -1,5 +1,6 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { boolParam, numberParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { attributesAt, type Bounds } from "$lib/db/layerView";
   import {
     DEFAULT_TARGET_SCHEMA,
@@ -34,6 +35,10 @@
   let nameField = $state(DEFAULT_TARGET_SCHEMA.nameField);
   let codeField = $state(DEFAULT_TARGET_SCHEMA.codeField);
   let minOverlap = $state(MIN_OVERLAP_DEFAULT);
+  syncParam("templates", boolParam, () => useTemplates, (v) => (useTemplates = v));
+  syncParam("name", textParam, () => nameField, (v) => (nameField = v));
+  syncParam("code", textParam, () => codeField, (v) => (codeField = v));
+  syncParam("overlap", numberParam, () => minOverlap, (v) => (minOverlap = v));
   let settingsOpen = $state(false);
 
   let running = $state(false);

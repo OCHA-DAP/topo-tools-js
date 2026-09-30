@@ -1,9 +1,12 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { boolParam, choiceParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { onMount, untrack } from "svelte";
+  import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "./MapView.svelte";
+  import SideToggle from "$lib/components/SideToggle.svelte";
   import { runEdgeMatch, type EdgeMatchPhase } from "./pipeline/index";
   import type { GroupResult } from "./pipeline/groups";
   import type { ColumnGuess } from "$lib/db/columns";
@@ -33,6 +36,10 @@
 
   let resultGeoJSON = $state<string | null>(null);
   let overlayOutlineGeoJSON = $state<string | null>(null);
+  let inputGeoJSON = $state<string | null>(null);
+  let streamGeoJSON = $state<string | null>(null);
+  let activeOverlayFid = $state<number | null>(null);
+  let showSide = $state<"a" | "b">("b");
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let unassignedCount = $state<number | null>(null);
   let droppedCount = $state<number | null>(null);
@@ -59,6 +66,17 @@
   let fillNameField = $state("");
   let fillCodeField = $state("");
   let fillDepthColumn = $state("adm_lvl");
+  syncParam(
+    "fit",
+    choiceParam(["all", "each"] as const),
+    () => (perFeature ? "each" : "all"),
+    (v) => (perFeature = v === "each"),
+  );
+  syncParam("passthrough", boolParam, () => passthrough, (v) => (passthrough = v));
+  syncParam("fill", boolParam, () => fillSchema, (v) => (fillSchema = v));
+  syncParam("name", textParam, () => fillNameField, (v) => (fillNameField = v));
+  syncParam("code", textParam, () => fillCodeField, (v) => (fillCodeField = v));
+  syncParam("depth", textParam, () => fillDepthColumn, (v) => (fillDepthColumn = v));
 
   onMount(() => {
     initDuckDB();
@@ -131,6 +149,22 @@
     return file.name.replace(/\.[^.]+$/, "");
   }
 
+  // Finished groups' features, flushed to the map at most every 500 ms.
+  let streamFeatures: unknown[] = [];
+  let streamTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function flushStream(): void {
+    streamTimer = undefined;
+    streamGeoJSON = JSON.stringify({ type: "FeatureCollection", features: streamFeatures });
+  }
+
+  function resetStream(): void {
+    clearTimeout(streamTimer);
+    streamTimer = undefined;
+    streamFeatures = [];
+    streamGeoJSON = null;
+  }
+
   function onProgress(event: EdgeMatchPhase): void {
     switch (event.phase) {
       case "loading":
@@ -142,14 +176,21 @@
       case "groups-listed":
         phaseLabel = `Running ${event.groups.length} group${event.groups.length === 1 ? "" : "s"}…`;
         groupRows = event.groups.map((g) => ({ ...g, status: "pending" as const }));
+        overlayOutlineGeoJSON = event.overlayOutlineGeojson;
+        resultBounds = event.bounds;
         break;
       case "group-stage":
         activeGroupIndex = event.groupIndex;
         activeStage = event.stage;
+        activeOverlayFid = event.group.overlayFid;
         groupRows[event.groupIndex] = { ...event.group, status: "running" };
         break;
       case "group-done":
         groupRows[event.groupIndex] = event.result;
+        if (event.result.geojson) {
+          streamFeatures.push(...JSON.parse(event.result.geojson).features);
+          streamTimer ??= setTimeout(flushStream, 500);
+        }
         if (activeGroupIndex === event.groupIndex) activeStage = 0;
         break;
     }
@@ -160,6 +201,9 @@
     running = true;
     resultGeoJSON = null;
     overlayOutlineGeoJSON = null;
+    inputGeoJSON = null;
+    activeOverlayFid = null;
+    resetStream();
     resultBounds = null;
     unassignedCount = null;
     droppedCount = null;
@@ -197,6 +241,8 @@
         perFeature,
       );
       resultGeoJSON = result.geojson;
+      inputGeoJSON = result.inputGeojson;
+      showSide = "b";
       overlayOutlineGeoJSON = result.overlayOutlineGeojson;
       resultBounds = result.bounds;
       unassignedCount = result.unassignedCount;
@@ -214,6 +260,8 @@
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
+      resetStream();
+      activeOverlayFid = null;
       running = false;
       activeGroupIndex = -1;
       activeStage = 0;
@@ -237,6 +285,7 @@
     <header>
       <a class="back" href={base}>← Topology Tools</a>
       <h1>Edge Matcher</h1>
+      <DemoLink slug="edge-match" />
       <p class="blurb">
         Match a fine polygon layer to whichever coarse boundary polygon it overlaps the most, then
         extend each group's edges outward so every group's result meets its boundary exactly.
@@ -486,9 +535,16 @@
   </aside>
 
   <div class="map-container">
+    {#if resultGeoJSON}
+      <SideToggle bind:side={showSide} labels={["Original", "Matched"]} disabled={running} />
+    {/if}
     <MapView
       resultGeojson={resultGeoJSON}
+      inputGeojson={inputGeoJSON}
+      streamGeojson={streamGeoJSON}
       overlayOutlineGeojson={overlayOutlineGeoJSON}
+      {activeOverlayFid}
+      {showSide}
       bounds={resultBounds}
       processing={running}
     />
@@ -778,6 +834,7 @@
   }
 
   .map-container {
+    position: relative;
     height: 100%;
     overflow: hidden;
   }

@@ -6,6 +6,7 @@
   import { loadFile } from "$lib/db/loader";
   import { onMount, untrack } from "svelte";
   import IssuesTable from "./IssuesTable.svelte";
+  import SideToggle from "$lib/components/SideToggle.svelte";
   import MapView from "./MapView.svelte";
   import {
     PipelineError,
@@ -18,7 +19,7 @@
     type IssueRow,
   } from "./pipeline";
   import { niceNum } from "./pipeline/units";
-  import { getUrlParam, setUrlParam } from "$lib/utils/url";
+  import { syncParam } from "$lib/utils/syncParam.svelte";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -39,22 +40,21 @@
   let gapWidthM = $state(0);
 
   // `gap` URL param: "thin", "all", or a Manual width in meters; absent means Minimal.
-  function readGapParam(): void {
-    const value = getUrlParam("gap");
-    const width = Number(value);
-    if (value === "thin" || value === "all") mode = value;
-    else if (value && Number.isFinite(width) && width >= 0) {
-      mode = "manual";
-      gapWidthM = width;
-    }
-  }
-
-  function writeGapParam(): void {
-    setUrlParam(
-      "gap",
-      mode === "minimal" ? null : mode === "manual" ? String(Number(gapWidthM.toPrecision(6))) : mode,
-    );
-  }
+  syncParam(
+    "gap",
+    {
+      parse: (raw) => (raw === "thin" || raw === "all" || (raw.trim() !== "" && Number(raw) >= 0) ? raw : undefined),
+      format: (value) => value,
+    },
+    () => (mode === "manual" ? String(Number(gapWidthM.toPrecision(6))) : mode),
+    (value) => {
+      if (value === "thin" || value === "all") mode = value;
+      else {
+        mode = "manual";
+        gapWidthM = Number(value);
+      }
+    },
+  );
 
   function fmtGap(m: number): string {
     if (m === 0) return "none";
@@ -139,20 +139,8 @@
   let recleaning = $state(false);
   let recleanPending = false;
 
-  function handleKey(e: KeyboardEvent): void {
-    if (!cleanedGeoJSON) return;
-    const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
-    if (e.key === "]" || e.key === "[") {
-      showSide = showSide === "a" ? "b" : "a";
-    }
-  }
-
   onMount(() => {
-    readGapParam();
     initDuckDB();
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
   });
 
   $effect(() => {
@@ -285,7 +273,6 @@
     recleaning = true;
     recleanPending = false;
     const firstClean = cleanedGeoJSON == null;
-    writeGapParam();
     try {
       const result = await recleanOnly(duckdbState.conn!, { mode, gapWidthM });
       cleanedGeoJSON = result.cleanedGeoJSON;
@@ -528,21 +515,7 @@
   <div class="tc-result">
     <div class="tc-map-pane">
       {#if cleanedGeoJSON}
-        <div class="tc-view-toolbar">
-          <div class="tc-mode-btns" role="group" aria-label="View mode">
-            <button
-              class="tc-mode-btn"
-              class:active={showSide === "a"}
-              onclick={() => (showSide = "a")}>Original</button
-            >
-            <button
-              class="tc-mode-btn"
-              class:active={showSide === "b"}
-              onclick={() => (showSide = "b")}>Fixed</button
-            >
-          </div>
-          <p class="tc-kbd-hint"><kbd>[</kbd><kbd>]</kbd> to cycle</p>
-        </div>
+        <SideToggle bind:side={showSide} labels={["Original", "Fixed"]} />
       {/if}
       <MapView
         originalGeojson={originalGeoJSON}
@@ -788,16 +761,6 @@
       transform: rotate(360deg);
     }
   }
-  .tc-view-toolbar {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.35rem;
-  }
   .tc-mode-btns {
     display: flex;
     border: 1px solid #d1d5db;
@@ -835,24 +798,5 @@
   .tc-mode-btn:disabled {
     cursor: not-allowed;
     opacity: 0.6;
-  }
-  .tc-kbd-hint {
-    margin: 0;
-    font-size: 0.7rem;
-    color: #6b7280;
-    background: #fff;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 0.2rem 0.45rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-  .tc-kbd-hint kbd {
-    font-family: inherit;
-    font-size: 0.7rem;
-    padding: 0.05rem 0.2rem;
-    border: 1px solid #d1d5db;
-    border-radius: 3px;
-    background: #f3f4f6;
-    color: #4b5563;
   }
 </style>

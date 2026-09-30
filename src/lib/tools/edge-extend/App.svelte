@@ -6,6 +6,7 @@
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
+  import SideToggle from "$lib/components/SideToggle.svelte";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -23,6 +24,7 @@
   let errorStage = $state(0); // stage number that failed, 0=none
   let stageLabel = $state("");
   let resultGeoJSON = $state<string | null>(null);
+  let showSide = $state<"a" | "b">("b");
   let originalGeoJSON = $state<string | null>(null);
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let error = $state<string | null>(null);
@@ -84,6 +86,7 @@
       });
 
       resultGeoJSON = result.geojson;
+      showSide = "b";
       resultBounds = result.bounds ?? resultBounds;
       currentStage = 6;
       stageLabel = "Done";
@@ -178,7 +181,11 @@
   </aside>
 
   <div class="map-container">
+    {#if resultGeoJSON}
+      <SideToggle bind:side={showSide} labels={["Original", "Extended"]} disabled={running} />
+    {/if}
     <MapView
+      showSide={resultGeoJSON ? showSide : undefined}
       geojson={resultGeoJSON}
       originalGeojson={originalGeoJSON}
       bounds={resultBounds}
@@ -319,6 +326,7 @@
   }
 
   .map-container {
+    position: relative;
     height: 100%;
     overflow: hidden;
   }

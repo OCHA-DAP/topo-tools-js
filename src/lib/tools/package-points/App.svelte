@@ -1,5 +1,6 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
+  import { textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import { runPackagePoints, type TargetSchema } from "./pipeline/index";
@@ -19,6 +20,8 @@
 
   let nameField = $state("");
   let codeField = $state("");
+  syncParam("name", textParam, () => nameField, (v) => (nameField = v));
+  syncParam("code", textParam, () => codeField, (v) => (codeField = v));
 
   let running = $state(false);
   let error = $state<string | null>(null);

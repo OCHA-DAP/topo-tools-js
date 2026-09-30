@@ -33,6 +33,23 @@ name instead of repeating them.
   `input`/`join`, `input`/`overlay`, `crosswalk`), and a local drop or browse
   MUST remove it. Opening a page with that parameter MUST load the URL
   automatically.
+- Every tool setting except a column picker MUST sync to a query
+  parameter: opening the page MUST apply a valid value before the first
+  run, and an invalid one MUST be ignored. Every change MUST write the
+  current value, and a value equal to the default MUST remove the
+  parameter. Booleans are `true`/`false`.
+
+  | Tool | Parameters |
+  | --- | --- |
+  | `change` | `match`, `same`, `by` (`geometry`/`identity`), `link` (`either`/`both`) |
+  | `code-refactor` | `root`, `delim`, `width`, `name`, `code` |
+  | `code-update` | `root`, `delim`, `width`, `name-a`, `code-a`, `name-b`, `code-b`, `match`, `same`, `by-code`, `by-name`, `link` |
+  | `edge-match` | `fit` (`all`/`each`), `passthrough`, `fill`, `name`, `code`, `depth` |
+  | `edge-mosaic`, `edge-stitch` | `fill`, `name`, `code`, `depth` |
+  | `package`, `package-polygons`, `package-points`, `package-lines`, `schema-map` | `name`, `code` |
+  | `schema-fill` | `name`, `code`, `depth` |
+  | `schema-join` | `templates`, `name`, `code`, `overlap` |
+  | `topo-clean` | `gap` (see `topo-clean.md`) |
 - GeoParquet MUST be loaded via `read_parquet`, not `ST_Read`. Every other
   format MUST be loaded via `ST_Read`.
 - Exporting spatial results MUST offer GeoParquet always, plus whichever
@@ -43,6 +60,16 @@ name instead of repeating them.
   rather than a GDAL driver, when a cached copy is available.
 - A GDAL export MUST declare `SRS 'EPSG:4326'` explicitly, since loaded
   geometry carries no other CRS.
+
+## Before/after view (`$lib/components/SideToggle.svelte`)
+
+- Every tool that changes geometry (`topo-clean`, `edge-extend`,
+  `edge-match`, `edge-stitch`, `edge-clip`, `edge-mosaic`) MUST offer an
+  Original/result toggle once a result exists, showing one side at a time
+  and switching to the result after every run. `change` MUST offer the same
+  toggle between Version A and Version B.
+- `[` and `]` MUST switch sides, except while a text input, select, or
+  textarea has focus.
 
 ## Loading and normalization
 
