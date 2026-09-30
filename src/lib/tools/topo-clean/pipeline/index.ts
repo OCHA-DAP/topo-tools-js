@@ -33,11 +33,19 @@ export class PipelineError extends Error {
   }
 }
 
+export type GapMode = "minimal" | "thin" | "all" | "manual";
+
 export interface CleanOptions {
-  gapWidthM: number; // primary slider, meters (0 = no gap filling)
-  // True when the UI's All mode is active: fills every detected gap via the
-  // fixed GAP_MAXIMUM_WIDTH_ALL_DEG sentinel instead of gapWidthM's meters value.
-  allGaps?: boolean;
+  mode: GapMode;
+  gapWidthM: number; // Manual mode's width, meters (0 = no gap filling)
+}
+
+// All uses the fixed GAP_MAXIMUM_WIDTH_ALL_DEG sentinel, not a width derived from the gaps.
+function fillWidthDeg(opts: CleanOptions, issues: IssueRow[]): number {
+  if (opts.mode === "all") return GAP_MAXIMUM_WIDTH_ALL_DEG;
+  if (opts.mode === "manual") return metersToDegrees(opts.gapWidthM);
+  const { thinFillM, minimalFillM } = resolveGapFillWidths(issues);
+  return metersToDegrees(opts.mode === "thin" ? thinFillM : minimalFillM);
 }
 
 export interface AnalysisResult {
@@ -103,17 +111,14 @@ async function computeBounds(
   return null;
 }
 
-// Re-clean at the current gap-fill mode (gapWidthM for Minimal/Thin/Manual,
-// allGaps for All — see CleanOptions). Snapping tolerance is runCoverageClean's
+// Re-clean at the current gap-fill mode. Snapping tolerance is runCoverageClean's
 // own SNAP_TOLERANCE default. Gap + overlap regions are static (built once per
 // load) and are NOT recomputed here; only the output's micro-polygon rows are.
 export async function recleanOnly(
   conn: AsyncDuckDBConnection,
   opts: CleanOptions,
 ): Promise<RecleanResult> {
-  const gapDeg = opts.allGaps ? GAP_MAXIMUM_WIDTH_ALL_DEG : metersToDegrees(opts.gapWidthM);
-
-  await buildClean(conn, "tc_clean", gapDeg, cachedHasViolations);
+  await buildClean(conn, "tc_clean", fillWidthDeg(opts, cachedIssues), cachedHasViolations);
   const kept = await countRows(conn, "tc_clean");
   const issuesRes = await syncOutputMicroIssues(conn, cachedFailedKinds);
   cachedIssues = issuesRes.rows;
@@ -134,10 +139,10 @@ export async function recleanOnly(
 }
 
 // Full run from already-loaded layer_01/layer_attr: freeze the input, enumerate
-// issues (gaps + overlaps), then clean at a gap width auto-derived from the
-// widest detected gap.
+// issues (gaps + overlaps), then clean at the requested gap-fill mode.
 export async function runFromLoaded(
   conn: AsyncDuckDBConnection,
+  opts: CleanOptions,
   onProgress: ProgressFn,
 ): Promise<CleanResult> {
   onProgress(2, "Analyzing coverage");
@@ -162,8 +167,7 @@ export async function runFromLoaded(
 
   onProgress(4, "Fixing topology");
   // Assemble issues (gap widths via ST_MaximumInscribedCircle), then run a
-  // single ST_CoverageClean at the Minimal-mode gap width (noise-scale gaps
-  // only) — the UI's default mode, so the first clean a user sees matches it.
+  // single ST_CoverageClean at the requested mode's gap width.
   try {
     const issuesRes = await buildIssues(conn, failedKinds);
     cachedFailedKinds = issuesRes.failedKinds;
@@ -186,9 +190,7 @@ export async function runFromLoaded(
   let fixedKeys: Set<string>;
   let exportCheck: ExportCheck;
   try {
-    const { minimalFillM } = resolveGapFillWidths(cachedIssues);
-
-    await buildClean(conn, "tc_clean", metersToDegrees(minimalFillM), cachedHasViolations);
+    await buildClean(conn, "tc_clean", fillWidthDeg(opts, cachedIssues), cachedHasViolations);
 
     const kept = await countRows(conn, "tc_clean");
     const synced = await syncOutputMicroIssues(conn, cachedFailedKinds);

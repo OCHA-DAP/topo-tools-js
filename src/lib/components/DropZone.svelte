@@ -3,6 +3,7 @@
   import { unzip } from "fflate";
   import { CSV_EXTS, SHP_EXTS, SINGLE_EXTS, extOf } from "$lib/utils/formats";
   import { FetchLayerError, fetchLayer, parseHttpUrl } from "$lib/utils/fetchLayer";
+  import { getUrlParam, setUrlParam } from "$lib/utils/url";
 
   let {
     files = $bindable<File[]>([]),
@@ -159,11 +160,7 @@
   }
 
   function syncUrlParam(url: URL | null) {
-    if (!urlParam) return;
-    const page = new URL(location.href);
-    if (url) page.searchParams.set(urlParam, url.href);
-    else page.searchParams.delete(urlParam);
-    history.replaceState(history.state, "", page);
+    if (urlParam) setUrlParam(urlParam, url?.href ?? null);
   }
 
   function setLocalFiles(fileList: File[]) {
@@ -233,7 +230,7 @@
   }
 
   onMount(() => {
-    const initial = urlParam && new URLSearchParams(location.search).get(urlParam);
+    const initial = urlParam && getUrlParam(urlParam);
     if (initial) {
       urlText = initial;
       loadFromUrl(initial);

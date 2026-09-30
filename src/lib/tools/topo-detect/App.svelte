@@ -1,5 +1,6 @@
 <script lang="ts">
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import DemoLink from "$lib/components/DemoLink.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import { loadFile } from "$lib/db/loader";
@@ -123,6 +124,7 @@
     <header>
       <a class="dt-back" href={base}>← Topology Tools</a>
       <h1>Detect</h1>
+      <DemoLink slug="topo-detect" />
       <p class="dt-blurb">
         Scan a polygon layer for gaps and overlaps and report them — a read-only inspection, not a
         fix. Click any issue to zoom to it.
