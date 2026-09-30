@@ -1,4 +1,5 @@
 <script lang="ts">
+  import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
@@ -12,10 +13,12 @@
     resolveGapFillWidths,
     runFromLoaded,
     type ExportCheck,
+    type GapMode,
     type IssueKind,
     type IssueRow,
   } from "./pipeline";
   import { niceNum } from "./pipeline/units";
+  import { getUrlParam, setUrlParam } from "$lib/utils/url";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -30,10 +33,28 @@
   // Gap-fill mode: minimal (default, noise-scale gaps only), thin
   // (sliver-shaped gaps only), all (every detected gap), or manual (exact
   // width via the slider below).
-  let mode = $state<"minimal" | "thin" | "all" | "manual">("minimal");
+  let mode = $state<GapMode>("minimal");
 
   // Manual-mode slider (meters). Only read when mode === "manual".
   let gapWidthM = $state(0);
+
+  // `gap` URL param: "thin", "all", or a Manual width in meters; absent means Minimal.
+  function readGapParam(): void {
+    const value = getUrlParam("gap");
+    const width = Number(value);
+    if (value === "thin" || value === "all") mode = value;
+    else if (value && Number.isFinite(width) && width >= 0) {
+      mode = "manual";
+      gapWidthM = width;
+    }
+  }
+
+  function writeGapParam(): void {
+    setUrlParam(
+      "gap",
+      mode === "minimal" ? null : mode === "manual" ? String(Number(gapWidthM.toPrecision(6))) : mode,
+    );
+  }
 
   function fmtGap(m: number): string {
     if (m === 0) return "none";
@@ -66,7 +87,7 @@
           : minimalFillM,
   );
 
-  function setMode(next: "minimal" | "thin" | "all" | "manual"): void {
+  function setMode(next: GapMode): void {
     // Seed the slider from whatever's currently applied so switching into
     // Manual never itself changes what gets filled — only future drags do.
     if (next === "manual" && mode !== "manual") {
@@ -128,6 +149,7 @@
   }
 
   onMount(() => {
+    readGapParam();
     initDuckDB();
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
@@ -173,8 +195,6 @@
     showSide = "b";
     selectedKey = null;
     focusBbox = null;
-    mode = "minimal";
-    gapWidthM = 0;
     recleanPending = false;
     if (recleanTimer) {
       clearTimeout(recleanTimer);
@@ -213,7 +233,7 @@
     running = true;
     errorStage = 0;
     try {
-      const result = await runFromLoaded(duckdbState.conn!, (stage, label) => {
+      const result = await runFromLoaded(duckdbState.conn!, { mode, gapWidthM }, (stage, label) => {
         currentStage = stage;
         stageLabel = label;
       });
@@ -265,11 +285,9 @@
     recleaning = true;
     recleanPending = false;
     const firstClean = cleanedGeoJSON == null;
+    writeGapParam();
     try {
-      const result = await recleanOnly(duckdbState.conn!, {
-        gapWidthM: effectiveGapWidthM,
-        allGaps: mode === "all",
-      });
+      const result = await recleanOnly(duckdbState.conn!, { mode, gapWidthM });
       cleanedGeoJSON = result.cleanedGeoJSON;
       collapsedCount = result.collapsedCount;
       fixedKeys = result.fixedKeys;
@@ -334,6 +352,7 @@
     <header>
       <a class="tc-back" href={base}>← Topology Tools</a>
       <h1>Topology Cleaner</h1>
+      <DemoLink slug="topo-clean" />
       <p class="tc-blurb">
         Drop a polygon layer to detect and fix overlaps and gaps. Click any issue to zoom to it.
         By default only noise-scale gaps get filled — switch modes or use the slider to control
@@ -411,8 +430,9 @@
               Only gaps at the scale of floating-point noise are filled — real enclosed features
               (a pond, a missing unit) are left alone.
             {:else if mode === "thin"}
-              Only gaps shaped like digitization slivers are filled, regardless of width — real
-              enclosed features (a pond, a missing unit) are left alone.
+              Fills every gap up to the width of the widest sliver-shaped gap. A long, narrow lake
+              can count as a sliver, so real water may be filled too; use Manual to set the width
+              yourself.
             {:else}
               Every detected gap is filled.
             {/if}

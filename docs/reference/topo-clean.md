@@ -118,6 +118,13 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - Changing the gap-width slider MUST trigger only a reclean (`buildClean`
   - `checkFixedIssues` + export-check), reusing the cached input freeze
     and the cached issues list, never re-running gap/overlap detection.
+- Opening the page with a `gap` query parameter MUST set the gap-fill mode
+  before the first clean: `thin` or `all` selects that mode, a non-negative
+  number selects `manual` at that width in meters, and any other value
+  leaves `minimal`. The first clean MUST run at that mode and width.
+- Every reclean MUST write the current mode to `gap` (the Manual width in
+  meters, or `thin`/`all`), and MUST remove `gap` for `minimal`. The mode
+  and width MUST persist when a new input is loaded.
 - The gap-fill mode controls, the issues table, and the input map MUST be
   available once gap/overlap detection finishes, including when the first
   clean is rejected, so a reclean at another mode or width can retry it.

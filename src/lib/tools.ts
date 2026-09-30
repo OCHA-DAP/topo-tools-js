@@ -3,7 +3,7 @@ export interface Tool {
   name: string;
   tagline: string;
   iconHref: string;
-  /** Demo input URL per DropZone `urlParam`. */
+  /** Demo query params: input URL per DropZone `urlParam`, plus any tool setting (e.g. `gap`). */
   demo?: Record<string, string>;
 }
 
@@ -14,6 +14,10 @@ export const tools: Tool[] = [
     tagline:
       "Detect overlaps and gaps in a polygon coverage and clean them automatically, with an adjustable gap-width threshold.",
     iconHref: "/icons/tools/topo-clean.svg",
+    demo: {
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/topo/nld_admin2.parquet",
+      gap: "2",
+    },
   },
   {
     slug: "edge-extend",
@@ -49,6 +53,9 @@ export const tools: Tool[] = [
     tagline:
       "Scan a polygon layer for gaps and overlaps and report them without fixing anything (read-only).",
     iconHref: "/icons/tools/topo-detect.svg",
+    demo: {
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/topo/nld_admin2.parquet",
+    },
   },
   {
     slug: "edge-clip",
