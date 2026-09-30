@@ -3,7 +3,7 @@ import { SNAP_TOLERANCE } from "./constants";
 import { buildGapTable, buildOverlapTable, emptyRegions, isMicroSql } from "./coverage";
 import { degSqToM2, degToM } from "./units";
 
-// Shared gap/overlap issues-table assembly, used by topology-cleaner (against
+// Shared gap/overlap issues-table assembly, used by topo-clean (against
 // its own tc_* tables, plus reclean-loop fixed-status tracking layered on top
 // in its own pipeline/issues.ts) and by detect (a thin, read-only pass over
 // these same builders with no reclean loop). Column shape matches

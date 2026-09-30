@@ -85,8 +85,8 @@ name instead of repeating them.
   `intersectPairs` (see Overlap measurement).
 - A "clean this derived output" pass MUST first check for a coverage
   violation or a micro-polygon and skip `ST_CoverageClean` entirely when
-  neither is found. On a freshly loaded input (`match`, `code-update`,
-  `change`, `extend`), the check MUST also fire on any enclosed hole,
+  neither is found. On a freshly loaded input (`edge-match`, `code-update`,
+  `change`, `edge-extend`), the check MUST also fire on any enclosed hole,
   however narrow. Every caller that wants this behavior MUST go through
   `gatedCoverageClean` rather than calling `ST_CoverageClean` directly.
 - `gatedCoverageClean` MUST preserve the input's fid set, apart from
@@ -114,25 +114,25 @@ name instead of repeating them.
   retrying a feature that still throws with its own parts snapped onto its
   incoming micro parts at `SNAP_TOLERANCE`.
 - Every `buildCoverageClean` call MUST merge micro-polygons before
-  `ST_CoverageClean` runs, so `extend`, `stitch`, `match`, `mosaic`,
-  `clean` and every cleaned input apply this rule. `clip` applies it to
-  its clipped output, `clean` again after its fix, and `package-polygons`,
+  `ST_CoverageClean` runs, so `edge-extend`, `edge-stitch`, `edge-match`, `edge-mosaic`,
+  `topo-clean` and every cleaned input apply this rule. `edge-clip` applies it to
+  its clipped output, `topo-clean` again after its fix, and `package-polygons`,
   `package-points` and `package-lines` to their input.
 - Each merged or dropped part MUST be reported as a `micro-polygon` row
-  by every tool that writes an issues report (`clip`, `stitch`, `mosaic`,
-  `match`, `clean` and `package-polygons`), with the part's own fid in
+  by every tool that writes an issues report (`edge-clip`, `edge-stitch`, `edge-mosaic`,
+  `edge-match`, `topo-clean` and `package-polygons`), with the part's own fid in
   `unit_a`, the receiving fid in `unit_b` (null when dropped), `reason`
   `merged into neighbouring feature` or `dropped: touches no feature`,
   `fixed` true where the table has that column, and the part itself as
   `geom`. `package-points` and `package-lines` MUST log the count instead.
-- `detect` MUST report micro-polygons unfixed, with `unit_b` and `reason`
-  null (see `docs/reference/detect.md`).
+- `topo-detect` MUST report micro-polygons unfixed, with `unit_b` and `reason`
+  null (see `docs/reference/topo-detect.md`).
 - `schema-join` and `schema-map` MUST NOT apply this rule, since they
   never modify geometry.
 
 ## No-erosion guard (`$lib/db/coverage.ts::checkNoErosion`)
 
-Shared by `extend` (whole-file) and `match` (per-group).
+Shared by `edge-extend` (whole-file) and `edge-match` (per-group).
 
 - For every fid present in the pre-extension table, `checkNoErosion` MUST
   raise unless the post-extension geometry for that fid, buffered outward
@@ -144,11 +144,11 @@ Shared by `extend` (whole-file) and `match` (per-group).
 
 ## Overlap measurement (`$lib/db/overlap.ts`)
 
-Shared by `match` (input/overlay assignment), `change` (version-to-version
+Shared by `edge-match` (input/overlay assignment), `change` (version-to-version
 comparison), `code-update` (per-level classify and reparent), and
 `schema-join` (join assignment). Its pairwise intersection (`intersectPairs`)
-is also shared by assign-one, the clip engine (`clip`, `mosaic`, and `match`'s
-per-group clip) and the shared overlap check (`detect`, `clean`).
+is also shared by assign-one, the clip engine (`edge-clip`, `edge-mosaic`, and `edge-match`'s
+per-group clip) and the shared overlap check (`topo-detect`, `topo-clean`).
 
 - Overlap measurement MUST compute exact geometric intersection
   (`ST_Intersection`) for every candidate pair.
@@ -168,7 +168,7 @@ per-group clip) and the shared overlap check (`detect`, `clean`).
 
 ### Best-overlap plurality pick (`$lib/db/assignBestOverlap.ts`)
 
-Shared by `match` (input/overlay assignment), `code-update` (per-level
+Shared by `edge-match` (input/overlay assignment), `code-update` (per-level
 reparent), and `schema-join` (join assignment).
 
 - `assignBestOverlap` MUST assign each input feature (`input_fid`) to the
@@ -179,7 +179,7 @@ reparent), and `schema-join` (join assignment).
 
 ## Code-based assignment override (`$lib/db/codeJoin.ts`)
 
-Shared by `match`, `mosaic`, and `clip` for overlay assignment.
+Shared by `edge-match`, `edge-mosaic`, and `edge-clip` for overlay assignment.
 
 - Callers MAY supply a `matchColumn` name (same column on both layers) or a
   `overlayMatchColumn`/`inputMatchColumn` pair (different names), mutually
@@ -230,7 +230,7 @@ width, '0')`, starting from `nextAvailableInteger` for that parent. It
 
 ## Opt-in schema fill (`$lib/db/fillCompose.ts`)
 
-Shared by `stitch`, `mosaic` (via `stitch`'s own call), and `match` for an
+Shared by `edge-stitch`, `edge-mosaic` (via `edge-stitch`'s own call), and `edge-match` for an
 optional post-processing pass over each tool's own final attribute table.
 
 - Callers MUST supply `fillSchema` (boolean), and MAY additionally supply a

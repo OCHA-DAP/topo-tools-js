@@ -2,7 +2,7 @@
 
 See `docs/reference/README.md` for the MUST/SHOULD/MAY convention.
 
-`change` (route `/changelog`, internal name `polygon-changelog`, tables/columns
+`change` (route `/change`, tables/columns
 prefixed `cw_`) compares two versions of a polygon layer ("Version A" = old,
 "Version B" = new) and classifies each unit as `unchanged` / `renamed` /
 `modified` / `relocated` / `split` / `merge` / `complex` / `created` /

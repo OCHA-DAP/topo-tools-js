@@ -4,7 +4,7 @@ import { quoteIdent } from "$lib/db/code";
 import {
   stageClassify,
   type ClassifyOptions,
-} from "$lib/tools/polygon-changelog/pipeline/classify";
+} from "$lib/tools/change/pipeline/classify";
 
 // Builds cw_{side}_keyed from this level's own dissolved table, so
 // stageClassify's fixed table names are reused unmodified per level.
