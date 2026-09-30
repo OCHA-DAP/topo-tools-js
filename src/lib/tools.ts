@@ -16,7 +16,7 @@ export const tools: Tool[] = [
     iconHref: "/icons/tools/topo-clean.svg",
     demo: {
       url: "https://data.source.coop/hdx/topo-tools/nld/demo/topo/nld_admin2.parquet",
-      gap: "2",
+      gap: "thin",
     },
   },
   {
