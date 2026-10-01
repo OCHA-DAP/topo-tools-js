@@ -3,10 +3,12 @@ interface Props {
   n: number;
   title: string;
   summary: string;
+  icon?: string;
   last?: boolean;
 }
 
-const { n, title, summary, last = false } = Astro.props;
+const { n, title, summary, icon, last = false } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 ---
 
 <li class={`step ${last ? "last" : ""}`}>
@@ -18,7 +20,16 @@ const { n, title, summary, last = false } = Astro.props;
       <span class="sr-only">Step {n}: </span>
       {title}
     </h3>
-    <p class="summary">{summary}</p>
+    {
+      icon ? (
+        <div class="summary-row">
+          <img class="icon" src={`${base}${icon}`} alt="" aria-hidden="true" width="56" height="56" />
+          <p class="summary">{summary}</p>
+        </div>
+      ) : (
+        <p class="summary">{summary}</p>
+      )
+    }
     <slot />
   </div>
 </li>
@@ -82,6 +93,19 @@ const { n, title, summary, last = false } = Astro.props;
     color: #4b5563;
     margin: -0.4rem 0 0;
     line-height: 1.45;
+  }
+  .summary-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .summary-row .summary {
+    margin: 0;
+  }
+  .icon {
+    width: 56px;
+    height: 56px;
+    flex-shrink: 0;
   }
   .sr-only {
     position: absolute;
