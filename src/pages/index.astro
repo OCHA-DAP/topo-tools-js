@@ -135,18 +135,12 @@ const codeUpdate = bySlug("code-update");
       </ol>
     </section>
 
-    <section class="settings">
-      <h2 class="section-heading">Site settings</h2>
+    <details class="settings">
+      <summary><h2 class="section-heading">Site settings</h2></summary>
       <div class="settings-card">
         <OfflineToggle client:load />
       </div>
-    </section>
-
-    <footer class="footer">
-      <p>
-        Made by <a href="https://github.com/OCHA-DAP/topo-tools-js">OCHA</a>.
-      </p>
-    </footer>
+    </details>
   </main>
 </Layout>
 
@@ -205,26 +199,44 @@ const codeUpdate = bySlug("code-update");
     flex-direction: column;
     gap: 0.6rem;
   }
+  .settings > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    color: #6b7280;
+    list-style: none;
+    user-select: none;
+  }
+  .settings > summary::-webkit-details-marker {
+    display: none;
+  }
+  .settings > summary::before {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 120ms ease;
+  }
+  .settings[open] > summary::before {
+    transform: rotate(45deg);
+  }
+  .settings > summary .section-heading {
+    margin: 0;
+  }
+  .settings[open] > summary {
+    margin-bottom: 0.75rem;
+  }
+  .settings > summary:hover,
+  .settings > summary:hover .section-heading {
+    color: #111;
+  }
   .settings-card {
     padding: 1rem 1.25rem;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
     background: #fff;
-    /* Reserve space so the footer below doesn't shift while the
-       OfflineToggle island hydrates (pre-hydration the inner .offline
-       div is empty). */
-    min-height: 88px;
-  }
-  .footer {
-    border-top: 1px solid #e5e7eb;
-    padding-top: 1.25rem;
-  }
-  .footer p {
-    margin: 0;
-    font-size: 0.825rem;
-    color: #6b7280;
-  }
-  .footer a {
-    color: #374151;
   }
 </style>
