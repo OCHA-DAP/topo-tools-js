@@ -13,37 +13,44 @@ Every other tool in this app loads a file into a split `{prefix}layer_01`
 table (`$lib/db/loader`). `code-update` resolves levels against each
 side's `_layer_attr` table, then builds a joined `cu_a_input`/`cu_b_input`
 table (fid+geom+attrs) ahead of the per-level dissolve loop, since dissolve
-needs both geometry and the level's own code/name columns together. Final
-output is written onto `cu_b_layer_attr` and exported by joining it back
-against `cu_b_layer_01`, the same split-table `tableToGeoJSON` convention
-every other tool uses.
+needs both geometry and the level's own code/name columns together. NEW's
+side works on `cu_b_attr`, a fresh copy of `cu_b_layer_attr` per run,
+since seeding and the final write both change it and a rerun has to start
+from the loaded values. Final output is written onto `cu_b_attr` and
+exported by joining it back against `cu_b_layer_01`, the same split-table
+`tableToGeoJSON` convention every other tool uses.
 
 ## Level resolution and format detection
 
 OLD's and NEW's own per-level code/name columns are resolved
-independently, each via the identical explicit-pair-or-structural-
-fallback contract `code-refactor` uses. A resolved level with no code
-column at all raises: neither side's resolution ever creates a column, so
-a codeless level needs an explicit template pointed at a real one. A
-level-count mismatch between the two resolutions raises immediately,
-before any dissolve or classify work starts.
+independently, each via the explicit-pair-or-structural-fallback contract
+`code-create` uses, including its refusal to guess a level in structural
+mode (supplemental columns, a collapsed cluster member). With explicit
+templates, level 0 is the root itself and is never recoded. A previous
+release can have a names-only level with no code column to carry over, so
+a NEW level with names but no codes is seeded from its names, prefixed
+with its parent's code so same-named units under different parents stay
+apart (py ADR 0126). A level-count mismatch between the two resolutions
+raises before any dissolve or classify work starts, and so does a level
+with a missing code, or a code carrying two names, on either side, since
+dissolving by that code would silently merge units.
 
-`detectCodeFormat` runs against OLD's own resolved finest level, never
-the root: a root-only value has no delimiter occurrence to infer anything
-from, while the finest level gives the richest sample for both delimiter/
-root detection and the width mode. Each of `rootCode`/`delimiter`/
-`minWidth` falls back to the detected value independently, only when that
-field itself wasn't explicitly given.
+Releases keep ISO2-style codes with no delimiter (`SN0101`) until a bulk
+migration to `ISO3.NNN`, so OLD may come in either format. When no
+sampled code in OLD's finest level has a non-alphanumeric character (or
+the delimiter is set to none), `detectUndelimitedFormat` reads the format
+from OLD's per-level code columns; otherwise `detectCodeFormat` reads OLD's
+finest level, which gives the richest sample for delimiter/root detection
+and the per-position width mode. Each of `rootCode`/`delimiter`/`minWidth`
+falls back to the detected value independently, only when that field
+itself wasn't given. `auto` width needs a delimiter: without one, the
+widths must match OLD's or the codes couldn't be split.
 
-This app does not expose a separate identity-linking override distinct
-from a level's own resolved code/name column (Python's
-`code_column_a`/`b`/`name_column_a`/`b` flags have no JS equivalent):
-`linkByCode`/`linkByName` always compare each side's own resolved code/
-name column at that level. A `relocated` unit (spatially disjoint from
-its OLD polygon) still gets identity-linking rescue when its resolved
-name column matches, the common case; a persistent identifier genuinely
-distinct from both the code and name columns falls outside this tool's
-current scope.
+`linkByCode`/`linkByName` compare each side's own resolved code/name
+column at each level by default. A code or name column given per side (a
+persistent source ID shared by both releases) is compared at every level
+instead, which rescues a `relocated` unit whose resolved code and name
+both changed.
 
 ## Dissolve: independent per side, per level
 
@@ -83,22 +90,32 @@ same version.
 Every relationship class reduces to one of two things happening to a
 unit's code: it's **retained** (rewritten under a possibly-new parent
 prefix, never re-ranked) or it's **replaced** (assigned fresh through the
-same batched `assignNewCodes` call `code-refactor` itself uses).
+same batched `assignNewCodes` call `code-create` itself uses).
 
-`unchanged` and `renamed` are the only retained classes: `rewriteChildCode`
-reattaches the OLD code's own tail onto the (possibly new) parent prefix,
-a no-op reconstruction when the parent didn't change and a genuine prefix
-cascade when it did.
+`unchanged` and `renamed` are retained: `rewriteChildCode` reattaches the
+OLD code's own tail onto the (possibly new) parent prefix, an identical
+reconstruction when the parent didn't change and a genuine prefix cascade
+when it did. Strict or lenient follows the code format: without a
+delimiter, a `modified` 1:1 match is retained too, since those codes keep
+continuity through re-digitising rather than promising identical
+geometry; with one, it gets a new code.
+
+A unit moved under a new parent can land on a code that already exists
+there. Rewrites are computed up front, and one that differs from its OLD
+code and repeats any OLD code at the level, or an earlier rewrite in code
+order, gets a new code instead, with its OLD code as predecessor. A code
+kept as-is always wins.
 
 Every other class (`modified`, `relocated`, `created`, `split`, `merge`,
 `complex`) funnels into one shared per-level batch: every new-code
 request for that level is collected into a `cu_assign_new` staging table
-and assigned in one `assignNewCodes` call, seeded with
-`existingCodes: retainedCodes` (this level's own just-computed retained
-set), so a freshly assigned code can never collide with one a sibling
-just kept. This is also why a code retired this run (a `merge`'s two old
-codes, a `removed` unit's own code) can be immediately reused by an
-unrelated new/split/merge/created unit at the same level in the same run.
+and assigned in one `assignNewCodes` call, seeded with this level's
+retained codes plus every OLD code at the level, retired ones included.
+New numbers therefore start above everything a parent ever held, so a
+code retired this run (a `merge`'s old codes, a `removed` unit's own
+code) is never handed to a different unit (py ADR 0126). Without a
+delimiter, numbering steps below the top-10% placeholder range when it
+would otherwise overflow the width (py ADR 0127, see `code.md`).
 
 `match_method` is collapsed per cluster: a cluster spanning exactly one
 old/new pair keeps that pair's own value (`"spatial"` or `"identity"`)
@@ -116,7 +133,7 @@ shares that cluster's own `cluster_id`).
 ## Outputs: writing under OLD's own column names
 
 Each level's new code is written into the column name OLD's own
-resolution used at that level, in place on `cu_b_layer_attr`; NEW's own
+resolution used at that level, in place on `cu_b_attr`; NEW's own
 raw column at that level, if differently named, is left untouched as an
 ordinary passthrough attribute. `predecessor_code` is populated only for
 the finest level's own rows, joined back by the raw NEW value captured

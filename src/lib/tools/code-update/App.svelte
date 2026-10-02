@@ -1,13 +1,20 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
-  import { boolParam, choiceParam, numberParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
+  import {
+    boolParam,
+    choiceParam,
+    numberParam,
+    textParam,
+    syncParam,
+    type ParamCodec,
+  } from "$lib/utils/syncParam.svelte";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import { onMount, untrack } from "svelte";
   import { loadSide } from "./pipeline/load";
-  import { runCodeUpdate, type ChangeRow, type TargetSchema } from "./pipeline/index";
+  import { parseMinWidth, runCodeUpdate, type ChangeRow, type TargetSchema } from "./pipeline/index";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -21,8 +28,13 @@
   let loadedBounds = $state<[number, number, number, number] | null>(null);
 
   let rootCode = $state("");
-  let delimiter = $state("");
+  let delimMode = $state<"auto" | "none" | "char">("auto");
+  let delimChar = $state("");
   let minWidth = $state("");
+  let codeColA = $state("");
+  let codeColB = $state("");
+  let nameColA = $state("");
+  let nameColB = $state("");
   let nameFieldA = $state("");
   let codeFieldA = $state("");
   let nameFieldB = $state("");
@@ -34,8 +46,21 @@
   let linkByName = $state(false);
   let linkMode = $state<"either" | "both">("either");
   syncParam("root", textParam, () => rootCode, (v) => (rootCode = v));
-  syncParam("delim", textParam, () => delimiter, (v) => (delimiter = v));
+  // Absent is auto-detect, "none" is no delimiter, anything else the character itself.
+  const delimParam: ParamCodec<string | null> = {
+    parse: (raw) => (raw === "" ? undefined : raw === "none" ? "" : raw),
+    format: (value) => (value === null ? "" : value === "" ? "none" : value),
+  };
+  const delimiter = $derived(delimMode === "auto" ? null : delimMode === "none" ? "" : delimChar);
+  syncParam("delim", delimParam, () => delimiter, (v) => {
+    delimMode = v === null ? "auto" : v === "" ? "none" : "char";
+    if (v) delimChar = v;
+  });
   syncParam("width", textParam, () => minWidth, (v) => (minWidth = v));
+  syncParam("code-col-a", textParam, () => codeColA, (v) => (codeColA = v));
+  syncParam("code-col-b", textParam, () => codeColB, (v) => (codeColB = v));
+  syncParam("name-col-a", textParam, () => nameColA, (v) => (nameColA = v));
+  syncParam("name-col-b", textParam, () => nameColB, (v) => (nameColB = v));
   syncParam("name-a", textParam, () => nameFieldA, (v) => (nameFieldA = v));
   syncParam("code-a", textParam, () => codeFieldA, (v) => (codeFieldA = v));
   syncParam("name-b", textParam, () => nameFieldB, (v) => (nameFieldB = v));
@@ -139,8 +164,12 @@
         schemaA: schemaFrom(nameFieldA, codeFieldA),
         schemaB: schemaFrom(nameFieldB, codeFieldB),
         rootCode: rootCode.trim() === "" ? null : rootCode.trim(),
-        delimiter: delimiter === "" ? null : delimiter,
-        minWidth: minWidth.trim() === "" ? null : Number(minWidth),
+        delimiter,
+        minWidth: minWidth.trim() === "" ? null : minWidth,
+        codeColumnA: linkByCode && codeColA.trim() !== "" ? codeColA.trim() : null,
+        codeColumnB: linkByCode && codeColB.trim() !== "" ? codeColB.trim() : null,
+        nameColumnA: linkByName && nameColA.trim() !== "" ? nameColA.trim() : null,
+        nameColumnB: linkByName && nameColB.trim() !== "" ? nameColB.trim() : null,
         tauMatch,
         tauSame,
         linkByCode,
@@ -178,9 +207,17 @@
       (bothBlankA || (nameFieldA.includes("{n}") && codeFieldA.includes("{n}"))) &&
       (bothBlankB || (nameFieldB.includes("{n}") && codeFieldB.includes("{n}"))),
   );
+  const minWidthError = $derived.by(() => {
+    if (minWidth.trim() === "") return null;
+    try {
+      parseMinWidth(minWidth);
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  });
   const formatOverrideValid = $derived(
-    (rootCode.trim() === "" && delimiter === "" && minWidth.trim() === "") ||
-      (rootCode.trim() !== "" && delimiter.length === 1 && Number(minWidth) >= 1),
+    (delimMode !== "char" || [...delimChar].length === 1) && minWidthError === null,
   );
   const canRun = $derived(loadedA && loadedB && templatesValid && formatOverrideValid && !loadingSide);
 
@@ -240,28 +277,37 @@
     {#if loadedA && loadedB}
       <section class="step">
         <h2 class="step-heading">Code format override</h2>
-        <p class="field-hint">Leave all three blank to detect from OLD's own finest-level code.</p>
+        <p class="field-hint">Anything left blank or on auto is detected from OLD's own codes.</p>
         <label class="field">
           <span>Root code</span>
           <input type="text" bind:value={rootCode} placeholder="auto-detect" disabled={running} />
         </label>
         <label class="field">
           <span>Delimiter</span>
-          <input type="text" maxlength="1" bind:value={delimiter} placeholder="auto-detect" disabled={running} />
+          <select bind:value={delimMode} disabled={running}>
+            <option value="auto">Auto-detect</option>
+            <option value="none">None</option>
+            <option value="char">Character</option>
+          </select>
         </label>
+        {#if delimMode === "char"}
+          <label class="field">
+            <span>Delimiter character</span>
+            <input type="text" maxlength="1" bind:value={delimChar} disabled={running} />
+          </label>
+        {/if}
         <label class="field">
           <span>Min width</span>
           <input
             type="text"
-            inputmode="numeric"
-            pattern="[0-9]*"
             bind:value={minWidth}
-            placeholder="auto-detect"
+            placeholder="auto-detect (or 3, 2,2,4, auto)"
             disabled={running}
           />
         </label>
-        {#if !formatOverrideValid}
-          <p class="field-error">Set all three fields, or leave all three blank to auto-detect.</p>
+        {#if minWidthError}<p class="field-error">{minWidthError}</p>{/if}
+        {#if delimMode === "char" && [...delimChar].length !== 1}
+          <p class="field-error">Enter one delimiter character.</p>
         {/if}
       </section>
 
@@ -317,10 +363,30 @@
           <input type="checkbox" bind:checked={linkByCode} disabled={running} />
           <span>Link by code (each level's own hierarchy code column)</span>
         </label>
+        {#if linkByCode}
+          <label class="field">
+            <span>Code column to compare, OLD</span>
+            <input type="text" bind:value={codeColA} placeholder="each level's own" disabled={running} />
+          </label>
+          <label class="field">
+            <span>Code column to compare, NEW</span>
+            <input type="text" bind:value={codeColB} placeholder="each level's own" disabled={running} />
+          </label>
+        {/if}
         <label class="checkbox">
           <input type="checkbox" bind:checked={linkByName} disabled={running} />
           <span>Link by name (each level's own name column)</span>
         </label>
+        {#if linkByName}
+          <label class="field">
+            <span>Name column to compare, OLD</span>
+            <input type="text" bind:value={nameColA} placeholder="each level's own" disabled={running} />
+          </label>
+          <label class="field">
+            <span>Name column to compare, NEW</span>
+            <input type="text" bind:value={nameColB} placeholder="each level's own" disabled={running} />
+          </label>
+        {/if}
         {#if linkByCode && linkByName}
           <label class="field">
             <span>Link mode</span>

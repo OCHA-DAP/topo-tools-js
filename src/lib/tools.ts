@@ -133,11 +133,11 @@ export const tools: Tool[] = [
     iconHref: "/icons/tools/schema-fill.svg",
   },
   {
-    slug: "code-refactor",
-    name: "Code Refactor",
+    slug: "code-create",
+    name: "Code Create",
     tagline:
-      "Cold-start a hierarchical admin code on a flat polygon layer, ranked per parent and zero-padded to a configurable width.",
-    iconHref: "/icons/tools/code-refactor.svg",
+      "Give every unit a new hierarchical code, numbered within its parent, or build it from the layer's own source codes.",
+    iconHref: "/icons/tools/code-create.svg",
   },
   {
     slug: "code-update",

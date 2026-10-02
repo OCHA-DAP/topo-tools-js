@@ -1,9 +1,16 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
-  import { numberParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
+  import { choiceParam, textParam, syncParam, type ParamCodec } from "$lib/utils/syncParam.svelte";
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
-  import { runCodeRefactor, type CodeIssueRow, type TargetSchema } from "./pipeline/index";
+  import {
+    parseMinWidth,
+    runCodeCreate,
+    SOURCE_CODES,
+    type CodeIssueRow,
+    type SourceCodes,
+    type TargetSchema,
+  } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
@@ -19,13 +26,25 @@
   let loadedBounds = $state<[number, number, number, number] | null>(null);
 
   let rootCode = $state("");
-  let delimiter = $state("-");
-  let minWidth = $state(3);
+  let delimMode = $state<"char" | "none">("char");
+  let delimChar = $state("-");
+  let minWidth = $state("3");
+  let sourceCodes = $state<SourceCodes>("replace");
   let nameField = $state("");
   let codeField = $state("");
+  // "none" in the URL is no delimiter; anything else is the character itself.
+  const delimParam: ParamCodec<string> = {
+    parse: (raw) => (raw === "none" ? "" : raw),
+    format: (value) => (value === "" ? "none" : value),
+  };
+  const delimiter = $derived(delimMode === "none" ? "" : delimChar);
   syncParam("root", textParam, () => rootCode, (v) => (rootCode = v));
-  syncParam("delim", textParam, () => delimiter, (v) => (delimiter = v));
-  syncParam("width", numberParam, () => minWidth, (v) => (minWidth = v));
+  syncParam("delim", delimParam, () => delimiter, (v) => {
+    delimMode = v === "" ? "none" : "char";
+    if (v !== "") delimChar = v;
+  });
+  syncParam("width", textParam, () => minWidth, (v) => (minWidth = v));
+  syncParam("source", choiceParam(SOURCE_CODES), () => sourceCodes, (v) => (sourceCodes = v));
   syncParam("name", textParam, () => nameField, (v) => (nameField = v));
   syncParam("code", textParam, () => codeField, (v) => (codeField = v));
 
@@ -103,7 +122,14 @@
     const schema: TargetSchema | null =
       nameField.trim() === "" && codeField.trim() === "" ? null : { nameField, codeField };
     try {
-      const result = await runCodeRefactor(duckdbState.conn!, rootCode, delimiter, minWidth, schema);
+      const result = await runCodeCreate(
+        duckdbState.conn!,
+        rootCode,
+        delimiter,
+        minWidth,
+        sourceCodes,
+        schema,
+      );
       resultGeoJSON = result.resultGeoJSON;
       resultBounds = result.bounds;
       levelCount = result.levelCount;
@@ -125,7 +151,19 @@
   const templateValid = $derived(
     !oneBlank && (bothBlank || (nameField.includes("{n}") && codeField.includes("{n}"))),
   );
-  const configValid = $derived(rootCode.trim() !== "" && delimiter.length === 1 && minWidth >= 1);
+  const minWidthError = $derived.by(() => {
+    try {
+      parseMinWidth(minWidth);
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  });
+  const configValid = $derived(
+    rootCode.trim() !== "" &&
+      (delimMode === "none" || [...delimChar].length === 1) &&
+      minWidthError === null,
+  );
   const canRun = $derived(loaded && templateValid && configValid && !loading);
 </script>
 
@@ -133,10 +171,11 @@
   <aside class="sidebar">
     <header>
       <a class="back" href={base}>← Topology Tools</a>
-      <h1>Code Refactor</h1>
+      <h1>Code Create</h1>
       <p class="blurb">
-        Cold-start a hierarchical admin code on a flat polygon layer. Every level's values are
-        ranked under their parent's code and reassigned fresh, zero-padded to a configurable width.
+        Give every unit of a flat polygon layer a new hierarchical code, numbered within its
+        parent and zero-padded to a configurable width, or build it from each level's own source
+        codes.
       </p>
     </header>
 
@@ -168,11 +207,33 @@
         </label>
         <label class="field">
           <span>Delimiter</span>
-          <input type="text" maxlength="1" bind:value={delimiter} disabled={running} />
+          <select bind:value={delimMode} disabled={running}>
+            <option value="char">Character</option>
+            <option value="none">None</option>
+          </select>
         </label>
+        {#if delimMode === "char"}
+          <label class="field">
+            <span>Delimiter character</span>
+            <input type="text" maxlength="1" bind:value={delimChar} disabled={running} />
+          </label>
+        {/if}
         <label class="field">
           <span>Min width</span>
-          <input type="number" min="1" bind:value={minWidth} disabled={running} />
+          <input type="text" bind:value={minWidth} placeholder="3, 2,2,4, or auto" disabled={running} />
+        </label>
+        <p class="field-hint">
+          Digits each level's number is padded to: one width for all levels, one per level from
+          coarsest, or auto for as many as each level needs.
+        </p>
+        {#if minWidthError}<p class="field-error">{minWidthError}</p>{/if}
+        <label class="field">
+          <span>Source codes</span>
+          <select bind:value={sourceCodes} disabled={running}>
+            <option value="replace">Replace with a new number</option>
+            <option value="embed">Embed in the new code</option>
+            <option value="copy">Copy to a new column, then replace</option>
+          </select>
         </label>
       </section>
 
@@ -241,13 +302,13 @@
           primaryLabel="Download GeoJSON"
           filenameStem={fileStem(files[0])}
           cachedGeoJSON={resultGeoJSON}
-          exportSource="code_refactor"
+          exportSource="code_create"
         />
         {#if issues.length > 0}
           <DownloadMenu
             primaryLabel="Download Issues CSV"
             filenameStem={fileStem(files[0])}
-            exportSource="code_refactor_issues"
+            exportSource="code_create_issues"
           />
         {/if}
       </section>
@@ -367,7 +428,8 @@
     color: var(--hdx-neutral-8);
   }
 
-  .field input {
+  .field input,
+  .field select {
     padding: 0.4rem 0.55rem;
     border: 1px solid var(--hdx-neutral-2);
     border-radius: var(--hdx-radius-md);

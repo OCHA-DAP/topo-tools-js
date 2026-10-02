@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { canonicalOrder, siblingName, templateFamilies } from "$lib/db/adminColumns";
+import { canonicalOrder, nextFreeSibling, templateFamilies } from "$lib/db/adminColumns";
 import { ROW_ORDER_COLUMN } from "$lib/db/export";
 import { detectLevelColumns } from "$lib/tools/schema-map/pipeline/levelColumns";
 import { quoteIdent } from "$lib/tools/schema-map/pipeline/queries";
@@ -53,12 +53,6 @@ async function joinHierarchyColumns(
   return columns.filter((c) => selected.has(c));
 }
 
-function nextFreeName(column: string, taken: Set<string>): string {
-  let n = 1;
-  while (taken.has(siblingName(column, n))) n++;
-  return siblingName(column, n);
-}
-
 // Builds sj_result_attr (joined attributes, row order in __row_order) and
 // sj_mismatch (each input value that differs from its join feature's).
 export async function joinColumns(
@@ -102,7 +96,7 @@ export async function joinColumns(
       joined.set(column, { column, source: "matches", joinColumn: column, differingRows: 0 });
       continue;
     }
-    const sibling = nextFreeName(column, taken);
+    const sibling = nextFreeSibling(column, taken);
     taken.add(sibling);
     exprs.set(sibling, `p.${col}`);
     joined.set(sibling, {
