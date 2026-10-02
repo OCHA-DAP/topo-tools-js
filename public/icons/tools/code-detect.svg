@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+  <!-- Code label -->
+  <rect x="6" y="12" width="30" height="18" rx="2" fill="currentColor" fill-opacity="0.12" />
+  <text x="10" y="25" font-size="10" fill="currentColor" stroke="none" font-family="ui-monospace, monospace">01</text>
+  <!-- Magnifying glass inspecting it -->
+  <circle cx="38" cy="38" r="12" />
+  <path d="M47 47 L58 58" />
+</svg>

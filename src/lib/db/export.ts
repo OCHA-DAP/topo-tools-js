@@ -39,7 +39,11 @@ export type ExportSource =
   | "code_update_changelog"
   | "name_detect_issues"
   | "name_clean"
-  | "name_clean_issues";
+  | "name_clean_issues"
+  | "schema_detect_issues"
+  | "code_detect_issues"
+  | "validate_topo_issues"
+  | "validate_summary";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -442,6 +446,45 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
       "reason",
       "fixed",
     ],
+  },
+  schema_detect_issues: {
+    table: "sd_report",
+    attrTable: null,
+    suffix: "_schema_issues",
+    kind: "tabular",
+    tabularColumns: ["key", "kind", "severity", "level", "column", "code", "reason"],
+  },
+  code_detect_issues: {
+    table: "cd_report",
+    attrTable: null,
+    suffix: "_code_issues",
+    kind: "tabular",
+    tabularColumns: [
+      "key",
+      "kind",
+      "severity",
+      "level",
+      "column",
+      "code_a",
+      "name_a",
+      "code_b",
+      "name_b",
+      "reason",
+    ],
+  },
+  validate_topo_issues: {
+    table: "dt_issues",
+    attrTable: null,
+    suffix: "_topo_issues",
+    kind: "spatial",
+    columns: ["key", "kind", "area_m2", "max_width_m", "thinness_ratio", "unit_a", "unit_b"],
+  },
+  validate_summary: {
+    table: "vd_summary",
+    attrTable: null,
+    suffix: "_validate_summary",
+    kind: "tabular",
+    tabularColumns: ["stage", "kind", "severity", "count", "report", "reason"],
   },
 };
 

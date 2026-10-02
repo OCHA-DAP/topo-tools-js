@@ -35,7 +35,7 @@ export interface DetectResult {
   failedKinds: Set<IssueKind>;
 }
 
-async function computeBounds(
+export async function computeBounds(
   conn: AsyncDuckDBConnection,
 ): Promise<[number, number, number, number] | null> {
   try {
@@ -68,6 +68,15 @@ export async function runDetect(
   const originalGeoJSON = await tableToGeoJSON(conn, "layer_01", null);
 
   onProgress(3, "Finding gaps & overlaps");
+  const scan = await scanTopology(conn, () => onProgress(4, "Assembling issues report"));
+  return { originalGeoJSON, bounds, ...scan };
+}
+
+// Writes dt_issues: layer_01's gap, overlap and micro-polygon regions.
+export async function scanTopology(
+  conn: AsyncDuckDBConnection,
+  onAssemble: () => void = () => {},
+): Promise<Pick<DetectResult, "issues" | "issuesGeoJSON" | "failedKinds">> {
   const hasViolations = await hasCoverageViolations(conn, "layer_01");
   const gapOk = await buildGapRegions(conn, "dt_gap_regions", "layer_01");
   const overlapOk = await buildOverlapRegions(
@@ -82,7 +91,7 @@ export async function runDetect(
   if (!overlapOk) failedKinds.add("overlap");
   if (!microOk) failedKinds.add("micro-polygon");
 
-  onProgress(4, "Assembling issues report");
+  onAssemble();
   try {
     const {
       rows,
@@ -99,8 +108,6 @@ export async function runDetect(
       failedKinds,
     );
     return {
-      originalGeoJSON,
-      bounds,
       issues: rows,
       issuesGeoJSON: geojson,
       failedKinds: finalFailedKinds,

@@ -138,6 +138,13 @@ export const tools: Tool[] = [
     iconHref: "/icons/tools/schema-fill.svg",
   },
   {
+    slug: "schema-detect",
+    name: "Schema Detect",
+    tagline:
+      "Check a layer's admin-hierarchy columns for undetectable or skipped levels, inconsistent column naming, and units with several parents or none, without changing anything.",
+    iconHref: "/icons/tools/schema-detect.svg",
+  },
+  {
     slug: "code-create",
     name: "Code Create",
     tagline:
@@ -154,6 +161,13 @@ export const tools: Tool[] = [
       old: "https://data.source.coop/hdx/topo-tools/nld/demo/code/nld_admin2_2022.parquet",
       new: "https://data.source.coop/hdx/topo-tools/nld/demo/code/nld_admin2_2023.parquet",
     },
+  },
+  {
+    slug: "code-detect",
+    name: "Code Detect",
+    tagline:
+      "Check a coded layer's unit codes for blanks, conflicting names, duplicates, split units, parent-prefix mismatches and format outliers, without changing anything.",
+    iconHref: "/icons/tools/code-detect.svg",
   },
   {
     slug: "name-detect",
@@ -174,5 +188,12 @@ export const tools: Tool[] = [
     demo: {
       url: "https://data.source.coop/hdx/topo-tools/nld/demo/names/nld_admin2.parquet",
     },
+  },
+  {
+    slug: "validate",
+    name: "Validate",
+    tagline:
+      "Run the schema, topology, code and name checks on one layer and summarize their findings by kind, without changing anything.",
+    iconHref: "/icons/tools/validate.svg",
   },
 ];

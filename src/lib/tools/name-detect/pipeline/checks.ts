@@ -52,15 +52,6 @@ const blank = (source: string): string => `--sql
     AND (t.name_index = 0 OR f.share >= ${SIBLING_FILLED_SHARE})
 `;
 
-const blankCode = (source: string): string => `--sql
-  SELECT 'blank-code', level, code_column, NULL, NULL, NULL, NULL, NULL,
-         printf('%d units under %s have no code: %s', count(*),
-                coalesce(parent_code, 'the root'),
-                coalesce(string_agg(DISTINCT name, ' / '), 'no name either'))
-  FROM ${source} WHERE code IS NULL AND name_index = 0
-  GROUP BY level, code_column, parent_code
-`;
-
 function placeholder(source: string): string {
   const tokens = PLACEHOLDER_TOKENS.map((t) => `'${t}'`).join(", ");
   return perName(
@@ -135,18 +126,6 @@ function normalizedDuplicate(source: string): string {
     ${FIRST_COLUMN_ONLY}
   `;
 }
-
-const conflict = (source: string): string => `--sql
-  SELECT 'name-conflict', level, name_column, code, names[1], code, names[2],
-         NULL, printf('code %s has %d names: %s', code, len(names),
-                      array_to_string(names, ' / '))
-  FROM (
-    SELECT level, name_column, name_index, code, list_sort(list(DISTINCT name)) AS names
-    FROM ${named(source)} WHERE code IS NOT NULL GROUP BY ALL
-  )
-  WHERE len(names) > 1
-  QUALIFY row_number() OVER (PARTITION BY level, code ORDER BY name_index) = 1
-`;
 
 const encoding = (source: string): string =>
   perName(
@@ -256,11 +235,9 @@ function codeInName(source: string): string {
 }
 
 const CHECKS: Array<[NameIssueKind, (source: string) => string]> = [
-  ["blank-code", blankCode],
   ["blank-name", blank],
   ["placeholder-name", placeholder],
   ["duplicate-name", duplicate],
-  ["name-conflict", conflict],
   ["encoding-artifact", encoding],
   ["normalized-duplicate-name", normalizedDuplicate],
   ["invisible-character", invisible],

@@ -16,7 +16,7 @@ const MIN_LEVELS_TO_DIFF = 2;
 const LEVEL_DIGIT_RE = /\d+/;
 const MIN_PAIRS_FOR_LEAF_TOLERANCE = 2;
 
-type Anchor = [string, string, string];
+export type Anchor = [string, string, string];
 
 // Each level's own (prefix, anchor, suffix) split, diffed against every other.
 function levelAnchors(codeColumns: Map<number, string>): Map<number, Anchor> {
@@ -111,7 +111,7 @@ async function resolveLevels(conn: AsyncDuckDBConnection, table: string): Promis
 }
 
 // Each displayed level's (prefix, anchor, suffix) naming split.
-async function detectAnchors(
+export async function detectLevelAnchors(
   conn: AsyncDuckDBConnection,
   table: string,
 ): Promise<Map<number, Anchor>> {
@@ -279,12 +279,12 @@ export async function supplementalColumns(
 }
 
 // Find an unassigned family's (prefix, anchor, suffix), or null if ambiguous.
-async function rootAnchor(
+export async function rootAnchor(
   conn: AsyncDuckDBConnection,
   table: string,
   levelColumns: Map<number, LevelColumns>,
 ): Promise<Anchor | null> {
-  const anchors = await detectAnchors(conn, table);
+  const anchors = await detectLevelAnchors(conn, table);
   if (anchors.size === 0) return null;
   const [prefix, , suffix] = anchors.values().next().value!;
   const usedAnchors = new Set([...anchors.values()].map(([, a]) => a));
@@ -404,7 +404,7 @@ export async function groupFamiliesByLevel(
   table: string,
   levelColumns: Map<number, LevelColumns>,
 ): Promise<Map<string, Map<number, string>>> {
-  const anchors = await detectAnchors(conn, table);
+  const anchors = await detectLevelAnchors(conn, table);
   if (levelColumns.has(0) && !anchors.has(0)) {
     const realLevels = new Map([...levelColumns].filter(([k]) => k !== 0));
     const root = await rootAnchor(conn, table, realLevels);
