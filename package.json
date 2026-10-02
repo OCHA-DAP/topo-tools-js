@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "sync:assets": "node scripts/sync-natural-earth.mjs",
+    "sync:assets": "node scripts/sync-natural-earth.mjs && node scripts/sync-py-docs.mjs",
     "predev": "npm run sync:assets",
     "dev": "astro dev",
     "dev:stop": "astro dev stop",
@@ -36,7 +36,10 @@
     "typescript-eslint": "^8.70.1"
   },
   "dependencies": {
+    "@astrojs/markdown-remark": "^7.3.1",
+    "@astrojs/starlight": "^0.42.5",
     "@duckdb/duckdb-wasm": "^1.33.1-dev65.0",
+    "astro-rehype-relative-markdown-links": "^0.19.2",
     "fflate": "^0.8.3",
     "maplibre-gl": "^6.11.2"
   }

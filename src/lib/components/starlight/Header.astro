@@ -1,0 +1,31 @@
+---
+import Search from "@astrojs/starlight/components/Search.astro";
+import SiteHeader from "$lib/components/SiteHeader.astro";
+---
+
+<SiteHeader class="sl-site-header" repo="OCHA-DAP/topo-tools-py">
+  <div class="search print:hidden">
+    <Search />
+  </div>
+</SiteHeader>
+
+<style>
+  :global(.sl-site-header) {
+    height: 100%;
+    flex-wrap: nowrap;
+  }
+  @media (max-width: 50rem) {
+    :global(.sl-site-header .topnav) {
+      flex-wrap: nowrap;
+    }
+    :global(.sl-site-header .topnav .docs),
+    :global(.sl-site-header .topnav .source span) {
+      display: none;
+    }
+  }
+  .search {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+</style>
