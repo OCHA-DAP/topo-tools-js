@@ -21,7 +21,6 @@ export interface SchemaIssueRow {
 
 export interface SchemaResult {
   issues: SchemaIssueRow[];
-  failed: string[];
   map: FlaggedLayer;
 }
 
@@ -32,7 +31,7 @@ export async function runSchemaDetect(
   prefix = "sd",
 ): Promise<SchemaResult> {
   await buildSchemaLevels(conn, "layer_attr", prefix, schema);
-  const failed = await runSchemaChecks(conn, prefix, "layer_attr");
+  await runSchemaChecks(conn, prefix, "layer_attr");
   const severity = Object.entries(SEVERITY)
     .map(([k, v]) => `WHEN '${k}' THEN '${v}'`)
     .join(" ");
@@ -69,7 +68,6 @@ export async function runSchemaDetect(
       code: (r.code as string | null) ?? null,
       reason: r.reason as string,
     })),
-    failed,
     map: await flaggedLayer(conn, flaggedUnitsSql(`${prefix}_flagged`)),
   };
 }

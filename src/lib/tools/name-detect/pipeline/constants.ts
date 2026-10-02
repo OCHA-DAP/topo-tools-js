@@ -1,6 +1,7 @@
 // Ported from topo-tools-py's core/name_detect/_constants.py.
 
 export const SEVERITY = {
+  "check-failed": "error",
   "blank-name": "error",
   "placeholder-name": "error",
   "duplicate-name": "warn",

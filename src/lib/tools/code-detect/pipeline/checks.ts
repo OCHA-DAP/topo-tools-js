@@ -117,23 +117,24 @@ const CHECKS: Array<[CodeIssueKind, (source: string) => string]> = [
   ["format-undetected", formatUndetected],
 ];
 
-// Writes `${prefix}_03`, every finding over `${prefix}_02`, and returns the kinds whose check failed.
+// Writes `${prefix}_03`, every finding over `${prefix}_02`.
 export async function runCodeChecks(
   conn: AsyncDuckDBConnection,
   tablePrefix: string,
-): Promise<CodeIssueKind[]> {
+): Promise<void> {
   const source = `${tablePrefix}_02`;
   const target = `${tablePrefix}_03`;
-  const failed: CodeIssueKind[] = [];
   await conn.query(`CREATE OR REPLACE TABLE ${target} (${COLUMNS})`);
   for (const [kind, build] of CHECKS) {
     try {
       await conn.query(`INSERT INTO ${target} ${build(source)}`);
     } catch (e) {
-      // One failing check must not hide the rest.
-      console.warn(`${kind} check failed; reporting none`, e);
-      failed.push(kind);
+      // One failing check must not hide the rest, and its failure is a finding.
+      console.warn(`${kind} check failed`, e);
+      const reason = `${kind} check failed: ${e instanceof Error ? e.message : String(e)}`;
+      await conn.query(
+        `INSERT INTO ${target} (kind, reason) VALUES ('check-failed', '${reason.replace(/'/g, "''")}')`,
+      );
     }
   }
-  return failed;
 }

@@ -43,7 +43,6 @@ export interface SummaryRow {
 export interface ValidateResult {
   issues: SummaryRow[];
   ran: Stage[];
-  failed: string[];
   map: FlaggedLayer;
 }
 
@@ -139,7 +138,6 @@ export async function runValidate(
       reason: (r.reason as string | null) ?? "",
     })),
     ran,
-    failed: [],
     map: await flaggedLayer(conn, ran.map(stageUnitsSql).join(" UNION ALL ") || NO_UNITS),
   };
 }

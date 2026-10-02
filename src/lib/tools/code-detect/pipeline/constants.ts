@@ -1,6 +1,7 @@
 // Ported from topo-tools-py's core/code_detect/_constants.py.
 
 export const SEVERITY = {
+  "check-failed": "error",
   "blank-code": "error",
   "name-conflict": "error",
   "duplicate-code": "error",

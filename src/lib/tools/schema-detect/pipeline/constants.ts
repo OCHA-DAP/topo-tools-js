@@ -1,6 +1,7 @@
 // Ported from topo-tools-py's core/schema_detect/_constants.py.
 
 export const SEVERITY = {
+  "check-failed": "error",
   "levels-undetected": "error",
   "level-skipped": "error",
   "multiple-parents": "error",

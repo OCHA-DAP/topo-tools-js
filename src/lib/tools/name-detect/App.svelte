@@ -25,7 +25,6 @@
   {#snippet findings({ result, emptyText, selectedKey, select })}
     <NameTable
       issues={result?.issues ?? null}
-      failed={result?.failed ?? []}
       {clean}
       {selectedKey}
       {emptyText}

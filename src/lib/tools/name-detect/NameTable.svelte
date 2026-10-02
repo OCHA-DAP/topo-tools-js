@@ -1,17 +1,15 @@
 <script lang="ts">
   import IssueTable from "$lib/components/IssueTable.svelte";
-  import type { NameIssueKind, NameIssueRow } from "./pipeline/index";
+  import type { NameIssueRow } from "./pipeline/index";
 
   let {
     issues,
-    failed,
     clean,
     selectedKey,
     emptyText,
     onIssueClick,
   }: {
     issues: NameIssueRow[] | null;
-    failed: NameIssueKind[];
     clean: boolean;
     selectedKey: string | null;
     emptyText: string;
@@ -34,7 +32,6 @@
 
 <IssueTable
   {issues}
-  {failed}
   {selectedKey}
   {emptyText}
   noneText="No name issues found."
@@ -47,7 +44,7 @@
     <th class="flex">{clean ? "Fixed to" : "Suggested"}</th>
   {/snippet}
   {#snippet cells(issue)}
-    <td class="fit value">{issue.codeA ?? `${issue.nameColumn}`}</td>
+    <td class="fit value">{issue.codeA ?? issue.nameColumn ?? ""}</td>
     <td class="flex value">
       {#if issue.codeA === null}
         <span class="muted">{issue.reason}</span>
