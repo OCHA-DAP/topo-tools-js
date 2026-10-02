@@ -52,7 +52,7 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
     top: 2rem;
     bottom: 0;
     width: 2px;
-    background: #e5e7eb;
+    background: var(--hdx-neutral-2);
   }
   .step.last .rail::after {
     display: none;
@@ -66,8 +66,8 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
     width: 2rem;
     height: 2rem;
     border-radius: 50%;
-    background: #111;
-    color: #fff;
+    background: var(--hdx-brand-7);
+    color: var(--hdx-neutral-0);
     font-size: 0.875rem;
     font-weight: 600;
   }
@@ -84,13 +84,13 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
   .title {
     font-size: 1.1rem;
     font-weight: 600;
-    color: #111;
+    color: var(--hdx-neutral-9);
     margin: 0;
     line-height: 2rem;
   }
   .summary {
     font-size: 0.875rem;
-    color: #4b5563;
+    color: var(--hdx-neutral-7);
     margin: -0.4rem 0 0;
     line-height: 1.45;
   }

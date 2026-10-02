@@ -135,34 +135,34 @@
   .summary {
     padding: 0.6rem 0.75rem;
     font-size: 0.85rem;
-    color: #374151;
+    color: var(--hdx-neutral-8);
   }
   .summary p {
     margin: 0 0 0.3rem;
   }
   .summary p.muted {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
   }
   .summary ul {
     margin: 0 0 0.3rem;
     padding-left: 1.1rem;
   }
   .summary li.bad {
-    color: #b91c1c;
+    color: var(--hdx-error-6);
   }
   .summary li.warn {
-    color: #a16207;
+    color: var(--hdx-warning-6);
   }
   section + section {
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--hdx-neutral-1);
   }
   h3 {
     margin: 0;
     padding: 0.6rem 0.75rem 0.4rem;
     font-size: 0.8rem;
     font-weight: 600;
-    color: #111;
+    color: var(--hdx-neutral-9);
   }
   table {
     width: 100%;
@@ -170,13 +170,13 @@
     font-size: 0.85rem;
   }
   thead {
-    background: #f3f4f6;
+    background: var(--hdx-neutral-05);
   }
   th,
   td {
     text-align: left;
     padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--hdx-neutral-1);
     white-space: nowrap;
   }
   th:first-child,
@@ -187,7 +187,7 @@
     font-weight: 600;
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #4b5563;
+    color: var(--hdx-neutral-7);
   }
   .fit {
     width: 1%;
@@ -203,55 +203,55 @@
     text-align: right;
   }
   td.num {
-    color: #4b5563;
+    color: var(--hdx-neutral-7);
   }
   td.value {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   td.null {
-    color: #9ca3af;
+    color: var(--hdx-neutral-5);
   }
   tr.child td:nth-child(2),
   tr.matches td:nth-child(2) {
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
   }
   tr.added td:nth-child(2) {
-    color: #15803d;
+    color: var(--hdx-success-6);
   }
   tr.sibling td:nth-child(2) {
-    color: #a16207;
+    color: var(--hdx-warning-6);
   }
   .issue-row {
     cursor: pointer;
   }
   .issue-row:hover,
   .issue-row:focus-visible {
-    background: #f9fafb;
+    background: var(--hdx-neutral-01);
     outline: none;
   }
   .issue-row.selected {
-    background: #eef2ff;
+    background: var(--hdx-primary-05);
   }
   td.kind {
     font-size: 0.75rem;
   }
   td.kind.no-overlap {
-    color: #b91c1c;
+    color: var(--hdx-error-6);
   }
   td.kind.low-overlap,
   td.kind.value-mismatch {
-    color: #a16207;
+    color: var(--hdx-warning-6);
   }
   .jt-note {
     margin: 0;
     padding: 0 0.75rem 0.75rem;
     font-size: 0.8rem;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
   }
   .jt-empty {
     padding: 1rem;
     text-align: center;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
     font-size: 0.875rem;
   }
 </style>

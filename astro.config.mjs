@@ -35,7 +35,7 @@ export default defineConfig({
         name: "Topology Tools",
         short_name: "Topology Tools",
         description: "Browser-only geospatial topology utilities. Runs entirely in your browser.",
-        theme_color: "#dde6ed",
+        theme_color: "#18614c",
         background_color: "#ffffff",
         display: "standalone",
         icons: [

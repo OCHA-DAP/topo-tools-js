@@ -40,6 +40,6 @@
     align-items: center;
     gap: 0.4rem;
     font-size: 0.8rem;
-    color: #374151;
+    color: var(--hdx-neutral-8);
   }
 </style>

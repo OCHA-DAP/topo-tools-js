@@ -353,18 +353,18 @@
 
 <style>
   .drop-zone {
-    border: 2px dashed #9ca3af;
-    border-radius: 8px;
+    border: 2px dashed var(--hdx-neutral-5);
+    border-radius: var(--hdx-radius-md);
     padding: 1.5rem 1rem;
     text-align: center;
     transition:
       border-color 0.15s,
       background-color 0.15s;
-    background: #f9fafb;
+    background: var(--hdx-neutral-01);
   }
   .drop-zone.dragging {
-    border-color: #1d4ed8;
-    background: #eff6ff;
+    border-color: var(--hdx-primary-5);
+    background: var(--hdx-primary-05);
   }
   .drop-zone.disabled {
     opacity: 0.5;
@@ -373,12 +373,12 @@
   .drop-message {
     margin: 0 0 0.25rem;
     font-size: 0.95rem;
-    color: #374151;
+    color: var(--hdx-neutral-8);
   }
   .hint {
     margin: 0.25rem 0 0;
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: var(--hdx-neutral-7);
   }
   .browse-label {
     display: inline-block;
@@ -393,28 +393,28 @@
   }
   .browse-link {
     font-size: 0.875rem;
-    color: #1d4ed8;
+    color: var(--hdx-primary-5);
     text-decoration: underline;
     cursor: pointer;
   }
   .browse-label:focus-within .browse-link {
-    outline: 2px solid #1d4ed8;
+    outline: 2px solid var(--hdx-primary-5);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--hdx-radius-sm);
   }
   .file-list {
     margin: 0.75rem 0 0;
     font-size: 0.85rem;
-    color: #374151;
+    color: var(--hdx-neutral-8);
   }
   .filenames {
     font-family: monospace;
-    color: #111;
+    color: var(--hdx-neutral-9);
     word-break: break-all;
   }
   .source-host {
     margin-left: 0.4rem;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
   }
   .url-row {
     display: flex;
@@ -427,34 +427,34 @@
     min-width: 0;
     padding: 0.3rem 0.5rem;
     font-size: 0.85rem;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
-    background: #fff;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-sm);
+    background: var(--hdx-neutral-0);
   }
   .url-input:focus {
-    outline: 2px solid #1d4ed8;
+    outline: 2px solid var(--hdx-primary-5);
     outline-offset: -1px;
-    border-color: #1d4ed8;
+    border-color: var(--hdx-primary-5);
   }
   .url-load {
     padding: 0.3rem 0.8rem;
     font-size: 0.85rem;
-    border: 1px solid #1d4ed8;
-    border-radius: 4px;
-    background: #1d4ed8;
-    color: #fff;
+    border: 1px solid var(--hdx-primary-5);
+    border-radius: var(--hdx-radius-sm);
+    background: var(--hdx-primary-5);
+    color: var(--hdx-neutral-0);
     cursor: pointer;
   }
   .url-load:disabled {
-    border-color: #d1d5db;
-    background: #e5e7eb;
-    color: #9ca3af;
+    border-color: var(--hdx-neutral-05);
+    background: var(--hdx-neutral-05);
+    color: var(--hdx-neutral-3);
     cursor: default;
   }
   .url-status {
     margin: 0.6rem 0 0;
     font-size: 0.85rem;
-    color: #374151;
+    color: var(--hdx-neutral-8);
   }
   .cancel-link {
     margin-left: 0.4rem;
@@ -462,13 +462,13 @@
     border: none;
     background: none;
     font-size: 0.85rem;
-    color: #1d4ed8;
+    color: var(--hdx-primary-5);
     text-decoration: underline;
     cursor: pointer;
   }
   .url-error {
     margin: 0.4rem 0 0;
     font-size: 0.8rem;
-    color: #b91c1c;
+    color: var(--hdx-error-6);
   }
 </style>

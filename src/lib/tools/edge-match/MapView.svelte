@@ -8,6 +8,7 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import { onDestroy, onMount } from "svelte";
   import { createSpin } from "$lib/utils/spin";
+  import { MAP_COLORS, MAP_FILL_OPACITY } from "$lib/utils/mapColors";
   import { loadMaplibre, loadStyle, polyFilter, lineWidth } from "$lib/utils/mapStyle";
 
   let {
@@ -91,7 +92,7 @@
 
   function addPolygonLayers(source: string, fill: ExpressionSpecification | string): void {
     map!.addLayer(
-      { id: `${source}-fill`, type: "fill", source, filter: polyFilter, paint: { "fill-color": fill, "fill-opacity": 0.75 } },
+      { id: `${source}-fill`, type: "fill", source, filter: polyFilter, paint: { "fill-color": fill, "fill-opacity": MAP_FILL_OPACITY } },
       below(),
     );
     map!.addLayer(
@@ -136,14 +137,14 @@
         id: TOP,
         type: "line",
         source: "eg-overlay",
-        paint: { "line-color": "#111", "line-width": lineWidth, "line-dasharray": [2, 1.5] },
+        paint: { "line-color": MAP_COLORS.outline, "line-width": lineWidth, "line-dasharray": [2, 1.5] },
       });
       map.addLayer({
         id: "eg-active-line",
         type: "line",
         source: "eg-overlay",
         filter: ["==", ["get", "fid"], activeOverlayFid ?? -2],
-        paint: { "line-color": "#dc2626", "line-width": 3 },
+        paint: { "line-color": MAP_COLORS.selected, "line-width": 3 },
       });
     }
   });
@@ -162,7 +163,7 @@
     applyReplaced();
   }
 
-  $effect(() => syncPolygons("eg-input", inputGeojson, "#8dc65a"));
+  $effect(() => syncPolygons("eg-input", inputGeojson, MAP_COLORS.original));
   $effect(() => syncPolygons("eg-stream", streamGeojson, fillColorExpr()));
   $effect(() => syncPolygons("eg-result", resultGeojson, fillColorExpr()));
 

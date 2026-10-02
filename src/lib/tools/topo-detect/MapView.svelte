@@ -10,6 +10,7 @@
   } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import { onDestroy, onMount } from "svelte";
+  import { MAP_COLORS, MAP_FILL_OPACITY } from "$lib/utils/mapColors";
 
   let {
     originalGeojson = null,
@@ -29,10 +30,10 @@
     onIssueClick?: (key: string | null) => void;
   } = $props();
 
-  const ORIGINAL_FILL = "#8dc65a"; // green
-  const OVERLAP = "#e11d48"; // red
-  const GAP = "#f59e0b"; // amber
-  const MICRO = "#7c3aed"; // violet
+  const ORIGINAL_FILL = MAP_COLORS.original;
+  const OVERLAP = MAP_COLORS.overlap;
+  const GAP = MAP_COLORS.gap;
+  const MICRO = MAP_COLORS.micro;
 
   let container: HTMLDivElement | undefined;
   let map: MaplibreMap | undefined;
@@ -53,7 +54,7 @@
     GAP,
     "micro-polygon",
     MICRO,
-    "#888888",
+    MAP_COLORS.fallback,
   ] as unknown as ExpressionSpecification;
 
   function setData(id: string, data: string): string {
@@ -83,13 +84,13 @@
         type: "fill",
         source: "dt-original",
         filter: polyFilter,
-        paint: { "fill-color": ORIGINAL_FILL, "fill-opacity": 1 },
+        paint: { "fill-color": ORIGINAL_FILL, "fill-opacity": MAP_FILL_OPACITY },
       });
       map!.addLayer({
         id: "dt-original-line",
         type: "line",
         source: "dt-original",
-        paint: { "line-color": "#222222", "line-width": lineWidth as unknown as number },
+        paint: { "line-color": MAP_COLORS.outline, "line-width": lineWidth as unknown as number },
       });
     }
   });
@@ -115,7 +116,7 @@
         type: "line",
         source: "dt-issues",
         filter: ["==", ["get", "key"], ""] as FilterSpecification,
-        paint: { "line-color": "#111111", "line-width": 3, "line-opacity": 0.6 },
+        paint: { "line-color": MAP_COLORS.outline, "line-width": 3, "line-opacity": 0.6 },
       });
       map!.on("click", "dt-issues-fill", (e) => {
         const key = e.features?.[0]?.properties?.key;

@@ -10,6 +10,7 @@
   } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import { onDestroy, onMount } from "svelte";
+  import { MAP_COLORS, MAP_FILL_OPACITY } from "$lib/utils/mapColors";
 
   let {
     originalGeojson = null,
@@ -33,11 +34,11 @@
     onIssueClick?: (key: string | null) => void;
   } = $props();
 
-  const ORIGINAL_FILL = "#8dc65a"; // green
-  const CLEANED_FILL = "#aad4e0"; // blue
-  const OVERLAP = "#e11d48"; // red
-  const GAP = "#f59e0b"; // amber
-  const MICRO = "#7c3aed"; // violet
+  const ORIGINAL_FILL = MAP_COLORS.original;
+  const CLEANED_FILL = MAP_COLORS.result;
+  const OVERLAP = MAP_COLORS.overlap;
+  const GAP = MAP_COLORS.gap;
+  const MICRO = MAP_COLORS.micro;
 
   let container: HTMLDivElement | undefined;
   let map: MaplibreMap | undefined;
@@ -59,7 +60,7 @@
     GAP,
     "micro-polygon",
     MICRO,
-    "#888888",
+    MAP_COLORS.fallback,
   ] as unknown as ExpressionSpecification;
 
   function setData(id: string, data: string): string {
@@ -90,14 +91,14 @@
         source: "tc-original",
         filter: polyFilter,
         layout: { visibility: "none" },
-        paint: { "fill-color": ORIGINAL_FILL, "fill-opacity": 1 },
+        paint: { "fill-color": ORIGINAL_FILL, "fill-opacity": MAP_FILL_OPACITY },
       });
       map!.addLayer({
         id: "tc-original-line",
         type: "line",
         source: "tc-original",
         layout: { visibility: "none" },
-        paint: { "line-color": "#222222", "line-width": lineWidth as unknown as number },
+        paint: { "line-color": MAP_COLORS.outline, "line-width": lineWidth as unknown as number },
       });
       applySideVisibility(showSide);
     }
@@ -111,14 +112,14 @@
         source: "tc-cleaned",
         filter: polyFilter,
         layout: { visibility: "none" },
-        paint: { "fill-color": CLEANED_FILL, "fill-opacity": 1 },
+        paint: { "fill-color": CLEANED_FILL, "fill-opacity": MAP_FILL_OPACITY },
       });
       map!.addLayer({
         id: "tc-cleaned-line",
         type: "line",
         source: "tc-cleaned",
         layout: { visibility: "none" },
-        paint: { "line-color": "#222222", "line-width": lineWidth as unknown as number },
+        paint: { "line-color": MAP_COLORS.outline, "line-width": lineWidth as unknown as number },
       });
       applySideVisibility(showSide);
     }
@@ -148,7 +149,7 @@
         source: "tc-issues",
         filter: ["==", ["get", "key"], ""] as FilterSpecification,
         layout: { visibility: "none" },
-        paint: { "line-color": "#111111", "line-width": 3, "line-opacity": 0.6 },
+        paint: { "line-color": MAP_COLORS.outline, "line-width": 3, "line-opacity": 0.6 },
       });
       map!.on("click", "tc-issues-fill", (e) => {
         const key = e.features?.[0]?.properties?.key;

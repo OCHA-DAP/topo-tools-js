@@ -318,14 +318,14 @@
     flex-direction: column;
     gap: 0.4rem;
     padding: 0.5rem;
-    background: #f9fafb;
-    border-bottom: 1px solid #e5e7eb;
+    background: var(--hdx-neutral-01);
+    border-bottom: 1px solid var(--hdx-neutral-1);
   }
   .cw-search {
     width: 100%;
     padding: 0.4rem 0.6rem;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
     font-size: 0.875rem;
   }
   .cw-class-filters {
@@ -345,7 +345,7 @@
     display: inline-block;
     width: 11px;
     height: 11px;
-    border-radius: 2px;
+    border-radius: var(--hdx-radius-sm);
     border: 1px solid rgba(0, 0, 0, 0.1);
   }
   .cw-table-scroll {
@@ -361,42 +361,42 @@
   thead {
     position: sticky;
     top: 0;
-    background: #f3f4f6;
+    background: var(--hdx-neutral-05);
     z-index: 1;
   }
   th,
   td {
     text-align: left;
     padding: 0.4rem 0.6rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--hdx-neutral-1);
     vertical-align: middle;
   }
   th {
     font-weight: 600;
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #4b5563;
+    color: var(--hdx-neutral-7);
   }
   .cw-row {
     cursor: pointer;
   }
   .cw-row:hover {
-    background: #f9fafb;
+    background: var(--hdx-neutral-01);
   }
   .cw-row-hovered {
-    background: #f0f9ff !important;
+    background: var(--hdx-primary-05) !important;
   }
   /* Cells that belong to a cluster whose hovered fid lives in a different
      <tr> via rowspan. Keeps the class badge + spanned side lit up when the
      user hovers a sibling row that doesn't contain them. */
   .cw-cell-cluster-hovered {
-    background: #f0f9ff !important;
+    background: var(--hdx-primary-05) !important;
   }
   /* Anchor the selection/hover bar to the (rowspanned) class cell so it
      always sits next to the class badge — independent of which specific
      row in the cluster is selected or hovered. */
   .cw-class-cell-active {
-    box-shadow: inset 3px 0 0 #6366f1;
+    box-shadow: inset 3px 0 0 var(--hdx-primary-5);
   }
   .cw-class-cell {
     width: 1%;
@@ -405,44 +405,44 @@
   .cw-class-badge {
     display: inline-block;
     padding: 1px 6px;
-    border-radius: 3px;
-    color: #fff;
+    border-radius: var(--hdx-radius-sm);
+    color: var(--hdx-neutral-0);
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.02em;
   }
   .cw-spanned {
-    border-left: 2px solid #a5b4fc;
+    border-left: 2px solid var(--hdx-primary-2);
     font-weight: 500;
   }
   /* Anchor cells: hovered row's cells on the version currently shown on the map.
      Defined after .cw-spanned so font-weight wins on spanned-anchor cells. */
   .cw-cell-anchor {
-    background: #c7d2fe !important;
+    background: var(--hdx-primary-1) !important;
     font-weight: 600;
-    color: #1e1b4b;
+    color: var(--hdx-primary-9);
   }
   /* Lighter anchor: the same hovered row's cells on the OTHER version, so the
      correspondence is visible without competing with the active side. */
   .cw-cell-anchor-light {
-    background: #e0e7ff !important;
-    color: #312e81;
+    background: var(--hdx-primary-05) !important;
+    color: var(--hdx-primary-7);
   }
   .cw-empty {
     padding: 1rem;
     text-align: center;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
     font-size: 0.875rem;
   }
   .cw-tooltip {
     position: fixed;
-    background: #1f2937;
-    color: #f9fafb;
+    background: var(--hdx-neutral-9);
+    color: var(--hdx-neutral-01);
     font-size: 0.72rem;
     line-height: 1.5;
     padding: 0.25rem 0.55rem;
-    border-radius: 4px;
+    border-radius: var(--hdx-radius-md);
     pointer-events: none;
     z-index: 100;
     white-space: nowrap;

@@ -1,3 +1,4 @@
+import { MAP_COLORS } from "./mapColors";
 import type { FilterSpecification, LayerSpecification, StyleSpecification } from "maplibre-gl";
 
 // v6 requires bundlers to set the worker URL explicitly — import.meta.url
@@ -22,8 +23,8 @@ export function loadMaplibre(): Promise<typeof import("maplibre-gl")> {
 const LAND_SOURCE_ID = "ne-land";
 const LAND_LAYER_ID = "ne-land-fill";
 const LAND_URL = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/ne_50m_land.geojson`;
-const WATER_COLOR = "#dde6ed";
-const LAND_COLOR = "#f5f5f3";
+const WATER_COLOR = MAP_COLORS.water;
+const LAND_COLOR = MAP_COLORS.land;
 
 const fallbackStyle: StyleSpecification = {
   version: 8,
@@ -53,6 +54,12 @@ export async function loadStyle(): Promise<StyleSpecification> {
       source: LAND_SOURCE_ID,
       paint: { "fill-color": LAND_COLOR },
     };
+    for (const l of remote.layers) {
+      if (l.id === "water" && l.type === "fill")
+        l.paint = { ...l.paint, "fill-color": WATER_COLOR };
+      if (l.id === "waterway" && l.type === "line")
+        l.paint = { ...l.paint, "line-color": WATER_COLOR };
+    }
     const bgIdx = remote.layers.findIndex((l) => l.type === "background");
     const insertAt = bgIdx >= 0 ? bgIdx + 1 : 0;
     remote.layers.splice(insertAt, 0, landLayer);

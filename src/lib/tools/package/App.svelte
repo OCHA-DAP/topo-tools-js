@@ -277,8 +277,8 @@
 
   <div class="map-container">
     <MapView
-      geojson={activeGeoJSON ?? originalGeoJSON}
-      originalGeojson={activeGeoJSON ? originalGeoJSON : null}
+      geojson={activeGeoJSON}
+      originalGeojson={originalGeoJSON}
       bounds={activeBounds ?? loadedBounds}
       processing={loading || running}
       registerClear={(fn: () => void) => {
@@ -302,32 +302,48 @@
     gap: 1rem;
     padding: 1.25rem;
     overflow-y: auto;
-    border-right: 1px solid #e5e7eb;
-    background: #fff;
+    border-right: 1px solid var(--hdx-neutral-1);
+    background: var(--hdx-neutral-0);
   }
 
+  header {
+    margin: -1.25rem -1.25rem 0;
+    padding: 1.25rem 1.25rem 0.8125rem;
+    background: var(--hdx-brand-7);
+  }
+  header + .step {
+    border-top: none;
+    padding-top: 0;
+  }
+  header .blurb,
+  header .back {
+    color: var(--hdx-brand-05);
+  }
+  header .back:hover {
+    color: var(--hdx-neutral-0);
+  }
   header h1 {
     font-size: 1.25rem;
     font-weight: 700;
-    color: #111;
+    color: var(--hdx-neutral-0);
     margin: 0 0 0.5rem;
   }
 
   .back {
     display: inline-block;
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
     text-decoration: none;
     margin: 0 0 0.5rem;
   }
 
   .back:hover {
-    color: #111;
+    color: var(--hdx-neutral-9);
   }
 
   .blurb {
     font-size: 0.825rem;
-    color: #374151;
+    color: var(--hdx-neutral-8);
     margin: 0;
     line-height: 1.5;
   }
@@ -337,26 +353,26 @@
     flex-direction: column;
     gap: 0.6rem;
     padding-top: 0.75rem;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--hdx-neutral-1);
   }
 
   .step-heading {
     font-size: 1rem;
     font-weight: 600;
-    color: #111;
+    color: var(--hdx-neutral-9);
     margin: 0;
   }
 
   .status {
     font-size: 0.85rem;
-    color: #4b5563;
+    color: var(--hdx-neutral-7);
     margin: 0;
     animation: pulse 1s ease-in-out infinite;
   }
 
   .field-hint {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
     margin: 0;
     line-height: 1.4;
   }
@@ -366,28 +382,28 @@
     flex-direction: column;
     gap: 0.25rem;
     font-size: 0.8rem;
-    color: #374151;
+    color: var(--hdx-neutral-8);
   }
 
   .field input {
     padding: 0.4rem 0.55rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
     font-size: 0.85rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 
   .field-error {
     font-size: 0.75rem;
-    color: #b91c1c;
+    color: var(--hdx-error-6);
     margin: 0;
   }
 
   .run-btn {
-    background: #1d4ed8;
-    color: #fff;
+    background: var(--hdx-primary-5);
+    color: var(--hdx-neutral-0);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--hdx-radius-md);
     padding: 0.6rem 1rem;
     font-size: 0.875rem;
     font-weight: 500;
@@ -395,7 +411,7 @@
   }
 
   .run-btn:hover:not(:disabled) {
-    background: #1e40af;
+    background: var(--hdx-primary-9);
   }
 
   .run-btn:disabled {
@@ -414,12 +430,12 @@
   }
 
   .error-panel {
-    background: #fef2f2;
-    border: 1px solid #fca5a5;
-    border-radius: 6px;
+    background: var(--hdx-error-05);
+    border: 1px solid var(--hdx-error-3);
+    border-radius: var(--hdx-radius-md);
     padding: 0.6rem 0.75rem;
     font-size: 0.825rem;
-    color: #b91c1c;
+    color: var(--hdx-error-6);
     word-break: break-word;
   }
 
@@ -430,9 +446,9 @@
   }
 
   .level-btn {
-    background: #fff;
-    color: #374151;
-    border: 1px solid #d1d5db;
+    background: var(--hdx-neutral-0);
+    color: var(--hdx-neutral-8);
+    border: 1px solid var(--hdx-neutral-2);
     border-radius: 999px;
     padding: 0.3rem 0.7rem;
     font-size: 0.8rem;
@@ -440,25 +456,25 @@
   }
 
   .level-btn:hover {
-    background: #f3f4f6;
+    background: var(--hdx-neutral-05);
   }
 
   .level-btn.active {
-    background: #1d4ed8;
-    color: #fff;
-    border-color: #1d4ed8;
+    background: var(--hdx-primary-5);
+    color: var(--hdx-neutral-0);
+    border-color: var(--hdx-primary-5);
   }
 
   .summary-line {
     font-size: 0.8rem;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
     line-height: 1.4;
     margin: 0;
   }
 
   .privacy {
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: var(--hdx-neutral-7);
     margin: 0;
     margin-top: auto;
   }
