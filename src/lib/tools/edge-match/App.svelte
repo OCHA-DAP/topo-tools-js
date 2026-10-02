@@ -5,6 +5,7 @@
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
+  import DetachedNote from "$lib/components/DetachedNote.svelte";
   import MapView from "./MapView.svelte";
   import SideToggle from "$lib/components/SideToggle.svelte";
   import { runEdgeMatch, type EdgeMatchPhase } from "./pipeline/index";
@@ -50,6 +51,8 @@
   let microCount = $state<number | null>(null);
   let gapCount = $state<number | null>(null);
   let clipEmptyCount = $state<number | null>(null);
+  let detachedMergedCount = $state<number | null>(null);
+  let detachedKeptCount = $state<number | null>(null);
   let assignedOverlayLabel = $state<string | null>(null);
   let passthrough = $state(false);
   let perFeature = $state(false);
@@ -221,6 +224,8 @@
     microCount = null;
     gapCount = null;
     clipEmptyCount = null;
+    detachedMergedCount = null;
+    detachedKeptCount = null;
     assignedOverlayLabel = null;
     groupRows = [];
     activeGroupIndex = -1;
@@ -260,6 +265,8 @@
       microCount = result.microCount;
       gapCount = result.gapCount;
       clipEmptyCount = result.clipEmptyCount;
+      detachedMergedCount = result.detachedMergedCount;
+      detachedKeptCount = result.detachedKeptCount;
       assignedOverlayLabel = result.assignedOverlayLabel;
       inputColumns = result.inputColumns;
       overlayColumns = result.overlayColumns;
@@ -467,7 +474,7 @@
       <p class="fit-mode">Fitted into {assignedOverlayLabel}.</p>
     {/if}
 
-    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0) || (microCount !== null && microCount > 0) || (gapCount !== null && gapCount > 0) || (clipEmptyCount !== null && clipEmptyCount > 0)}
+    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0) || (microCount !== null && microCount > 0) || (gapCount !== null && gapCount > 0) || (clipEmptyCount !== null && clipEmptyCount > 0) || (detachedMergedCount ?? 0) + (detachedKeptCount ?? 0) > 0}
       <div class="warn-panel">
         {#if clipEmptyCount !== null && clipEmptyCount > 0}
           <p>
@@ -512,6 +519,9 @@
             {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance)
             merged into a neighbouring feature or dropped.
           </p>
+        {/if}
+        {#if (detachedMergedCount ?? 0) + (detachedKeptCount ?? 0) > 0}
+          <p><DetachedNote merged={detachedMergedCount ?? 0} kept={detachedKeptCount ?? 0} /></p>
         {/if}
         {#if gapCount !== null && gapCount > 0}
           <p>

@@ -10,6 +10,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   without running `gatedCoverageClean` or any other clean pass on either
   layer — whatever seams remain between clipped pieces are `edge-stitch`'s job
   downstream, not `edge-clip`'s.
+- `edge-clip` MAY load an original layer (the input before extension) the
+  same way, used only to decide clip-detached pieces (see Clipping).
 
 ## Assigning input features to an overlay feature
 
@@ -40,6 +42,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - An assigned input feature whose clipped result is empty MUST be dropped from the
   output, not exported as an empty geometry.
 - `edge-clip` MUST fail the run if the clipped result has zero rows.
+- `edge-clip` MUST merge or keep every clip-detached piece in the clipped
+  result (see `docs/reference/shared.md`), recording each as a
+  `detached-part` row, before the micro-polygon merge.
 - `edge-clip` MUST merge or drop every micro-polygon in the clipped result (see
   `docs/reference/shared.md`), recording each as a `micro-polygon` row.
 
@@ -54,7 +59,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   combining every input feature left unassigned because no overlay feature
   won (`kind='unassigned'`) with every assigned input feature whose clip result came
   out empty (`kind='clip-empty'`, `reason`
-  `clip intersection with its overlay feature was empty`), every merged
+  `clip intersection with its overlay feature was empty`), every merged or
+  kept clip-detached piece (`kind='detached-part'`), every merged
   or dropped micro-polygon (`kind='micro-polygon'`), plus any
   `code-mismatch`/`code-fallback`
   row from a supplied code-based assignment override (see
@@ -65,6 +71,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `edge-clip` MUST process exactly one input file and one overlay file per
   run (see `docs/adr/0026` for why: this app's upload model has no concept
   of multiple independently-voted input files in one run).
+- `edge-clip` MAY accept one original layer file (`original` URL param).
 - `edge-clip` MAY accept a `matchColumn` name or a
   `overlayMatchColumn`/`inputMatchColumn` pair for the code-based
   assignment override (see `docs/adr/0029`).

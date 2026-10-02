@@ -10,6 +10,7 @@ import {
   type MatchColumnOptions,
 } from "$lib/db/codeJoin";
 import { applyOptionalFill, type ApplyFillOptions } from "$lib/db/fillCompose";
+import { setCentroidLat } from "$lib/db/units";
 import { CLIP_EMPTY_REASON } from "$lib/db/assignOne";
 import { dropInternalTables } from "$lib/tools/edge-extend/pipeline/index";
 import { loadLayers } from "./load";
@@ -57,6 +58,8 @@ export interface EdgeMatchResult {
   microCount: number;
   gapCount: number;
   clipEmptyCount: number;
+  detachedMergedCount: number;
+  detachedKeptCount: number;
   // Assign-one only: the winner overlay feature's label.
   assignedOverlayLabel: string | null;
   inputColumns: ColumnGuess;
@@ -67,41 +70,57 @@ export interface EdgeMatchResult {
 
 // Combines every excluded/flagged input feature (unassigned, dropped-group, and
 // code-mismatch/code-fallback per docs/adr/0045) into one exportable table.
-async function buildIssuesTable(
-  conn: AsyncDuckDBConnection,
-): Promise<{ dropped: number; passthrough: number; clipEmpty: number }> {
+async function buildIssuesTable(conn: AsyncDuckDBConnection): Promise<{
+  dropped: number;
+  passthrough: number;
+  clipEmpty: number;
+  detachedMerged: number;
+  detachedKept: number;
+}> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ge_issues AS
     SELECT 'unassigned-' || fid AS key, 'unassigned' AS kind,
            fid AS unit_a, NULL::BIGINT AS unit_b, NULL::BIGINT AS overlay_fid,
-           NULL::VARCHAR AS reason, geom
+           NULL::VARCHAR AS reason, NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m,
+           NULL::DOUBLE AS thinness_ratio, NULL::BOOLEAN AS fixed, geom
     FROM ge_unassigned
     WHERE fid NOT IN (SELECT input_fid FROM ge_assignment)
     UNION ALL
     SELECT 'dropped_group-' || unit_a AS key, 'dropped_group' AS kind,
-           unit_a, NULL, overlay_fid AS overlay_fid, reason, geom
+           unit_a, NULL, overlay_fid AS overlay_fid, reason, NULL, NULL, NULL, NULL, geom
     FROM ge_dropped
     UNION ALL
     SELECT 'passthrough-' || ga.input_fid AS key, 'passthrough' AS kind,
-           ga.input_fid AS unit_a, NULL, ga.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason, c.geom
+           ga.input_fid AS unit_a, NULL, ga.overlay_fid AS overlay_fid, NULL::VARCHAR AS reason, NULL, NULL, NULL, NULL, c.geom
     FROM ge_assignment ga JOIN input_layer_01 c ON c.fid = ga.input_fid
     WHERE ga.overlay_fid = ${PASSTHROUGH_OVERLAY_FID} AND ga.input_fid IN (SELECT fid FROM ge_results)
     UNION ALL
     SELECT 'code_mismatch-' || a.input_fid AS key, 'code-mismatch' AS kind,
-           a.input_fid AS unit_a, NULL, a.overlay_fid AS overlay_fid, '${CODE_MISMATCH_REASON}' AS reason, c.geom
+           a.input_fid AS unit_a, NULL, a.overlay_fid AS overlay_fid, '${CODE_MISMATCH_REASON}' AS reason, NULL, NULL, NULL, NULL, c.geom
     FROM ge_assignment a JOIN input_layer_01 c ON c.fid = a.input_fid
     WHERE a.assignment_method = 'code' AND a.spatial_agrees = FALSE
     UNION ALL
     SELECT 'code_fallback-' || a.input_fid AS key, 'code-fallback' AS kind,
-           a.input_fid AS unit_a, NULL, a.overlay_fid AS overlay_fid, '${CODE_FALLBACK_REASON}' AS reason, c.geom
+           a.input_fid AS unit_a, NULL, a.overlay_fid AS overlay_fid, '${CODE_FALLBACK_REASON}' AS reason, NULL, NULL, NULL, NULL, c.geom
     FROM ge_assignment a JOIN input_layer_01 c ON c.fid = a.input_fid
     WHERE a.assignment_method = 'spatial_fallback'
     UNION ALL
     SELECT 'clip-empty-' || unit_a AS key, 'clip-empty' AS kind,
-           unit_a, NULL, overlay_fid, '${CLIP_EMPTY_REASON}' AS reason, geom
+           unit_a, NULL, overlay_fid, '${CLIP_EMPTY_REASON}' AS reason, NULL, NULL, NULL, NULL, geom
     FROM ge_clip_empty
+    UNION ALL
+    SELECT key, kind, unit_a, unit_b, overlay_fid, reason, area_m2, max_width_m,
+           thinness_ratio, fixed, geom
+    FROM ge_detached
   `);
   await conn.query("DROP TABLE IF EXISTS ge_clip_empty");
+  const detached = (
+    await conn.query(`--sql
+      SELECT COUNT(*) FILTER (WHERE fixed) AS merged, COUNT(*) FILTER (WHERE NOT fixed) AS kept
+      FROM ge_detached
+    `)
+  ).toArray()[0] as { merged: bigint | number; kept: bigint | number };
+  await conn.query("DROP TABLE IF EXISTS ge_detached");
   const [droppedRes, passthroughRes, clipEmptyRes] = await Promise.all([
     conn.query("SELECT COUNT(*) AS n FROM ge_dropped"),
     conn.query(`SELECT COUNT(*) AS n FROM ge_issues WHERE kind = 'passthrough'`),
@@ -111,6 +130,8 @@ async function buildIssuesTable(
     dropped: Number((droppedRes.toArray()[0] as { n: bigint | number }).n),
     passthrough: Number((passthroughRes.toArray()[0] as { n: bigint | number }).n),
     clipEmpty: Number((clipEmptyRes.toArray()[0] as { n: bigint | number }).n),
+    detachedMerged: Number(detached.merged),
+    detachedKept: Number(detached.kept),
   };
 }
 
@@ -234,6 +255,9 @@ export async function runEdgeMatch(
     "SELECT ST_AsGeoJSON(geom) AS _geom, fid FROM overlay_layer_01 WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)",
   );
 
+  const inputBounds = await computeBounds(conn, "input_layer_01");
+  if (inputBounds) setCentroidLat((inputBounds[1] + inputBounds[3]) / 2);
+
   onProgress({ phase: "assigning" });
   const assignment = await computeAssignment(conn, matchColumns, passthrough, perFeature);
   const inputGeojson = await queryToGeoJSON(
@@ -271,6 +295,8 @@ export async function runEdgeMatch(
     dropped: droppedCount,
     passthrough: passthroughCount,
     clipEmpty: clipEmptyCount,
+    detachedMerged: detachedMergedCount,
+    detachedKept: detachedKeptCount,
   } = await buildIssuesTable(conn);
   const assignedOverlayLabel =
     groups.find((g) => g.overlayFid === assignment.overlayFid)?.label ?? null;
@@ -346,6 +372,8 @@ export async function runEdgeMatch(
     microCount,
     gapCount,
     clipEmptyCount,
+    detachedMergedCount,
+    detachedKeptCount,
     assignedOverlayLabel,
     inputColumns,
     overlayColumns,

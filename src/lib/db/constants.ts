@@ -11,3 +11,9 @@ export const CLIP_TILE_MIN_VERTICES = 5000;
 export const CLIP_TILE_TARGET_VERTICES = 1350;
 export const CLIP_TILE_MIN_CELL = 0.05;
 export const CLIP_TILE_MAX_CELL = 5.0;
+
+// Ported from topo-tools-py's core/constants.py; clip-detached piece merge rule,
+// see mergeDetachedParts in $lib/db/coverage.ts.
+export const DETACHED_MERGE_MAX_RATIO = 0.01;
+export const DETACHED_MAX_ORIGINAL_SHARE = 0.5;
+export const DETACHED_MIN_NECK_RATIO = 0.1;

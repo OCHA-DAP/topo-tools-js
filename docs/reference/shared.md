@@ -157,6 +157,49 @@ name instead of repeating them.
 - `schema-join` and `schema-map` MUST NOT apply this rule, since they
   never modify geometry.
 
+## Clip-detached pieces (`$lib/db/coverage.ts::mergeDetachedParts`)
+
+Shared by `edge-clip`, `edge-mosaic` and `edge-match`'s per-group clip, run on
+each clipped output before any micro-polygon merge.
+
+- A clip-detached piece is any polygon part of a clipped feature other than
+  the kept piece of its own pre-clip part (the pre-clip part holding the
+  piece's interior point). The kept piece is the largest piece on the
+  unit's original footprint, or the largest piece when none is.
+- A piece is on the original footprint when its interior point falls on an
+  original part of the same feature, or when at least
+  `DETACHED_MAX_ORIGINAL_SHARE` (50%) of its area is original land. An
+  original feature belongs to the pre-clip part holding its interior point.
+- A piece under `DETACHED_MERGE_MAX_RATIO` (1%) of its kept piece's area
+  MUST merge into the feature, clipped to the same overlay feature, it
+  shares the longest edge with (ties to the lowest fid), when under 50% of
+  the piece is original land or when the original land the overlay clipped
+  away beside it is at least `DETACHED_MIN_NECK_RATIO` (0.1) of its area.
+  Otherwise the piece MUST stay, reported as `kept: matches original shape`.
+- Without an original layer, such a piece MUST stay, reported as
+  `kept: no original layer`. `edge-match` always uses its own pre-extension
+  input; `edge-clip` and `edge-mosaic` take an optional original layer
+  (`original` URL param).
+- A destination MUST be a kept piece, a single-part feature, or a piece
+  kept as too large. A point contact (shared boundary not longer than
+  10 × `SNAP_TOLERANCE`), or a neighbour that is any other clip-detached
+  piece, MUST NOT count as sharing an edge.
+- A piece MUST stay on its own feature when it is 1% or larger
+  (`kept: too large to merge`), or when merging would leave the receiving
+  feature with an extra part (`kept: merge did not attach`). A piece that
+  shares no edge with any destination MUST stay and MUST NOT be reported.
+- Each reported piece MUST be a `detached-part` row with `key`
+  `detached-part-<fid>-<n>`, its own fid in `unit_a`, the neighbour's fid in
+  `unit_b`, the overlay fid in `overlay_fid`, `reason`
+  `merged into neighbouring feature` or one of the `kept:` reasons above,
+  `area_m2`, `max_width_m`, `thinness_ratio`, `fixed` true only when merged,
+  and the piece itself as `geom`.
+- Original-land shares MUST be measured through `intersectPairs` (see
+  Overlap measurement). The edge-length, attach and clipped-away-land steps
+  MUST retry once on `ST_ReducePrecision(geom, 1e-11)` when they throw, and
+  the receiving-feature rebuild MUST fall back row by row as the
+  micro-polygon merge does.
+
 ## No-erosion guard (`$lib/db/coverage.ts::checkNoErosion`)
 
 Shared by `edge-extend` (whole-file) and `edge-match` (per-group).
@@ -175,7 +218,8 @@ Shared by `edge-match` (input/overlay assignment), `change` (version-to-version
 comparison), `code-update` (per-level classify and reparent), and
 `schema-join` (join assignment). Its pairwise intersection (`intersectPairs`)
 is also shared by assign-one, the clip engine (`edge-clip`, `edge-mosaic`, and `edge-match`'s
-per-group clip) and the shared overlap check (`topo-detect`, `topo-clean`).
+per-group clip), the micro-polygon and clip-detached merges, and the shared overlap check
+(`topo-detect`, `topo-clean`).
 
 - Overlap measurement MUST compute exact geometric intersection
   (`ST_Intersection`) for every candidate pair.

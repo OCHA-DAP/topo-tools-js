@@ -13,14 +13,16 @@ for rules `edge-mosaic` shares with other tools.
   layer is expected to already be a finished Edge Extender output, though
   `edge-mosaic` never verifies this.
 - `edge-mosaic` MUST process exactly one input file and one overlay file per
-  run (see `docs/adr/0026`, which this tool shares with `edge-clip`).
+  run (see `docs/adr/0026`, which this tool shares with `edge-clip`), plus
+  at most one original layer file, as `edge-clip` does.
 
 ## Assigning and clipping
 
 - `edge-mosaic`'s assign and clip stages MUST behave exactly as `edge-clip`'s own
   (`docs/reference/edge-clip.md`): assign-one majority vote with every input
   feature assigned to the winner, adaptively grid-tile a large overlay feature
-  boundary, drop any assigned input feature whose clip result is empty, and fail
+  boundary, drop any assigned input feature whose clip result is empty, merge
+  or keep clip-detached pieces against the optional original layer, and fail
   the run if no overlay feature wins.
 
 ## Stitching
@@ -38,7 +40,8 @@ for rules `edge-mosaic` shares with other tools.
 - `edge-mosaic` MUST also produce a combined issues report listing every input feature
   that never made it into the final output, identified by its own fid (kind
   `unassigned` when no overlay feature won, `clip-empty` when its clip came
-  out empty), every leftover gap the stitch pass's own issues check
+  out empty), every merged or kept clip-detached piece (kind
+  `detached-part`), every leftover gap the stitch pass's own issues check
   finds (kind `gap`), every micro-polygon the stitch pass merged or
   dropped (kind `micro-polygon`), and any `code-mismatch`/`code-fallback` rows from a
   supplied code-based assignment override (see `docs/reference/edge-clip.md`,
@@ -47,6 +50,7 @@ for rules `edge-mosaic` shares with other tools.
 
 ## Configuration
 
+- `edge-mosaic` MAY accept one original layer file (`original` URL param).
 - `edge-mosaic` MAY accept a `matchColumn` name or a
   `overlayMatchColumn`/`inputMatchColumn` pair for the code-based
   assignment override (see `docs/adr/0029`).

@@ -1,7 +1,7 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { assignOne } from "$lib/db/assignOne";
 import { carryOverlayColumns } from "$lib/db/carryColumns";
-import { clipEngine } from "$lib/db/clipEngine";
+import { clipEngine, mergeClipDetached } from "$lib/db/clipEngine";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
@@ -26,6 +26,8 @@ export class PipelineError extends Error {
 }
 
 export interface MosaicResult {
+  detachedMergedCount: number;
+  detachedKeptCount: number;
   inputGeoJSON: string;
   overlayOutlineGeoJSON: string;
   mosaicGeoJSON: string;
@@ -69,13 +71,14 @@ export async function runMosaic(
   conn: AsyncDuckDBConnection,
   inputFiles: File[],
   overlayFiles: File[],
+  originalFiles: File[],
   onProgress: ProgressFn,
   matchColumns: MatchColumnOptions = {},
   carryColumns: string[] = [],
   fillOptions?: ApplyFillOptions,
 ): Promise<MosaicResult> {
   onProgress(1, "Loading input");
-  await loadLayers(db, conn, inputFiles, overlayFiles);
+  await loadLayers(db, conn, inputFiles, overlayFiles, originalFiles);
   const inputGeoJSON = await tableToGeoJSON(conn, "input_layer_01", null);
   const overlayOutlineGeoJSON = await tableToGeoJSON(conn, "overlay_layer_01", null);
   const bounds = await computeBounds(conn, "input_layer_01");
@@ -117,6 +120,12 @@ export async function runMosaic(
   if (engineResult.outputCount === 0) {
     throw new PipelineError("Clipping produced no output rows.", 3);
   }
+  let detached;
+  try {
+    detached = await mergeClipDetached(conn, assign.overlayFid, originalFiles.length > 0);
+  } catch (e) {
+    throw new PipelineError(e instanceof Error ? e.message : String(e), 3);
+  }
 
   // runStitch's own stage numbers (2=Loading input, 3=Closing seams,
   // 4=Checking for residual gaps) are remapped onto mosaic's own stage
@@ -151,6 +160,8 @@ export async function runMosaic(
     mosaicGeoJSON: stitch.stitchedGeoJSON,
     bounds,
     overlayFid: assign.overlayFid,
+    detachedMergedCount: detached.merged,
+    detachedKeptCount: detached.kept,
     issues: rows,
     issuesGeoJSON: geojson,
     hadResidualOverlaps: stitch.hadResidualOverlaps,

@@ -61,6 +61,9 @@ with other tools.
   through the same clip engine as `edge-clip` (see `docs/reference/edge-clip.md`,
   Clipping), except for the passthrough pseudo-group (see Configuration),
   which is never clipped.
+- `edge-match` MUST merge or keep each clipped group's clip-detached pieces
+  (see `docs/reference/shared.md`), deciding them against its own
+  pre-extension input layer.
 - A group whose extension or clip fails MUST be recorded as a failed group
   and skipped, without aborting the run. Every input feature belonging to a failed
   group MUST be recorded with the overlay feature fid and the failure reason, for
@@ -87,14 +90,16 @@ with other tools.
   combined export of every unassigned input feature, every input feature
   belonging to a failed group, every input feature whose extended geometry
   clipped to empty against its overlay feature (`kind='clip-empty'`, with
-  that pre-clip geometry), and a `gap` row for every interior hole in
+  that pre-clip geometry), every merged or kept clip-detached piece
+  (`kind='detached-part'`), and a `gap` row for every interior hole in
   the final result wider than `SNAP_TOLERANCE`, each tagged with which kind
   it is, available independently of the main result export. A residual gap
   MUST NOT fail the run.
 - `edge-match` MUST report, per group, whether it succeeded or failed, and MUST
   report the total count of unassigned input features, the total count of
   input features excluded via a failed group, the count clipped to empty,
-  and the count of residual gaps. In assign-one mode it MUST also report
+  the counts of clip-detached pieces merged and kept, and the count of
+  residual gaps. In assign-one mode it MUST also report
   the winning overlay feature.
 - `edge-match` MUST report the assembled result's bounding box for map fit,
   whenever the bounds are finite.
