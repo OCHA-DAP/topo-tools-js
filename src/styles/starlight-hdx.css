@@ -66,17 +66,6 @@ header.header site-search kbd {
   text-transform: capitalize;
 }
 
-/* Badges follow c-label's semantic formula: scale 1 background, scale 8 text. */
-.sl-badge {
-  border: none;
-  border-radius: var(--hdx-radius-md);
-  font-family: var(--hdx-font-body);
-}
-.sl-badge.caution {
-  background: var(--hdx-warning-1);
-  color: var(--hdx-warning-8);
-}
-
 article.card {
   --sl-card-border: var(--hdx-brand-3);
   --sl-card-bg: var(--hdx-brand-05);
