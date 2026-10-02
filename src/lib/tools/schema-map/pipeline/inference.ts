@@ -1,22 +1,32 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { siblingName } from "$lib/db/adminColumns";
 import { isTemporalDuckdbType } from "$lib/db/columnTypes";
 import {
   EXCLUDED_COLUMNS,
   isNoiseColumn,
   MIN_ROOT_EVIDENCE_COLUMNS,
+  MIN_TIED_CODES,
   NOTE_AMBIGUOUS,
   NOTE_SUPPLEMENTAL,
   WINNER_MAX_COLLAPSE_RATIO,
 } from "./constants";
+import { commonPrefix, reversed } from "./naming";
 import {
   bijective,
+  columnTypes,
   combinedDistinctCount,
   containmentHolds,
+  containmentPerfect,
+  correspondsOnJointRows,
   distinctCounts,
   embeds,
+  fractionalColumns,
   fullyPopulated,
   hasGeometryColumn,
+  isNearRowUnique,
   looksCodeShaped,
+  nonFloating,
+  sameCoverage,
   spatiallyCoherent,
 } from "./queries";
 import type { TargetSchema } from "./targetSchema";
@@ -31,6 +41,8 @@ export interface CrosswalkRow {
 }
 
 export type ResolvedColumn = CrosswalkRow;
+
+const LEVEL_DIGIT_RE = /\d+/;
 
 interface Group {
   count: number;
@@ -59,43 +71,6 @@ async function temporalColumns(
   return new Set(columns.filter((c) => isTemporalDuckdbType(types.get(c) ?? "")));
 }
 
-// Union bijective columns, cross-count only if either side is NULL-sparse.
-async function clusterByBijection(
-  conn: AsyncDuckDBConnection,
-  table: string,
-  cols: string[],
-  counts: Record<string, number>,
-): Promise<string[][]> {
-  const fully = new Map<string, boolean>();
-  for (const c of cols) fully.set(c, await fullyPopulated(conn, table, c));
-  const parent = new Map(cols.map((c) => [c, c]));
-  const find = (c: string): string => {
-    while (parent.get(c) !== c) {
-      parent.set(c, parent.get(parent.get(c)!)!);
-      c = parent.get(c)!;
-    }
-    return c;
-  };
-  for (let i = 0; i < cols.length; i++) {
-    for (let j = i + 1; j < cols.length; j++) {
-      const a = cols[i];
-      const b = cols[j];
-      const bothDense = fully.get(a) && fully.get(b);
-      const comparable = bothDense ? counts[a] === counts[b] : sameNamingDigit(a, b);
-      if (comparable && (await bijective(conn, table, a, b))) {
-        parent.set(find(a), find(b));
-      }
-    }
-  }
-  const clusters = new Map<string, string[]>();
-  for (const c of cols) {
-    const root = find(c);
-    if (!clusters.has(root)) clusters.set(root, []);
-    clusters.get(root)!.push(c);
-  }
-  return Array.from(clusters.values());
-}
-
 async function buildLevelGroups(
   conn: AsyncDuckDBConnection,
   table: string,
@@ -109,6 +84,137 @@ async function buildLevelGroups(
   }
   groups.sort((a, b) => a.count - b.count);
   return groups;
+}
+
+// Union fully-populated columns of equal count that correspond 1:1.
+async function clusterDense(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  dense: string[],
+  counts: Record<string, number>,
+): Promise<string[][]> {
+  const parent = new Map(dense.map((c) => [c, c]));
+  const find = (c: string): string => {
+    while (parent.get(c) !== c) {
+      parent.set(c, parent.get(parent.get(c)!)!);
+      c = parent.get(c)!;
+    }
+    return c;
+  };
+  for (let i = 0; i < dense.length; i++) {
+    for (let j = i + 1; j < dense.length; j++) {
+      const a = dense[i];
+      const b = dense[j];
+      // Two fully-populated constants always correspond, whatever the row count.
+      if (counts[a] === counts[b] && (counts[a] === 1 || (await bijective(conn, table, a, b)))) {
+        parent.set(find(a), find(b));
+      }
+    }
+  }
+  const clusters = new Map<string, string[]>();
+  for (const c of dense) {
+    const root = find(c);
+    if (!clusters.has(root)) clusters.set(root, []);
+    clusters.get(root)!.push(c);
+  }
+  return Array.from(clusters.values());
+}
+
+// Every candidate cluster `column` corresponds with on joint rows, member-wise.
+async function matchingClusters(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  column: string,
+  candidates: string[][],
+  coverage: boolean,
+): Promise<string[][]> {
+  const out: string[][] = [];
+  for (const cl of candidates) {
+    let all = true;
+    for (const c of cl) {
+      if (
+        (coverage && !(await sameCoverage(conn, table, column, c))) ||
+        !(await correspondsOnJointRows(conn, table, column, c))
+      ) {
+        all = false;
+        break;
+      }
+    }
+    if (all) out.push(cl);
+  }
+  return out;
+}
+
+// Group sparse columns populated on the same rows that correspond there.
+async function groupByCoverage(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  sparse: string[],
+): Promise<string[][]> {
+  const groups: string[][] = [];
+  for (const column of sparse) {
+    const matches = await matchingClusters(conn, table, column, groups, true);
+    if (matches.length === 1) matches[0].push(column);
+    else groups.push([column]);
+  }
+  return groups;
+}
+
+// Every pair across group and cluster nests both ways, within tolerance.
+async function nestsBothWays(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  group: string[],
+  cluster: string[],
+): Promise<boolean> {
+  for (const a of group) {
+    for (const b of cluster) {
+      if (!(await containmentHolds(conn, table, a, b))) return false;
+      if (!(await containmentHolds(conn, table, b, a))) return false;
+    }
+  }
+  return true;
+}
+
+// Union bijective dense columns, then group or attach sparse ones on joint rows.
+async function clusterByBijection(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  cols: string[],
+  counts: Record<string, number>,
+): Promise<string[][]> {
+  const dense: string[] = [];
+  for (const c of cols) if (await fullyPopulated(conn, table, c)) dense.push(c);
+  const clusters = await clusterDense(conn, table, dense, counts);
+  const denseClusters = clusters.filter((cl) => counts[cl[0]] > 1);
+  // A sparse level's own columns share their rows, so they group first.
+  const groups = await groupByCoverage(
+    conn,
+    table,
+    cols.filter((c) => !dense.includes(c)),
+  );
+  const sparseClusters: string[][] = [];
+  for (const group of groups.filter((g) => g.length > 1)) {
+    // A group missing from one row only is that dense level with a stray gap.
+    const homes: string[][] = [];
+    for (const cl of denseClusters) {
+      if (await nestsBothWays(conn, table, group, cl)) homes.push(cl);
+    }
+    if (homes.length === 1) homes[0].push(...group);
+    else sparseClusters.push(group);
+  }
+  const ambiguous: string[][] = [];
+  // A lone sparse column matching several clusters is ambiguous, so it joins none.
+  for (const [column] of groups.filter((g) => g.length === 1)) {
+    let matches = await matchingClusters(conn, table, column, denseClusters, false);
+    if (matches.length === 0) {
+      matches = await matchingClusters(conn, table, column, sparseClusters, false);
+    }
+    if (matches.length === 1) matches[0].push(column);
+    else if (matches.length === 0) sparseClusters.push([column]);
+    else ambiguous.push([column]);
+  }
+  return [...clusters, ...sparseClusters, ...ambiguous];
 }
 
 // Coarsest-first topological order by pairwise containment: a sparse-but-
@@ -136,10 +242,10 @@ async function orderGroupsByContainment(
     const ready = readyCandidates.length > 0 ? readyCandidates : [...remaining];
     let best = ready[0];
     for (const i of ready) {
-      if (groups[i].count < groups[best].count) best = i;
-      else if (
-        groups[i].count === groups[best].count &&
-        groups[i].cols.join(",") < groups[best].cols.join(",")
+      if (
+        groups[i].count < groups[best].count ||
+        (groups[i].count === groups[best].count &&
+          compareStringLists(groups[i].cols, groups[best].cols) < 0)
       ) {
         best = i;
       }
@@ -151,6 +257,14 @@ async function orderGroupsByContainment(
     }
   }
   return order.map((i) => groups[i]);
+}
+
+// Python list ordering: element-wise, then a shorter prefix first.
+function compareStringLists(a: string[], b: string[]): number {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return a.length - b.length;
 }
 
 async function allContainmentHolds(
@@ -167,25 +281,114 @@ async function allContainmentHolds(
   return true;
 }
 
-async function anyEmbeds(
-  conn: AsyncDuckDBConnection,
-  table: string,
-  coarserCols: string[],
-  finerCols: string[],
-  hasGeom: boolean,
-): Promise<boolean> {
-  for (const a of coarserCols) {
-    for (const b of finerCols) {
-      if (await embeds(conn, table, b, a, hasGeom)) return true;
-    }
-  }
-  return false;
+interface Edge {
+  joins: boolean;
+  embeds: boolean;
+  // Perfect containment into a near-row-unique finer group, with no embedding.
+  strong: boolean;
 }
 
-function sameNamingDigit(a: string, b: string): boolean {
-  const da = a.match(/\d+/);
-  const db = b.match(/\d+/);
-  return da !== null && db !== null && da[0] === db[0];
+type Edges = Map<string, Edge>;
+
+function edgeKey(coarser: number, finer: number): string {
+  return `${coarser},${finer}`;
+}
+
+// Non-floating members only: a fraction's digits satisfy embeds() by chance.
+function embedWitnesses(types: Map<string, string>, columns: string[]): string[] {
+  const witnesses = nonFloating(types, columns);
+  return witnesses.length > 0 ? witnesses : columns;
+}
+
+async function buildEdges(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  groups: Group[],
+  hasGeom: boolean,
+): Promise<Edges> {
+  const types = await columnTypes(conn, table);
+  const edges: Edges = new Map();
+  for (let finerIdx = 0; finerIdx < groups.length; finerIdx++) {
+    const finerCols = groups[finerIdx].cols;
+    const finerWitnesses = embedWitnesses(types, finerCols);
+    const finerStrict = nonFloating(types, finerCols);
+    let finerNearUnique = false;
+    for (const c of finerStrict) {
+      if (await isNearRowUnique(conn, table, c)) {
+        finerNearUnique = true;
+        break;
+      }
+    }
+    for (let coarserIdx = 0; coarserIdx < finerIdx; coarserIdx++) {
+      const coarserCols = groups[coarserIdx].cols;
+      const joins = await allContainmentHolds(conn, table, coarserCols, finerCols);
+      let hasEmbedding = false;
+      if (joins) {
+        outer: for (const a of embedWitnesses(types, coarserCols)) {
+          for (const b of finerWitnesses) {
+            if (await embeds(conn, table, b, a, hasGeom)) {
+              hasEmbedding = true;
+              break outer;
+            }
+          }
+        }
+      }
+      let strong = false;
+      if (joins && !hasEmbedding && finerNearUnique) {
+        outer: for (const a of nonFloating(types, coarserCols)) {
+          for (const b of finerStrict) {
+            if (await containmentPerfect(conn, table, a, b)) {
+              strong = true;
+              break outer;
+            }
+          }
+        }
+      }
+      edges.set(edgeKey(coarserIdx, finerIdx), { joins, embeds: hasEmbedding, strong });
+    }
+  }
+  return edges;
+}
+
+// The single naming digit every column in a group agrees on.
+function groupDigit(cols: string[]): number | null {
+  const digits = new Set<number>();
+  for (const c of cols) {
+    const m = LEVEL_DIGIT_RE.exec(c);
+    if (m !== null) digits.add(Number(m[0]));
+  }
+  return digits.size === 1 ? [...digits][0] : null;
+}
+
+// Edges bracketing a level whose digit sits exactly between its neighbours';
+// a verified direct skip across it then needs no embedding of its own.
+function bridgedEdges(groups: Group[], edges: Edges): Set<string> {
+  const n = groups.length;
+  const digits = groups.map((g) => groupDigit(g.cols));
+  const bridged = new Set<string>();
+  for (let k = 0; k < n; k++) {
+    const dk = digits[k];
+    if (dk === null) continue;
+    for (let c = 0; c < k; c++) {
+      const dc = digits[c];
+      if (dc === null || dc >= dk || !edges.get(edgeKey(c, k))!.joins) continue;
+      for (let f = k + 1; f < n; f++) {
+        const df = digits[f];
+        if (df === null || dk >= df) continue;
+        if (edges.get(edgeKey(k, f))!.joins && edges.get(edgeKey(c, f))!.embeds) {
+          bridged.add(edgeKey(c, k));
+          bridged.add(edgeKey(k, f));
+        }
+      }
+    }
+  }
+  return bridged;
+}
+
+interface ChainResult {
+  chain: Group[];
+  // Each dropped group with the child it nests.
+  vetoed: Array<[string[], string[]]>;
 }
 
 // Longest-path DP over the containment/embedding DAG; a non-constant edge
@@ -194,22 +397,14 @@ async function buildChain(
   conn: AsyncDuckDBConnection,
   table: string,
   groups: Group[],
-): Promise<Group[]> {
+): Promise<ChainResult> {
   const n = groups.length;
-  if (n === 0) return [];
+  if (n === 0) return { chain: [], vetoed: [] };
 
   const hasGeom = await hasGeometryColumn(conn, table);
-  const edges = new Map<string, { joins: boolean; embeds: boolean }>();
-  for (let finerIdx = 0; finerIdx < n; finerIdx++) {
-    for (let coarserIdx = 0; coarserIdx < finerIdx; coarserIdx++) {
-      const coarserCols = groups[coarserIdx].cols;
-      const finerCols = groups[finerIdx].cols;
-      const joins = await allContainmentHolds(conn, table, coarserCols, finerCols);
-      const hasEmbedding = joins && (await anyEmbeds(conn, table, coarserCols, finerCols, hasGeom));
-      edges.set(`${coarserIdx},${finerIdx}`, { joins, embeds: hasEmbedding });
-    }
-  }
+  const edges = await buildEdges(conn, table, groups, hasGeom);
   const noEmbeddingAnywhere = ![...edges.values()].some((e) => e.embeds);
+  const bridged = bridgedEdges(groups, edges);
 
   // Only an unbroken, fully-populated prefix from index 0 is a genuine root;
   // a sparse column can coincidentally have one distinct value.
@@ -239,13 +434,17 @@ async function buildChain(
 
   const bestLen = new Array<number>(n).fill(1);
   const bestPrev = new Array<number | null>(n).fill(null);
+  const bestEdgeEmbeds = new Array<boolean>(n).fill(false);
+  const chainHasEmbed = new Array<boolean>(n).fill(false);
   for (let finerIdx = 0; finerIdx < n; finerIdx++) {
     for (let coarserIdx = 0; coarserIdx < finerIdx; coarserIdx++) {
-      const edge = edges.get(`${coarserIdx},${finerIdx}`)!;
+      const edge = edges.get(edgeKey(coarserIdx, finerIdx))!;
       if (!edge.joins) continue;
       // A coincidentally-constant, non-root column can't extend a chain.
       if (groups[coarserIdx].count === 1 && !inRootPrefix[coarserIdx]) continue;
 
+      // The root's freebie is unconditional only without geometry; with it,
+      // an ungrounded finer group must corroborate.
       let rootFreebie = false;
       if (inRootPrefix[coarserIdx]) {
         if (edge.embeds || !hasGeom) {
@@ -259,20 +458,31 @@ async function buildChain(
           }
         }
       }
-      const justified = rootFreebie || edge.embeds || noEmbeddingAnywhere;
+      const justified =
+        rootFreebie ||
+        edge.embeds ||
+        (edge.strong && chainHasEmbed[coarserIdx]) ||
+        noEmbeddingAnywhere ||
+        bridged.has(edgeKey(coarserIdx, finerIdx));
       if (!justified) continue;
 
       const candidateLen = bestLen[coarserIdx] + 1;
       const prev = bestPrev[finerIdx];
+      // On a tie, an embedded edge outranks an unembedded one, then a
+      // code-shaped sibling outranks a name-shaped one.
       const better =
         candidateLen > bestLen[finerIdx] ||
         (candidateLen === bestLen[finerIdx] &&
           prev !== null &&
-          groupCodeShaped[coarserIdx] &&
-          !groupCodeShaped[prev]);
+          compareBoolPairs(
+            [edge.embeds, groupCodeShaped[coarserIdx]],
+            [bestEdgeEmbeds[finerIdx], groupCodeShaped[prev]],
+          ) > 0);
       if (better) {
         bestLen[finerIdx] = candidateLen;
         bestPrev[finerIdx] = coarserIdx;
+        bestEdgeEmbeds[finerIdx] = edge.embeds;
+        chainHasEmbed[finerIdx] = edge.embeds || chainHasEmbed[coarserIdx];
       }
     }
   }
@@ -289,19 +499,122 @@ async function buildChain(
           : cur[2] > best[2];
     if (better) end = i;
   }
-  const chainIndices: number[] = [];
+  let chainIndices: number[] = [];
   let i: number | null = end;
   while (i !== null) {
     chainIndices.push(i);
     i = bestPrev[i];
   }
   chainIndices.reverse();
-  return chainIndices.map((idx) => groups[idx]);
+  const veto = vetoUnanchoredGroupings(groups, edges, chainIndices, bestEdgeEmbeds, inRootPrefix);
+  chainIndices = veto.chainIndices;
+  return { chain: chainIndices.map((idx) => groups[idx]), vetoed: veto.vetoed };
+}
+
+function compareBoolPairs(a: [boolean, boolean], b: [boolean, boolean]): number {
+  if (a[0] !== b[0]) return a[0] ? 1 : -1;
+  if (a[1] !== b[1]) return a[1] ? 1 : -1;
+  return 0;
+}
+
+function pairShared(a: string, b: string): number {
+  const prefix = commonPrefix([a, b]);
+  const rest = [reversed(a.slice(prefix.length)), reversed(b.slice(prefix.length))];
+  return prefix.length + commonPrefix(rest).length;
+}
+
+// Most prefix+suffix text one column per set shares, middles kept distinct.
+function sharedNamingLength(columnSets: string[][]): number {
+  let best = 0;
+  const shortest = columnSets.reduce((m, s) => (s.length < m.length ? s : m));
+  for (const reference of shortest) {
+    const picked = columnSets.map((cols) =>
+      cols.reduce((m, c) => (pairShared(reference, c) > pairShared(reference, m) ? c : m)),
+    );
+    const prefix = commonPrefix(picked);
+    const rest = picked.map((p) => reversed(p.slice(prefix.length)));
+    const suffixLength = commonPrefix(rest).length;
+    const middles = rest.map((r) => r.slice(suffixLength));
+    if (middles.every((m) => m !== "") && new Set(middles).size === middles.length) {
+      best = Math.max(best, prefix.length + suffixLength);
+    }
+  }
+  return best;
+}
+
+// Drop a level linked to its child only unembedded, the odd one out by naming.
+function vetoUnanchoredGroupings(
+  groups: Group[],
+  edges: Edges,
+  chainIndices: number[],
+  bestEdgeEmbeds: boolean[],
+  inRootPrefix: boolean[],
+): { chainIndices: number[]; vetoed: Array<[string[], string[]]> } {
+  const vetoed: Array<[string[], string[]]> = [];
+  const embedded = [...bestEdgeEmbeds];
+  let pos = 1;
+  while (pos < chainIndices.length - 1) {
+    const [parent, group, child] = chainIndices.slice(pos - 1, pos + 2);
+    const withGroup = chainIndices.map((i) => groups[i].cols);
+    const without = sharedNamingLength([...withGroup.slice(0, pos), ...withGroup.slice(pos + 1)]);
+    const withoutChild = sharedNamingLength([
+      ...withGroup.slice(0, pos + 1),
+      ...withGroup.slice(pos + 2),
+    ]);
+    const parentChild = edges.get(edgeKey(parent, child))!;
+    if (
+      !embedded[child] &&
+      !inRootPrefix[group] &&
+      parentChild.joins &&
+      without > Math.max(sharedNamingLength(withGroup), withoutChild)
+    ) {
+      vetoed.push([groups[group].cols, groups[child].cols]);
+      embedded[child] = parentChild.embeds;
+      chainIndices = [...chainIndices.slice(0, pos), ...chainIndices.slice(pos + 1)];
+      pos = 1;
+      continue;
+    }
+    pos += 1;
+  }
+  return { chainIndices, vetoed };
 }
 
 function numberedTarget(template: string, level: number, index: number): string {
   const rendered = template.replace("{n}", String(level));
-  return index === 0 ? rendered : `${rendered}${index}`;
+  return index === 0 ? rendered : siblingName(rendered, index);
+}
+
+// Literal parts of template's own text that other's template lacks.
+function roleMarkers(template: string, other: string): string[] {
+  const otherParts = new Set(other.split("{n}"));
+  return template.split("{n}").filter((p) => p !== "" && !otherParts.has(p));
+}
+
+// Name a nameless level's shape-only codes by the schema's own role markers.
+function breakShapeTie(
+  roles: Map<string, "code" | "name">,
+  embedsParent: Map<string, boolean>,
+  schema: TargetSchema,
+): void {
+  const shapeOnly = [...roles.keys()].filter(
+    (c) => roles.get(c) === "code" && !embedsParent.get(c),
+  );
+  if ([...roles.values()].includes("name") || shapeOnly.length < MIN_TIED_CODES) return;
+  const nameMarkers = roleMarkers(schema.nameField, schema.codeField);
+  const codeMarkers = roleMarkers(schema.codeField, schema.nameField);
+  const named = shapeOnly.filter(
+    (c) => nameMarkers.some((m) => c.includes(m)) && !codeMarkers.some((m) => c.includes(m)),
+  );
+  if (named.length < shapeOnly.length) for (const c of named) roles.set(c, "name");
+}
+
+async function allFullyPopulated(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  cols: string[],
+): Promise<boolean> {
+  for (const c of cols) if (!(await fullyPopulated(conn, table, c))) return false;
+  return true;
 }
 
 // Each column's role comes from its own evidence only, never a sibling's:
@@ -312,26 +625,35 @@ async function assignChainRoles(
   chain: Group[],
   schema: TargetSchema,
   counts: Record<string, number>,
+  offset: number,
 ): Promise<Map<string, CrosswalkRow>> {
   const rows = new Map<string, CrosswalkRow>();
+  // A constant root folds away with no deeper level, or a fully-populated
+  // one; a root above a partial deeper level is the only depth evidence.
+  const nextFullyPopulated =
+    chain.length > 1 && (await allFullyPopulated(conn, table, chain[1].cols));
   for (let index = 0; index < chain.length; index++) {
     const { count, cols } = chain[index];
-    if (count === 1) continue;
-    const level = index;
+    const isFoldableRoot = index === 0 && count === 1 && (chain.length === 1 || nextFullyPopulated);
+    if (isFoldableRoot && (await fullyPopulated(conn, table, cols[0]))) continue;
+    const level = index + offset;
     const parentCols = index > 0 ? chain[index - 1].cols : [];
 
+    const embedsParent = new Map<string, boolean>();
     const roles = new Map<string, "code" | "name">();
     for (const c of cols) {
-      let embedsParent = false;
+      let parentEmbedded = false;
       for (const p of parentCols) {
         if (await embeds(conn, table, c, p)) {
-          embedsParent = true;
+          parentEmbedded = true;
           break;
         }
       }
-      const isCode = embedsParent || (await looksCodeShaped(conn, table, c));
+      embedsParent.set(c, parentEmbedded);
+      const isCode = parentEmbedded || (await looksCodeShaped(conn, table, c));
       roles.set(c, isCode ? "code" : "name");
     }
+    breakShapeTie(roles, embedsParent, schema);
 
     const parentCode = parentCols.length > 0 ? parentCols[0] : null;
     const templates: Array<["code" | "name", string]> = [
@@ -339,7 +661,10 @@ async function assignChainRoles(
       ["name", schema.nameField],
     ];
     for (const [role, template] of templates) {
-      const members = cols.filter((c) => roles.get(c) === role);
+      // A code embedding its parent outranks a surrogate ID for the bare name.
+      const members = cols
+        .filter((c) => roles.get(c) === role)
+        .sort((a, b) => Number(!embedsParent.get(a)) - Number(!embedsParent.get(b)));
       for (let memberIndex = 0; memberIndex < members.length; memberIndex++) {
         const column = members[memberIndex];
         const uniqueCount =
@@ -383,6 +708,7 @@ async function bracketLevel(
   counts: Record<string, number>,
   schema: TargetSchema,
   chainRows: Map<string, CrosswalkRow>,
+  offset: number,
 ): Promise<Map<string, CrosswalkRow>> {
   const codeColumn = chain[level].cols[0];
   const winners = new Set<string>();
@@ -401,34 +727,35 @@ async function bracketLevel(
 
   const rows = new Map<string, CrosswalkRow>();
   let winnerIndex = existingNameMembers.length;
+  const levelN = level + offset;
   for (const column of candidates) {
     const uniqueCount = await uniqueCountFor(column);
-    const collapseRatio = levelUnitCount > 0 ? 1 - counts[column] / levelUnitCount : 1;
+    const collapseRatio = 1 - counts[column] / levelUnitCount;
     if (!winners.has(column)) {
       rows.set(column, {
         sourceColumn: column,
         targetColumn: null,
-        note: `${NOTE_AMBIGUOUS}, level ${level}`,
+        note: `${NOTE_AMBIGUOUS}, level ${levelN}`,
         role: null,
-        level,
+        level: levelN,
         uniqueCount,
       });
     } else if (levelHasName && collapseRatio > WINNER_MAX_COLLAPSE_RATIO) {
       rows.set(column, {
         sourceColumn: column,
         targetColumn: null,
-        note: `${NOTE_SUPPLEMENTAL}, superset of level ${level}`,
+        note: `${NOTE_SUPPLEMENTAL}, superset of level ${levelN}`,
         role: null,
-        level,
+        level: levelN,
         uniqueCount,
       });
     } else {
       rows.set(column, {
         sourceColumn: column,
-        targetColumn: numberedTarget(schema.nameField, level, winnerIndex),
+        targetColumn: numberedTarget(schema.nameField, levelN, winnerIndex),
         note: "",
         role: "name",
-        level,
+        level: levelN,
         uniqueCount,
       });
       winnerIndex += 1;
@@ -445,6 +772,7 @@ async function bracketOtherColumns(
   counts: Record<string, number>,
   schema: TargetSchema,
   chainRows: Map<string, CrosswalkRow>,
+  offset: number,
 ): Promise<Map<string, CrosswalkRow>> {
   const codeCounts = chain.map((g) => g.count);
   const bracketed = new Map<number, string[]>();
@@ -467,18 +795,49 @@ async function bracketOtherColumns(
       counts,
       schema,
       chainRows,
+      offset,
     );
     for (const [k, v] of levelRows) rows.set(k, v);
   }
   return rows;
 }
 
-// Resolve every candidate column to a level/role; `schema` only renders
-// target names, never affects structural detection.
+// Label each vetoed grouping supplemental over the chain level it nests.
+function vetoedRows(
+  chain: Group[],
+  vetoed: Array<[string[], string[]]>,
+  counts: Record<string, number>,
+  offset: number,
+): Map<string, CrosswalkRow> {
+  const levelOf = new Map<string, number>();
+  chain.forEach((g, index) => g.cols.forEach((c) => levelOf.set(c, index)));
+  const rows = new Map<string, CrosswalkRow>();
+  for (const [groupCols, childCols] of vetoed) {
+    const childLevel = levelOf.get(childCols[0]);
+    if (childLevel === undefined) continue;
+    const levelN = childLevel + offset;
+    for (const column of groupCols) {
+      rows.set(column, {
+        sourceColumn: column,
+        targetColumn: null,
+        note: `${NOTE_SUPPLEMENTAL}, superset of level ${levelN}`,
+        role: null,
+        level: levelN,
+        uniqueCount: counts[column],
+      });
+    }
+  }
+  return rows;
+}
+
+// Resolve every candidate column to a level/role; `schema` only renders target
+// names. `level` anchors the finest level; else impliedCountry numbers a varying root 1.
 export async function resolveColumns(
   conn: AsyncDuckDBConnection,
   table: string,
   schema: TargetSchema,
+  level: number | null = null,
+  impliedCountry = false,
 ): Promise<Map<string, ResolvedColumn>> {
   const columns = await candidateColumns(conn, table);
   const counts = await distinctCounts(conn, table, columns);
@@ -486,20 +845,36 @@ export async function resolveColumns(
   // An all-null column has no evidence either way, same principle as embeds();
   // a date/time column is categorically never an admin identity column.
   const temporal = await temporalColumns(conn, table, columns);
-  const chainableColumns = columns.filter((c) => counts[c] > 0 && !temporal.has(c));
+  const fractional = await fractionalColumns(conn, table, columns);
+  const chainableColumns = columns.filter(
+    (c) => counts[c] > 0 && !temporal.has(c) && !fractional.has(c),
+  );
   let levelGroups = await buildLevelGroups(conn, table, chainableColumns, counts);
   levelGroups = await orderGroupsByContainment(conn, table, levelGroups);
-  let chain = await buildChain(conn, table, levelGroups);
+  let { chain, vetoed } = await buildChain(conn, table, levelGroups);
   // A lone level with a lone column has no parent to embed and no sibling
   // to pair with, indistinguishable from an arbitrary non-hierarchy column.
   if (chain.length === 1 && chain[0].cols.length < MIN_ROOT_EVIDENCE_COLUMNS) {
     chain = [];
   }
 
-  const rows = await assignChainRoles(conn, table, chain, schema, counts);
+  let offset = 0;
+  if (chain.length > 0 && level !== null) offset = level - (chain.length - 1);
+  else if (chain.length > 0 && impliedCountry && chain[0].count > 1) offset = 1;
+  const rows = await assignChainRoles(conn, table, chain, schema, counts, offset);
+  const levels = [...rows.values()].flatMap((r) => (r.level === null ? [] : [r.level]));
+  const lowest = levels.length > 0 ? Math.min(...levels) : 0;
+  if (lowest < 0) {
+    throw new Error(
+      `level=${level} is too shallow: found ${chain.length} nested levels, so the coarsest would be ${lowest}`,
+    );
+  }
 
   const chainedColumns = new Set(chain.flatMap((g) => g.cols));
-  const otherColumns = columns.filter((c) => !chainedColumns.has(c));
+  const vetoRows = vetoedRows(chain, vetoed, counts, offset);
+  const otherColumns = columns.filter(
+    (c) => !chainedColumns.has(c) && !vetoRows.has(c) && !fractional.has(c),
+  );
   const otherRows = await bracketOtherColumns(
     conn,
     table,
@@ -508,8 +883,10 @@ export async function resolveColumns(
     counts,
     schema,
     rows,
+    offset,
   );
   for (const [k, v] of otherRows) rows.set(k, v);
+  for (const [k, v] of vetoRows) rows.set(k, v);
 
   for (const column of columns) {
     if (!rows.has(column)) {
@@ -543,9 +920,10 @@ export async function inferSchemaMap(
   conn: AsyncDuckDBConnection,
   table: string,
   schema: TargetSchema,
+  level: number | null = null,
 ): Promise<CrosswalkRow[]> {
   const columns = await candidateColumns(conn, table);
-  const rows = await resolveColumns(conn, table, schema);
+  const rows = await resolveColumns(conn, table, schema, level, true);
 
   const position = new Map(columns.map((c, i) => [c, i]));
   const entries = columns.map((c) => rows.get(c)!);

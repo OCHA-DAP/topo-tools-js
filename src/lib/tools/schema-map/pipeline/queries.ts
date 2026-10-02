@@ -1,8 +1,12 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { isTemporalDuckdbType } from "$lib/db/columnTypes";
+import { isFloatingDuckdbType, isTemporalDuckdbType } from "$lib/db/columnTypes";
 import {
   CODE_SHAPE_MAJORITY,
+  MAX_TOLERATED_COLLAPSE,
+  MIN_FINEST_UNIQUENESS_RATIO,
+  MIN_GROUPS_FOR_STRICT_CONTAINMENT,
   MIN_GROUPS_FOR_TOLERANCE,
+  MIN_JOINT_EVIDENCE_FOR_BIJECTION,
   MIN_ROWS_FOR_SPATIAL_COHERENCE,
   MIN_SPATIAL_R2,
 } from "./constants";
@@ -113,7 +117,8 @@ export async function embeds(
 ): Promise<boolean> {
   const qc = quoteIdent(child);
   const qp = quoteIdent(parent);
-  const evaluatedWhere = `${qc} IS NOT NULL AND ${qp} IS NOT NULL`;
+  // A blank parent value is contained in every string, so it's no evidence.
+  const evaluatedWhere = `${qc} IS NOT NULL AND trim(CAST(${qp} AS VARCHAR)) != ''`;
   const notContains = `NOT contains(CAST(${qc} AS VARCHAR), CAST(${qp} AS VARCHAR))`;
   const r = await conn.query(`
     SELECT
@@ -201,6 +206,10 @@ export async function bijective(
   a: string,
   b: string,
 ): Promise<boolean> {
+  const r = await conn.query(`SELECT COUNT(*) AS n FROM ${table}`);
+  if (num((r.toArray()[0] as { n: number | bigint }).n) < MIN_JOINT_EVIDENCE_FOR_BIJECTION) {
+    return false;
+  }
   return (await containmentHolds(conn, table, a, b)) && (await containmentHolds(conn, table, b, a));
 }
 
@@ -219,4 +228,142 @@ export async function combinedDistinctCount(
     )
   `);
   return num((r.toArray()[0] as { n: number | bigint }).n);
+}
+
+// Every non-null finer maps to exactly one non-null coarser, on enough groups.
+export async function containmentPerfect(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  coarser: string,
+  finer: string,
+): Promise<boolean> {
+  const qc = quoteIdent(coarser);
+  const qf = quoteIdent(finer);
+  const r = await conn.query(`
+    SELECT COUNT(DISTINCT ${qc}) AS coarser_count,
+           COUNT(*) FILTER (WHERE ${qc} IS NULL) AS null_coarser
+    FROM ${table}
+    WHERE ${qf} IS NOT NULL
+    GROUP BY ${qf}
+  `);
+  const groups = r.toArray() as Array<{
+    coarser_count: number | bigint;
+    null_coarser: number | bigint;
+  }>;
+  if (groups.length < MIN_GROUPS_FOR_STRICT_CONTAINMENT) return false;
+  return groups.every((g) => num(g.coarser_count) === 1 && num(g.null_coarser) === 0);
+}
+
+// column's own distinct count nearly matches the table's row count.
+export async function isNearRowUnique(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  column: string,
+): Promise<boolean> {
+  const r = await conn.query(
+    `SELECT COUNT(*) AS total, COUNT(DISTINCT ${quoteIdent(column)}) AS dc FROM ${table}`,
+  );
+  const row = r.toArray()[0] as Record<string, number | bigint>;
+  const total = num(row.total);
+  return total > 0 && num(row.dc) / total >= MIN_FINEST_UNIQUENESS_RATIO;
+}
+
+// x determines y on rows where both are populated, ignoring the rest.
+export async function companionHolds(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  x: string,
+  y: string,
+): Promise<boolean> {
+  const qx = quoteIdent(x);
+  const qy = quoteIdent(y);
+  const r = await conn.query(`
+    SELECT COUNT(DISTINCT ${qy}) AS y_count
+    FROM ${table}
+    WHERE ${qx} IS NOT NULL AND ${qy} IS NOT NULL
+    GROUP BY ${qx}
+  `);
+  const groups = (r.toArray() as Array<{ y_count: number | bigint }>).map((g) => num(g.y_count));
+  const violators = groups.filter((n) => n > 1);
+  const tolerance = groups.length > MIN_GROUPS_FOR_TOLERANCE ? 1 : 0;
+  // One duplicated pair is tolerated; a placeholder spanning many values isn't.
+  return violators.length <= tolerance && violators.every((n) => n <= MAX_TOLERATED_COLLAPSE);
+}
+
+// a and b correspond 1:1 where both are populated, on enough values.
+export async function correspondsOnJointRows(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  a: string,
+  b: string,
+): Promise<boolean> {
+  const qa = quoteIdent(a);
+  const qb = quoteIdent(b);
+  const r = await conn.query(`
+    SELECT COUNT(DISTINCT ${qa}) FILTER (WHERE ${qb} IS NOT NULL) AS joint_a,
+           COUNT(DISTINCT ${qb}) FILTER (WHERE ${qa} IS NOT NULL) AS joint_b,
+           COUNT(DISTINCT ${qa}) AS all_a, COUNT(DISTINCT ${qb}) AS all_b
+    FROM ${table}
+  `);
+  const row = r.toArray()[0] as Record<string, number | bigint>;
+  const jointA = num(row.joint_a);
+  // Covering every value of both columns is enough evidence for a small level.
+  const covered = jointA === num(row.all_a) && num(row.joint_b) === num(row.all_b);
+  const enough =
+    jointA >= MIN_GROUPS_FOR_STRICT_CONTAINMENT ||
+    (covered && jointA >= MIN_JOINT_EVIDENCE_FOR_BIJECTION);
+  return (
+    enough && (await companionHolds(conn, table, a, b)) && (await companionHolds(conn, table, b, a))
+  );
+}
+
+// a and b are populated on exactly the same rows.
+export async function sameCoverage(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  a: string,
+  b: string,
+): Promise<boolean> {
+  const r = await conn.query(`
+    SELECT COUNT(*) AS n FROM ${table}
+    WHERE (${quoteIdent(a)} IS NULL) != (${quoteIdent(b)} IS NULL)
+  `);
+  return num((r.toArray()[0] as { n: number | bigint }).n) === 0;
+}
+
+export async function columnTypes(
+  conn: AsyncDuckDBConnection,
+  table: string,
+): Promise<Map<string, string>> {
+  const desc = await conn.query(`DESCRIBE ${table}`);
+  const rows = desc.toArray() as Array<{ column_name: string; column_type: string }>;
+  return new Map(rows.map((r) => [r.column_name, r.column_type]));
+}
+
+// Every float/decimal column holding a non-whole value: a measurement, never an identity.
+export async function fractionalColumns(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  columns: string[],
+): Promise<Set<string>> {
+  const types = await columnTypes(conn, table);
+  const numeric = columns.filter((c) => {
+    const t = types.get(c) ?? "";
+    return t === "DOUBLE" || t === "FLOAT" || t.startsWith("DECIMAL");
+  });
+  if (numeric.length === 0) return new Set();
+  const select = numeric
+    .map((c, i) => {
+      const q = quoteIdent(c);
+      return `COALESCE(bool_or(${q} != trunc(${q})), false) AS "__fr_${i}"`;
+    })
+    .join(", ");
+  const r = await conn.query(`SELECT ${select} FROM ${table}`);
+  const row = r.toArray()[0] as Record<string, boolean>;
+  return new Set(numeric.filter((_c, i) => row[`__fr_${i}`]));
+}
+
+// Non-floating members of columns; an all-floating group has none, no fallback.
+export function nonFloating(types: Map<string, string>, columns: string[]): string[] {
+  return columns.filter((c) => !isFloatingDuckdbType(types.get(c) ?? ""));
 }

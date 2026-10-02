@@ -62,11 +62,12 @@ map measured 2.07 GB and 0.83 GB on the same file.
 `schema-map` structurally infers which columns in a polygon layer's
 attribute table form a nested admin hierarchy (e.g. country -> province ->
 district), and proposes a crosswalk to a target schema for a human to
-review and edit. It never inspects column names or value vocabulary: every
-decision comes from cardinality, containment, textual embedding, and
-bijection alone. Ported from topo-tools-py's `schema-map`
-(`docs/explanation/schema_map.md` there); this app carries over the same
-algorithm, adapted to many small targeted DuckDB queries orchestrated by
+review and edit. It never matches column names or value vocabulary against
+a known list: levels come from cardinality, containment, textual embedding,
+and correspondence, and column names are only compared with each other to
+settle a tie. Ported from topo-tools-py's `schema-map`
+(`docs/dev/explanation/1-schema/schema_map.md` there) at its 0.12 algorithm;
+this app carries over the same algorithm, adapted to many small targeted DuckDB queries orchestrated by
 TypeScript control flow instead of Python loops around `conn.execute()`
 calls, following this app's own "scale with columns, not rows" precedent
 already used by `package-polygons`.
@@ -86,18 +87,22 @@ fallback to fall back to.
    (`pipeline/constants.ts`'s `isNoiseColumn`, matching topo-tools-py's
    GDAL-collision-suffix-aware check exactly).
 3. **Cardinality** (`pipeline/queries.ts`'s `distinctCounts`) - one query,
-   `COUNT(DISTINCT)` for every candidate column at once. An all-null
-   column is filtered out of chain candidacy but kept for bracketing.
-4. **Level groups** (`pipeline/inference.ts`'s `buildLevelGroups`) - group
-   by identical count, then union-find cluster same-count columns pairwise
-   bijective with each other, via `pipeline/queries.ts`'s
-   `containmentHolds`/`bijective`.
+   `COUNT(DISTINCT)` for every candidate column at once. An all-null,
+   date/time or fractional column is filtered out of chain candidacy.
+4. **Level groups** (`pipeline/inference.ts`'s `clusterByBijection`) -
+   union-find clusters fully-populated columns of equal count that are
+   bijective, then groups sparse columns by joint-row correspondence and
+   attaches them to a dense cluster where unambiguous.
 5. **Chain** (`pipeline/inference.ts`'s `buildChain`) - longest-path DP over
    the full containment/embedding DAG between every group pair, not just
-   cardinality-adjacent ones.
+   cardinality-adjacent ones, then `vetoUnanchoredGroupings` drops a level
+   that alone breaks the chain's naming.
 6. **Role assignment** (`pipeline/inference.ts`'s `assignChainRoles`) - per
    level, per column, independently: `code` if it embeds a resolved parent
-   column or looks code-shaped, `name` otherwise.
+   column or looks code-shaped, `name` otherwise, with `breakShapeTie`
+   naming a nameless level's codes by the template text. Levels are
+   numbered from the finest level when given, else a varying coarsest
+   level is 1.
 7. **Bracketing** (`pipeline/inference.ts`'s `bracketOtherColumns`/
    `bracketLevel`) - leftover columns slotted into the nearest chain level
    by cardinality range, resolved to `name`, `supplemental`, or
@@ -173,14 +178,17 @@ real hierarchy); a blanket version applied everywhere regressed
 correctly-chaining Belgium/Costa Rica data, so it stays scoped to these two
 call sites.
 
-### Temporal columns are excluded by type, not name
+### Temporal and fractional columns are excluded by type, not name
 
 A `DATE`/`TIME`/`TIMESTAMP`/`INTERVAL` column is excluded from chain
 candidacy before cardinality sees it (`$lib/db/columnTypes.ts`'s
 `isTemporalDuckdbType`), and never wins the code/name tiebreak via
 `looksCodeShaped`'s digit-majority heuristic: a formatted date is
-digit-heavy but carries no hierarchy meaning. This is a type check, never a
-name check, consistent with the rest of the algorithm.
+digit-heavy but carries no hierarchy meaning. A float or decimal column
+holding a non-whole value is a measurement (area, a coordinate) and is
+excluded the same way, and a floating column never serves as embedding
+evidence, since a fraction's digits contain short codes by chance. These
+are type checks, never name checks.
 
 ### Column resolution is one shared function
 
@@ -191,16 +199,53 @@ wrapper around it. `schema-fill`'s auto-detect path and the `package-*`
 tools' level-detection engine both consume `resolveColumns` directly, so no
 tool's structural understanding of a file can drift from schema-map's own.
 
-### Deferred refinements
+### Why sparse columns cluster on joint rows
 
-topo-tools-py's matcher also carries `_containment_perfect`/"strong" edges
-with chain-embedding propagation, a bijection joint-evidence threshold with
-same-naming-digit bridging, skip-level "bridged" edges, and folding a
-constant root out of the crosswalk output entirely. None of these are
-ported: they refine narrow sparse-companion and cosmetic cases with no
-known regression on this app's own data, and the root-detection data they'd
-otherwise fold away must stay visible for `package-polygons`'s own
-root-level handling.
+COD-AB files often carry alternate-language name columns that are only
+populated for part of the country. Strict bijection fails on them (a NULL
+maps to every value), so they used to fall out of their level and get
+bracketed as `ambiguous`. A sparse column is instead compared with each
+cluster only where both are populated, and needs at least 10 joint values,
+or every value of both sides, so two small coincidentally aligned columns
+are not merged (topo-tools-py's ADR-0114). A column matching
+several clusters joins none, since the data cannot say which level it
+belongs to.
+
+### Why strong, bridged and vetoed levels
+
+Three edge cases from topo-tools-py's corpus extend the chain rules. A
+finer level whose codes are surrogate IDs (nothing embeds) still chains
+under a parent it maps perfectly into, when it is nearly row-unique and
+the chain above it is already grounded by an embedding (a "strong" edge).
+A name-only middle level (an adm2 with names but no codes between adm1 and
+adm3) can chain when its naming digit sits between its neighbours' and the
+skip across it embeds (a "bridged" edge). And a level linked to its child
+only by bare containment is dropped as a supplemental grouping when the
+chain's columns share more naming text without it: data alone can't tell
+Nigeria's senatorial districts over LGAs from a real level
+(topo-tools-py's ADR-0113). Names may veto a level this way, never add
+one, and are only compared with each other, never against a vocabulary.
+
+### Level numbering
+
+A file usually holds one country, with its admin0 either constant or
+absent. A constant root folds away and the next level is 1; without one,
+the coarsest varying level is still numbered 1, assuming one country above
+the file. A file that lacks its coarser levels (an admin3-only extract) or
+spans several countries numbers wrongly under that assumption, so the
+finest level can be set explicitly and the rest are numbered upward from
+it by nesting depth.
+
+### Level detection for other tools
+
+`levelColumns.ts` groups the resolved rows by level for `schema-fill`,
+`schema-join`, the code tools and the `package-*` tools. It diffs naming
+anchors on the columns sharing the most text across levels, rather than
+each level's highest-cardinality column, because a level's alternate-name
+column can outnumber its code and break the shared prefix. It also adds a
+name-only leaf level when a finer name family (`adm4_name` under coded
+`adm3_*`) is unique within each parent: structural inference can't see it,
+since a level with no code has nothing to embed.
 
 ### Query shape
 
@@ -225,16 +270,11 @@ topo-tools-py's own explicit `ORDER BY column_order` at CSV-export time.
 
 ### Verification
 
-Cross-checked against topo-tools-py's own `schema-map` CLI on three real
-files from the portolan catalog: `cod/latest/adm2/original.parquet` (a
-clean 3-level chain with the `area_sqkm`/`adm2_pcode1` role-assignment
-case above), `mdg/latest/mgd_op_adm1_old_names_pcodes/original.parquet`
-(the constant-admin0-then-two-nesting-code-levels case exercising the
-no-embedding-anywhere fallback), and `mdg/latest/adm4/original.parquet` (a
-full 5-level chain, 17,465 rows). All three produced identical
-`source_column`/`target_column`/`unique_count`/`note` values and row order
-to the Python CLI's output, modulo one cosmetic CSV-writer difference:
-DuckDB's `COPY ... (FORMAT CSV, HEADER)` quotes an empty _string_ as `""`
-to distinguish it from a NULL, where Python's `csv` module writes both
-identically as a bare empty field. Both represent the same value once
-parsed.
+Cross-checked against topo-tools-py's `schema-map --map-only` on eleven
+portolan `original` files (AFG, AGO, ARM, BDI, BEN, BFA, BGD, ETH, GNB, LAO,
+MEX, ZMB, admin1 to admin4) and five derived variants (anonymised column
+names, custom names, a name-only middle level, a partly populated alternate
+name, and an explicit finest level), with identical crosswalks, plus the
+too-shallow error. `detectLevelColumnsOrSingle` matched py's
+`detect_level_columns_or_single` on twelve of these, including two with a
+name-only leaf level.

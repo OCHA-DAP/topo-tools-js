@@ -49,6 +49,8 @@
   let codeField = $state(DEFAULT_TARGET_SCHEMA.codeField);
   syncParam("name", textParam, () => nameField, (v) => (nameField = v));
   syncParam("code", textParam, () => codeField, (v) => (codeField = v));
+  let finestLevel = $state("");
+  syncParam("level", textParam, () => finestLevel, (v) => (finestLevel = v));
 
   let inferred = $state.raw<CrosswalkRow[]>([]);
   // Templates the current `inferred` came from; applying orders columns by them too.
@@ -131,7 +133,11 @@
     running = true;
     try {
       const schema = { nameField, codeField };
-      inferred = await inferCrosswalk(duckdbState.conn!, schema);
+      inferred = await inferCrosswalk(
+        duckdbState.conn!,
+        schema,
+        finestLevel.trim() === "" ? null : Number(finestLevel),
+      );
       inferredSchema = schema;
       error = null;
     } catch (e) {
@@ -160,8 +166,8 @@
 
   $effect(() => {
     // templateValid only flips on validity, so read both templates to reschedule on every edit.
-    void [nameField, codeField];
-    if (!loaded || !templateValid) return;
+    void [nameField, codeField, finestLevel];
+    if (!loaded || !templateValid || !levelValid) return;
     const timer = setTimeout(() => untrack(() => enqueue(infer)), 400);
     return () => clearTimeout(timer);
   });
@@ -217,6 +223,7 @@
   }
 
   const templateValid = $derived(nameField.includes("{n}") && codeField.includes("{n}"));
+  const levelValid = $derived(/^\s*\d*\s*$/.test(finestLevel));
 
   const savedMismatch = $derived.by(() => {
     if (!saved || inferred.length === 0) return null;
@@ -316,6 +323,17 @@
         </label>
         {#if !templateValid}
           <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
+        {/if}
+        <label class="field">
+          <span>Finest level</span>
+          <input type="text" inputmode="numeric" placeholder="auto" bind:value={finestLevel} />
+        </label>
+        <p class="field-hint">
+          The finest level's number, for a file that lacks its coarser levels or spans several countries. Auto numbers a
+          varying coarsest level 1.
+        </p>
+        {#if !levelValid}
+          <p class="field-error">Finest level must be a whole number.</p>
         {/if}
         {#if running}<p class="status">Mapping…</p>{/if}
       </section>

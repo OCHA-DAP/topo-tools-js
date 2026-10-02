@@ -35,6 +35,10 @@ export const EXCLUDED_COLUMNS = new Set(["fid", "geom"]);
 
 export const CODE_SHAPE_MAJORITY = 0.5;
 
+// A nameless level needs at least this many shape-only codes before the
+// schema's role markers break the tie.
+export const MIN_TIED_CODES = 2;
+
 // Collapse-ratio ceiling below which a non-bijective bracket winner becomes a
 // numbered sibling instead of supplemental (empirical, topo-tools-py).
 export const WINNER_MAX_COLLAPSE_RATIO = 0.3;
@@ -47,6 +51,14 @@ export const MIN_GROUPS_FOR_TOLERANCE = 2;
 // evidence to judge centroid spread either way.
 export const MIN_ROWS_FOR_SPATIAL_COHERENCE = 10;
 export const MIN_SPATIAL_R2 = 0.7;
+
+// containmentPerfect needs this many finer-side groups to count as evidence.
+export const MIN_GROUPS_FOR_STRICT_CONTAINMENT = 10;
+export const MIN_FINEST_UNIQUENESS_RATIO = 0.9;
+
+export const MIN_JOINT_EVIDENCE_FOR_BIJECTION = 2;
+// companionHolds tolerates one duplicated pair, never a value spanning more.
+export const MAX_TOLERATED_COLLAPSE = 2;
 
 // A lone chain needs at least this many columns to be trusted as real
 // hierarchy evidence rather than an arbitrary unrelated column.
