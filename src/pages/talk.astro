@@ -16,7 +16,14 @@ const toSlides = async (md: typeof intro) =>
     .filter(Boolean);
 
 // The main tool of each step on the landing page, in pipeline order.
-const mainTools = ["schema-map", "topo-clean", "edge-match", "code-update", "package"];
+const mainTools = [
+  "schema-map",
+  "topo-clean",
+  "edge-match",
+  "code-update",
+  "name-clean",
+  "package",
+];
 const demos = mainTools
   .map((slug) => tools.find((t) => t.slug === slug))
   .filter((t) => t?.demo)

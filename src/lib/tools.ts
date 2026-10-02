@@ -146,4 +146,18 @@ export const tools: Tool[] = [
       "Reconcile an already-coded layer against an uncoded candidate: retain codes for unchanged units, assign fresh ones for the rest.",
     iconHref: "/icons/tools/code-update.svg",
   },
+  {
+    slug: "name-detect",
+    name: "Name Detect",
+    tagline:
+      "Check a coded layer's unit names for blanks, placeholders, duplicates under one parent, encoding errors and invisible characters, without changing anything.",
+    iconHref: "/icons/tools/name-detect.svg",
+  },
+  {
+    slug: "name-clean",
+    name: "Name Clean",
+    tagline:
+      "Fix the name defects that can't change a name's meaning (spacing, invisible characters, Unicode normalization, encoding repairs) and report the rest for review.",
+    iconHref: "/icons/tools/name-clean.svg",
+  },
 ];

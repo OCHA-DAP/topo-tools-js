@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/name-detect/App.svelte";
+---
+
+<Layout
+  title="Name Clean: fix admin unit names in your browser"
+  description="Browser-only tool that fixes the safe defects in a coded admin boundary layer's unit names (spacing, invisible characters, Unicode normalization, encoding repairs) and reports the rest for review."
+>
+  <App clean client:load />
+</Layout>

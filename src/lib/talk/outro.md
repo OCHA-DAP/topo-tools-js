@@ -14,9 +14,6 @@ The Humanitarian Data Model has the same idea for tabular data: check your data 
 
 ## Try it
 
-- Tools: [ocha-dap.github.io/topo-tools-js](/)
-- Python and CLI: [topo-tools.org/docs](https://topo-tools.org/docs/)
-- Claude Code plugin: "Using with agents" in the Python docs
-- Code: [github.com/OCHA-DAP/topo-tools-js](https://github.com/OCHA-DAP/topo-tools-js)
+- [topo-tools.org](/)
 
-Everything is open source under the MIT licence. Start with any tool's "Try with demo data" link, then drop in your own file.
+Everything is open source under the MIT licence. The site links to the Python CLI docs, the Claude Code plugin and the code. Start with any tool's "Try with demo data" link, then drop in your own file.

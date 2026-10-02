@@ -36,7 +36,10 @@ export type ExportSource =
   | "code_create"
   | "code_create_issues"
   | "code_update"
-  | "code_update_changelog";
+  | "code_update_changelog"
+  | "name_detect_issues"
+  | "name_clean"
+  | "name_clean_issues";
 
 export type ExportKind = "geojson_cached" | "gdal" | "parquet" | "csv";
 
@@ -398,6 +401,46 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
       "match_method",
       "code_outcome",
       "reason",
+    ],
+  },
+  name_detect_issues: {
+    table: "nd_report",
+    attrTable: null,
+    suffix: "_name_issues",
+    kind: "tabular",
+    tabularColumns: [
+      "key",
+      "kind",
+      "severity",
+      "level",
+      "name_column",
+      "code_a",
+      "name_a",
+      "code_b",
+      "name_b",
+      "suggested",
+      "reason",
+    ],
+  },
+  name_clean: { table: "layer_01", attrTable: "nc_attr", suffix: "_cleaned", kind: "spatial" },
+  name_clean_issues: {
+    table: "nc_report",
+    attrTable: null,
+    suffix: "_name_issues",
+    kind: "tabular",
+    tabularColumns: [
+      "key",
+      "kind",
+      "severity",
+      "level",
+      "name_column",
+      "code_a",
+      "name_a",
+      "code_b",
+      "name_b",
+      "suggested",
+      "reason",
+      "fixed",
     ],
   },
 };
