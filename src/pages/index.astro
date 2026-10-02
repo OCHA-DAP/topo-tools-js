@@ -24,7 +24,7 @@ const packageLines = bySlug("package-lines");
 const schemaMap = bySlug("schema-map");
 const schemaJoin = bySlug("schema-join");
 const schemaFill = bySlug("schema-fill");
-const codeRefactor = bySlug("code-refactor");
+const codeCreate = bySlug("code-create");
 const codeUpdate = bySlug("code-update");
 ---
 
@@ -103,7 +103,7 @@ const codeUpdate = bySlug("code-update");
           <GroupBox>
             <ToolCard tool={codeUpdate} header />
             <Disclosure label="Show 2 individual tools">
-              <ToolCard tool={codeRefactor} variant="secondary" />
+              <ToolCard tool={codeCreate} variant="secondary" />
               <ToolCard tool={change} variant="secondary" />
             </Disclosure>
           </GroupBox>

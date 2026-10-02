@@ -42,8 +42,8 @@ name instead of repeating them.
   | Tool | Parameters |
   | --- | --- |
   | `change` | `match`, `same`, `by` (`geometry`/`identity`), `link` (`either`/`both`) |
-  | `code-refactor` | `root`, `delim`, `width`, `name`, `code` |
-  | `code-update` | `root`, `delim`, `width`, `name-a`, `code-a`, `name-b`, `code-b`, `match`, `same`, `by-code`, `by-name`, `link` |
+  | `code-create` | `root`, `delim` (a character, or `none`), `width`, `source` (`replace`/`embed`/`copy`), `name`, `code` |
+  | `code-update` | `root`, `delim` (absent = detect, `none`, or a character), `width`, `name-a`, `code-a`, `name-b`, `code-b`, `code-col-a`, `code-col-b`, `name-col-a`, `name-col-b`, `match`, `same`, `by-code`, `by-name`, `link` |
   | `edge-match` | `fit` (`all`/`each`), `passthrough`, `fill`, `name`, `code`, `depth` |
   | `edge-mosaic`, `edge-stitch` | `fill`, `name`, `code`, `depth` |
   | `package`, `package-polygons`, `package-points`, `package-lines` | `name`, `code` |
@@ -233,28 +233,50 @@ Shared by `edge-match`, `edge-mosaic`, and `edge-clip` for overlay assignment.
 
 ## Hierarchical code format and retention (`$lib/db/code.ts`)
 
-Shared by `code-refactor` (cold-start) and `code-update` (reconcile
+Shared by `code-create` (cold-start) and `code-update` (reconcile
 against an already-coded OLD layer).
 
 - A `CodeFormat` (`rootCode`, `delimiter`, `minWidth`) MUST be validated
   via `resolveCodeFormat`: `rootCode` non-empty, `delimiter` exactly one
-  character, `minWidth` positive. No field has a default.
+  character, or empty when the caller allows no delimiter. No field has
+  a default.
+- `minWidth` MUST be one positive width (`3`), one positive width per
+  numbered level, coarsest first (`2,2,4`), or `auto`, parsed by
+  `parseMinWidth`. A width list MUST have exactly one entry per numbered
+  level (`checkLevelCount`), else throw.
+- `parseCode` MUST split on `delimiter`, or, with an empty delimiter,
+  strip `rootCode` and cut each level's tail at that level's width,
+  throwing when the code doesn't start with the root or can't be cut.
 - `assignNewCodes` MUST rank rows per parent group by their given sort
   columns and format each as `parentCode || delimiter || lpad(tail,
-width, '0')`, starting from `nextAvailableInteger` for that parent. It
-  MUST NOT reuse a raw source value as-is.
-- A parent whose live child count exceeds `10 ** minWidth - 1` MUST NOT
-  have its already-assigned, lower-numbered children's codes repadded;
-  the overflowing child's own tail width MUST grow instead
-  (`GREATEST(minWidth, LENGTH(tail))`).
+  width, '0')`, starting above every integer the parent's direct
+  children use in `existingCodes`. It MUST NOT reuse a raw source value
+  as-is.
+- Under `auto`, every new tail at a level MUST pad to the widest tail
+  that level needs, `existingCodes` included.
+- With an empty delimiter and a fixed width, when the next number doesn't
+  fit the width, numbering MUST continue above the parent's highest used
+  number below the top 10% of the range (`9 * 10 ** (width - 1)`), and
+  MUST throw if it would reach that cutoff.
+- With a delimiter, a parent whose child count exceeds `10 ** width - 1`
+  MUST NOT have its lower-numbered children's codes repadded; the
+  overflowing child's own tail width MUST grow instead
+  (`GREATEST(width, LENGTH(tail))`).
 - `detectCodeFormat` MUST infer `delimiter` as the single non-alphanumeric
   character common to every sampled code, `rootCode` as the shared first
-  delimiter-split component, and `minWidth` as the mode (not min or max)
-  of every non-root component's width. Any field that can't be
-  confidently inferred MUST throw rather than fall back to a literal.
+  delimiter-split component, and `minWidth` as each component position's
+  most common width (one width when every position agrees). Any field
+  that can't be confidently inferred MUST throw rather than fall back to
+  a literal.
+- `detectUndelimitedFormat` MUST infer `rootCode` as level 1's leading
+  non-digit run, shared by every code, and each level's width as the
+  single length it adds to its parent's code, throwing otherwise.
 - `rewriteChildCode` MUST reattach a code's own final component onto a
   new parent code, leaving the tail integer and sibling ranking
   untouched.
+- `seedCodeFromNames` MUST fill a level's code column from its name
+  column, and throw when the level has no name column.
+  `checkUniqueNames` MUST throw when a name repeats under one parent.
 
 ## Opt-in schema fill (`$lib/db/fillCompose.ts`)
 

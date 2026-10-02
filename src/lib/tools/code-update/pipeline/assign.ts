@@ -9,6 +9,7 @@ const RETIRE_ONLY_CLASSES = new Set(["merge", "complex"]);
 const REASONS: Record<string, string> = {
   "unchanged:retained": "geometry and identity unchanged, code retained",
   "renamed:retained": "name changed, geometry unchanged, code retained",
+  "modified:retained": "geometry modified, code retained (lenient: codes without a delimiter)",
   "removed:retired": "no NEW counterpart, code retired",
   "merge:retired": "merged into another unit, code retired",
   "complex:retired": "involved in a complex N:M change, code retired",
@@ -19,6 +20,9 @@ const REASONS: Record<string, string> = {
   "merge:new": "formed by merging OLD units, new code assigned",
   "complex:new": "formed by a complex N:M change, new code assigned",
 };
+
+const COLLIDED_REASON =
+  "moved under a new parent where its code is already taken, new code assigned";
 
 export interface ChangeRow {
   level: number;
@@ -90,6 +94,28 @@ interface NewBatchMeta {
   clusterId: number;
   cls: string;
   matchMethod: string | null;
+  reason?: string;
+}
+
+// Clusters whose rewritten code repeats an OLD code or another rewrite.
+function collisions(
+  rewritten: Map<number, string>,
+  original: Map<number, string>,
+  oldCodes: Set<string>,
+): Set<number> {
+  const taken = new Set([...rewritten.values()].filter((c) => oldCodes.has(c)));
+  const collided = new Set<number>();
+  const keys = [...rewritten.keys()].sort((a, b) => {
+    const ca = rewritten.get(a)!;
+    const cb = rewritten.get(b)!;
+    return ca < cb ? -1 : ca > cb ? 1 : 0;
+  });
+  for (const key of keys) {
+    if (rewritten.get(key) === original.get(key)) continue;
+    if (taken.has(rewritten.get(key)!)) collided.add(key);
+    else taken.add(rewritten.get(key)!);
+  }
+  return collided;
 }
 
 // Reads cw_pairs_classified/cw_polygon_class, so this must run immediately
@@ -161,19 +187,34 @@ export async function assignLevel(
     else c.b.push(Number(r.fid));
   }
 
+  // Codes without a delimiter (ISO2-style) are lenient: a 1:1 match keeps its code.
+  const retainClasses = new Set([...RETAIN_CLASSES, ...(fmt.delimiter === "" ? ["modified"] : [])]);
   const retainedCodes: string[] = [];
   const newBatch: Array<[string, string]> = [];
   const newBatchMeta = new Map<string, NewBatchMeta>();
   const levelNewCodes = new Map<number, string>();
 
+  const oldCodes = new Set([...oldCodeByFid.values()].filter((c) => c !== null));
+  // A code kept as-is wins; a rewritten one that repeats any OLD code or an
+  // earlier rewrite (a unit moved under a new parent) gets a new code.
+  const rewritten = new Map<number, string>();
+  const original = new Map<number, string>();
+  for (const [clusterId, c] of clusters) {
+    if (!retainClasses.has(c.cls)) continue;
+    const oldCode = oldCodeByFid.get(c.a[0])!;
+    rewritten.set(clusterId, rewriteChildCode(oldCode, newParentCode(c.b[0]), fmt));
+    original.set(clusterId, oldCode);
+  }
+  const collided = collisions(rewritten, original, oldCodes);
+
   for (const [clusterId, c] of clusters) {
     const rel = c.cls;
 
-    if (RETAIN_CLASSES.has(rel)) {
+    if (retainClasses.has(rel) && !collided.has(clusterId)) {
       const aFid = c.a[0];
       const bFid = c.b[0];
       const oldCode = oldCodeByFid.get(aFid)!;
-      const newCode = rewriteChildCode(oldCode, newParentCode(bFid), fmt);
+      const newCode = rewritten.get(clusterId)!;
       levelNewCodes.set(bFid, newCode);
       retainedCodes.push(newCode);
       changelog.push({
@@ -268,7 +309,7 @@ export async function assignLevel(
       continue;
     }
 
-    if (SINGLE_PREDECESSOR_CLASSES.has(rel)) {
+    if (SINGLE_PREDECESSOR_CLASSES.has(rel) || collided.has(clusterId)) {
       const aFid = c.a[0];
       const bFid = c.b[0];
       const oldCode = oldCodeByFid.get(aFid)!;
@@ -282,6 +323,7 @@ export async function assignLevel(
         clusterId,
         cls: rel,
         matchMethod: pairMethod.get(`${aFid}:${bFid}`) ?? null,
+        reason: collided.has(clusterId) ? COLLIDED_REASON : undefined,
       });
       continue;
     }
@@ -323,7 +365,8 @@ export async function assignLevel(
       sortColumns: ["fid_key"],
       codeColumn: "code_val",
       fmt,
-      existingCodes: retainedCodes,
+      level: n,
+      existingCodes: [...retainedCodes, ...oldCodes],
     });
     const assigned = (
       await conn.query(`SELECT fid_key, code_val FROM ${quoteIdent(staging)}`)
@@ -343,7 +386,7 @@ export async function assignLevel(
         clusterId: meta.clusterId,
         matchMethod: meta.matchMethod,
         codeOutcome: "new",
-        reason: REASONS[`${meta.cls}:new`],
+        reason: meta.reason ?? REASONS[`${meta.cls}:new`],
         predecessorCode: meta.predecessor,
         bFid: meta.bFid,
       });

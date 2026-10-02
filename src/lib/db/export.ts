@@ -33,8 +33,8 @@ export type ExportSource =
   | "package_polygons_level_7"
   | "package_points"
   | "package_lines"
-  | "code_refactor"
-  | "code_refactor_issues"
+  | "code_create"
+  | "code_create_issues"
   | "code_update"
   | "code_update_changelog";
 
@@ -337,9 +337,9 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     kind: "spatial",
   },
   package_lines: { table: "pl_geom", attrTable: "pl_attr", suffix: "_pp_lines", kind: "spatial" },
-  code_refactor: { table: "layer_01", attrTable: "layer_attr", suffix: "_coded", kind: "spatial" },
-  code_refactor_issues: {
-    table: "cr_issues",
+  code_create: { table: "layer_01", attrTable: "cc_attr", suffix: "_coded", kind: "spatial" },
+  code_create_issues: {
+    table: "cc_issues",
     attrTable: null,
     suffix: "_issues",
     kind: "tabular",
@@ -355,7 +355,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
   },
   code_update: {
     table: "cu_b_layer_01",
-    attrTable: "cu_b_layer_attr",
+    attrTable: "cu_b_attr",
     suffix: "_coded",
     kind: "spatial",
   },

@@ -53,6 +53,13 @@ export function siblingName(column: string, index: number): string {
   return /\d$/.test(column) ? `${column}_${index}` : `${column}${index}`;
 }
 
+// Column's lowest-numbered sibling name not already in taken.
+export function nextFreeSibling(column: string, taken: Set<string>): string {
+  let n = 1;
+  while (taken.has(siblingName(column, n))) n++;
+  return siblingName(column, n);
+}
+
 // Each column whose numbered siblings aren't in numeric order after it.
 export function misorderedSiblings(columns: string[]): string[] {
   const position = new Map(columns.map((c, i) => [c, i]));

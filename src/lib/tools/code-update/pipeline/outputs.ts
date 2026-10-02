@@ -1,15 +1,14 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { parentPrefix, quoteIdent, type CodeFormat } from "$lib/db/code";
+import { parentPrefix, quoteIdent, widthFor, type CodeFormat } from "$lib/db/code";
 import type { ChangeRow } from "./assign";
 import type { SideLevels } from "./levels";
 
 const sqlStr = (s: string): string => "'" + s.replace(/'/g, "''") + "'";
 const BATCH = 500;
 
-// Marks 'new'-outcome rows as 'overflow' when their parent's child count
-// spills past minWidth's digit capacity; 'retained' rows are left as-is.
+// Marks 'new'-outcome rows as 'overflow' when their parent's child count spills
+// past that level's width capacity (never under auto); 'retained' rows stay as-is.
 function flagOverflow(changelog: ChangeRow[], fmt: CodeFormat): void {
-  const capacity = 10 ** fmt.minWidth - 1;
   const byParent = new Map<string, ChangeRow[]>();
   for (const row of changelog) {
     if ((row.codeOutcome !== "new" && row.codeOutcome !== "retained") || row.newCode === null)
@@ -20,9 +19,12 @@ function flagOverflow(changelog: ChangeRow[], fmt: CodeFormat): void {
     else byParent.set(key, [row]);
   }
   for (const [key, rows] of byParent) {
-    if (rows.length <= capacity) continue;
-    const [levelStr, parentCode] = key.split(":");
-    const reason = `${rows.length} children under ${parentCode} at level ${levelStr} exceeds ${capacity} at min_width=${fmt.minWidth}`;
+    const sep = key.indexOf(":");
+    const level = Number(key.slice(0, sep));
+    const parentCode = key.slice(sep + 1);
+    const width = widthFor(fmt, level);
+    if (width === null || rows.length <= 10 ** width - 1) continue;
+    const reason = `${rows.length} children under ${parentCode} at level ${level} exceeds ${10 ** width - 1} at min_width=${width}`;
     for (const row of rows) {
       if (row.codeOutcome === "new") {
         row.codeOutcome = "overflow";

@@ -11,7 +11,7 @@ import { buildChangelogTable, writeOutputs } from "./outputs";
 import { reparentLevel } from "./reparent";
 
 export type { CodeFormat } from "$lib/db/code";
-export { resolveCodeFormat } from "$lib/db/code";
+export { parseMinWidth, resolveCodeFormat } from "$lib/db/code";
 export type { TargetSchema } from "$lib/tools/schema-map/pipeline/targetSchema";
 export type { ChangeRow } from "./assign";
 
@@ -19,8 +19,13 @@ export interface CodeUpdateOptions {
   schemaA: TargetSchema | null;
   schemaB: TargetSchema | null;
   rootCode: string | null;
+  // null = detect from OLD; "" = codes have no delimiter.
   delimiter: string | null;
-  minWidth: number | null;
+  minWidth: string | null;
+  codeColumnA: string | null;
+  codeColumnB: string | null;
+  nameColumnA: string | null;
+  nameColumnB: string | null;
   tauMatch: number;
   tauSame: number;
   linkByCode: boolean;
@@ -54,7 +59,7 @@ async function buildInputTable(conn: AsyncDuckDBConnection, side: "a" | "b"): Pr
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cu_${side}_input AS
     SELECT g.fid, g.geom, a.* EXCLUDE (fid)
-    FROM cu_${side}_layer_01 g LEFT JOIN cu_${side}_layer_attr a ON g.fid = a.fid
+    FROM cu_${side}_layer_01 g LEFT JOIN ${side === "a" ? "cu_a_layer_attr" : "cu_b_attr"} a ON g.fid = a.fid
   `);
 }
 
@@ -70,14 +75,17 @@ const PER_LEVEL_TABLES = (n: number): string[] => [
   `cu_reparent_${n}_assign`,
 ];
 
+// NEW's codes are written into cu_b_attr, a fresh copy of cu_b_layer_attr per
+// run, so a rerun with other settings starts from the loaded NEW layer again.
 export async function runCodeUpdate(
   conn: AsyncDuckDBConnection,
   opts: CodeUpdateOptions,
 ): Promise<CodeUpdateResult> {
+  await conn.query("CREATE OR REPLACE TABLE cu_b_attr AS SELECT * FROM cu_b_layer_attr");
   const { sideA, sideB, fmt } = await resolveSideLevels(
     conn,
     "cu_a_layer_attr",
-    "cu_b_layer_attr",
+    "cu_b_attr",
     opts.schemaA,
     opts.schemaB,
     opts.rootCode,
@@ -116,10 +124,10 @@ export async function runCodeUpdate(
     await classifyLevel(
       conn,
       n,
-      sideA.columns.get(n)!,
-      sideB.columns.get(n)!,
-      sideA.names.get(n) ?? null,
-      sideB.names.get(n) ?? null,
+      opts.codeColumnA ?? sideA.columns.get(n)!,
+      opts.codeColumnB ?? sideB.columns.get(n)!,
+      opts.nameColumnA ?? sideA.names.get(n) ?? null,
+      opts.nameColumnB ?? sideB.names.get(n) ?? null,
       classifyOpts,
     );
 
@@ -135,20 +143,11 @@ export async function runCodeUpdate(
   await conn.query("DROP TABLE IF EXISTS cu_a_input");
   await conn.query("DROP TABLE IF EXISTS cu_b_input");
 
-  await writeOutputs(
-    conn,
-    "cu_b_layer_attr",
-    sideA,
-    sideB,
-    newCodeByFid,
-    rawValByFid,
-    changelog,
-    fmt,
-  );
+  await writeOutputs(conn, "cu_b_attr", sideA, sideB, newCodeByFid, rawValByFid, changelog, fmt);
   if (prevLevel !== null) await conn.query(`DROP TABLE IF EXISTS cu_dsl_${prevLevel}_b`);
   await buildChangelogTable(conn, changelog);
 
-  const resultGeoJSON = await tableToGeoJSON(conn, "cu_b_layer_01", "cu_b_layer_attr");
+  const resultGeoJSON = await tableToGeoJSON(conn, "cu_b_layer_01", "cu_b_attr");
   const bounds = await computeBounds(conn, "cu_b_layer_01");
   return { resultGeoJSON, bounds, levelCount: levels.length, changelog };
 }

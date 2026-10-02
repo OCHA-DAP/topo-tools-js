@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/code-create/App.svelte";
+---
+
+<Layout
+  title="Code Create: give every unit a new hierarchical code in your browser"
+  description="Browser-only tool that gives every unit of a flat polygon layer a new hierarchical code, numbered within its parent, or builds it from the layer's own source codes."
+>
+  <App client:load />
+</Layout>
