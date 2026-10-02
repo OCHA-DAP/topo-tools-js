@@ -1,6 +1,6 @@
 ---
 interface Props {
-  n: number;
+  n?: number;
   title: string;
   summary: string;
   icon?: string;
@@ -11,13 +11,13 @@ const { n, title, summary, icon, last = false } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 ---
 
-<li class={`step ${last ? "last" : ""}`}>
+<li class={`step ${last ? "last" : ""} ${n === undefined ? "checkpoint" : ""}`}>
   <div class="rail" aria-hidden="true">
-    <span class="badge">{n}</span>
+    <span class="badge">{n ?? "✓"}</span>
   </div>
   <div class="body">
     <h3 class="title">
-      <span class="sr-only">Step {n}: </span>
+      {n !== undefined && <span class="sr-only">Step {n}: </span>}
       {title}
     </h3>
     {
@@ -70,6 +70,21 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
     color: var(--hdx-neutral-0);
     font-size: 0.875rem;
     font-weight: 600;
+  }
+  /* An unnumbered check between steps: outlined badge, dashed tool box. */
+  .checkpoint .badge {
+    background: var(--hdx-neutral-0);
+    color: var(--hdx-brand-7);
+    border: 2px solid var(--hdx-brand-7);
+  }
+  .checkpoint .title {
+    color: var(--hdx-brand-7);
+  }
+  .checkpoint :global(.group) {
+    border-style: dashed;
+    border-color: var(--hdx-brand-7);
+    background: transparent;
+    box-shadow: none;
   }
   .body {
     display: flex;

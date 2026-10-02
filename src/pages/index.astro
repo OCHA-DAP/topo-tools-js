@@ -28,6 +28,9 @@ const codeCreate = bySlug("code-create");
 const codeUpdate = bySlug("code-update");
 const nameClean = bySlug("name-clean");
 const nameDetect = bySlug("name-detect");
+const schemaDetect = bySlug("schema-detect");
+const codeDetect = bySlug("code-detect");
+const validate = bySlug("validate");
 ---
 
 <Layout
@@ -57,9 +60,10 @@ const nameDetect = bySlug("name-detect");
         >
           <GroupBox>
             <ToolCard tool={schemaMap} header />
-            <Disclosure label="Show 2 individual tools">
+            <Disclosure label="Show 3 individual tools">
               <ToolCard tool={schemaJoin} variant="secondary" />
               <ToolCard tool={schemaFill} variant="secondary" />
+              <ToolCard tool={schemaDetect} variant="secondary" />
             </Disclosure>
           </GroupBox>
         </Step>
@@ -104,9 +108,10 @@ const nameDetect = bySlug("name-detect");
         >
           <GroupBox>
             <ToolCard tool={codeUpdate} header />
-            <Disclosure label="Show 2 individual tools">
+            <Disclosure label="Show 3 individual tools">
               <ToolCard tool={codeCreate} variant="secondary" />
               <ToolCard tool={change} variant="secondary" />
+              <ToolCard tool={codeDetect} variant="secondary" />
             </Disclosure>
           </GroupBox>
         </Step>
@@ -121,6 +126,15 @@ const nameDetect = bySlug("name-detect");
             <Disclosure label="Show 1 individual tool">
               <ToolCard tool={nameDetect} variant="secondary" />
             </Disclosure>
+          </GroupBox>
+        </Step>
+
+        <Step
+          title="Validate"
+          summary="Check the layer's schema, topology, codes and names in one pass before packaging it."
+        >
+          <GroupBox>
+            <ToolCard tool={validate} header />
           </GroupBox>
         </Step>
 

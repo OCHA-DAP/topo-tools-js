@@ -1,5 +1,4 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { quoteIdent } from "$lib/db/code";
 import {
   PER_NAME_KINDS,
   ROLLUP_MIN_ROWS,
@@ -102,25 +101,4 @@ export async function buildNameReport(
     reason: r.reason as string,
     fixed: fixedSql ? Boolean(r.fixed) : null,
   }));
-}
-
-// Writes `${prefix}_flagged(key, fid)`: each report row's units, for the map.
-export async function buildFlagged(
-  conn: AsyncDuckDBConnection,
-  prefix: string,
-  attrTable: string,
-): Promise<void> {
-  const columns = (
-    await conn.query(`SELECT DISTINCT level, code_column FROM ${prefix}_02`)
-  ).toArray() as Array<{ level: number; code_column: string }>;
-  const unions = columns.map(
-    ({ level, code_column }) => `--sql
-      SELECT i.key, t.fid FROM ${prefix}_report i JOIN ${attrTable} t
-        ON t.${quoteIdent(code_column)}::VARCHAR IN (i.code_a, i.code_b)
-      WHERE i.level = ${level}`,
-  );
-  unions.push("SELECT NULL::VARCHAR AS key, NULL::BIGINT AS fid WHERE false");
-  await conn.query(
-    `CREATE OR REPLACE TABLE ${prefix}_flagged AS SELECT DISTINCT * FROM (${unions.join(" UNION ALL ")})`,
-  );
 }

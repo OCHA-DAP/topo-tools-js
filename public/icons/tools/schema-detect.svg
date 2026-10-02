@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+  <!-- Hierarchy tree -->
+  <circle cx="14" cy="12" r="5" fill="currentColor" fill-opacity="0.12" />
+  <path d="M14 17 L14 26 M14 26 L6 26 L6 32 M14 26 L22 26 L22 32" />
+  <circle cx="6" cy="37" r="4" fill="currentColor" fill-opacity="0.12" />
+  <circle cx="22" cy="37" r="4" fill="currentColor" fill-opacity="0.12" />
+  <!-- Magnifying glass inspecting it -->
+  <circle cx="40" cy="38" r="12" />
+  <path d="M49 47 L58 56" />
+</svg>

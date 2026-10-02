@@ -350,14 +350,16 @@ async function buildEdges(
   return edges;
 }
 
-// The single naming digit every column in a group agrees on.
+// The naming digit most of a group's columns share, null on a tie.
 function groupDigit(cols: string[]): number | null {
-  const digits = new Set<number>();
+  const counts = new Map<number, number>();
   for (const c of cols) {
     const m = LEVEL_DIGIT_RE.exec(c);
-    if (m !== null) digits.add(Number(m[0]));
+    if (m !== null) counts.set(Number(m[0]), (counts.get(Number(m[0])) ?? 0) + 1);
   }
-  return digits.size === 1 ? [...digits][0] : null;
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (ranked.length === 0 || (ranked.length > 1 && ranked[0][1] === ranked[1][1])) return null;
+  return ranked[0][0];
 }
 
 // Edges bracketing a level whose digit sits exactly between its neighbours';

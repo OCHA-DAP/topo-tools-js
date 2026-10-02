@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/schema-detect/App.svelte";
+---
+
+<Layout
+  title="Schema Detect: check admin hierarchy columns in your browser"
+  description="Browser-only tool that checks a layer's admin-hierarchy columns for undetectable or skipped levels, inconsistent column naming and units with several parents or none, without changing anything."
+>
+  <App client:load />
+</Layout>
