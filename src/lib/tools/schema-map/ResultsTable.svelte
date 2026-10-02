@@ -193,19 +193,19 @@
     display: flex;
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--hdx-neutral-1);
   }
   .rt-toolbar button {
     font-size: 0.75rem;
     padding: 0.25rem 0.6rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #fff;
-    color: #374151;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
+    background: var(--hdx-neutral-0);
+    color: var(--hdx-neutral-8);
     cursor: pointer;
   }
   .rt-toolbar button:hover:not(:disabled) {
-    background: #f3f4f6;
+    background: var(--hdx-neutral-05);
   }
   .rt-toolbar button:disabled {
     opacity: 0.5;
@@ -219,14 +219,14 @@
   thead {
     position: sticky;
     top: 0;
-    background: #f3f4f6;
+    background: var(--hdx-neutral-05);
     z-index: 1;
   }
   th,
   td {
     text-align: left;
     padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--hdx-neutral-1);
     white-space: nowrap;
   }
   .fit {
@@ -246,7 +246,7 @@
     font-weight: 600;
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #4b5563;
+    color: var(--hdx-neutral-7);
   }
   td.value,
   .target-cell input {
@@ -254,13 +254,13 @@
   }
   td.num {
     text-align: right;
-    color: #4b5563;
+    color: var(--hdx-neutral-7);
   }
   td.note {
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
   }
   td.sample {
-    color: #9ca3af;
+    color: var(--hdx-neutral-5);
   }
   .target-cell {
     display: flex;
@@ -270,29 +270,29 @@
   .target-cell input {
     width: 8.5rem;
     padding: 0.2rem 0.4rem;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
     font-size: 0.8rem;
     color: inherit;
-    background: #fff;
+    background: var(--hdx-neutral-0);
   }
   .target-cell input:disabled {
-    color: #9ca3af;
-    background: #f9fafb;
+    color: var(--hdx-neutral-5);
+    background: var(--hdx-neutral-01);
     text-decoration: line-through;
   }
   .target-cell input.invalid {
-    border-color: #dc2626;
-    background: #fef2f2;
+    border-color: var(--hdx-error-5);
+    background: var(--hdx-error-05);
   }
   .icon {
     width: 1.4rem;
     height: 1.4rem;
     padding: 0;
     border: 1px solid transparent;
-    border-radius: 4px;
+    border-radius: var(--hdx-radius-md);
     background: none;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
     font-size: 0.9rem;
     line-height: 1;
     cursor: pointer;
@@ -301,27 +301,27 @@
     visibility: hidden;
   }
   .icon:hover {
-    border-color: #d1d5db;
-    background: #f3f4f6;
-    color: #111;
+    border-color: var(--hdx-neutral-2);
+    background: var(--hdx-neutral-05);
+    color: var(--hdx-neutral-9);
   }
   .issue {
     margin: 0.2rem 0 0;
     font-size: 0.7rem;
-    color: #b91c1c;
+    color: var(--hdx-error-6);
   }
   tr.resolved .target-cell input {
-    color: #15803d;
+    color: var(--hdx-success-6);
     font-weight: 600;
   }
   tr.supplemental td.note {
-    color: #a16207;
+    color: var(--hdx-warning-6);
   }
   tr.ambiguous td.note {
-    color: #b91c1c;
+    color: var(--hdx-error-6);
   }
   tr.dropped td:nth-child(2) {
-    color: #9ca3af;
+    color: var(--hdx-neutral-5);
   }
   th.check,
   td.check {
@@ -335,7 +335,7 @@
     padding: 0 0.15rem;
     border: none;
     background: none;
-    color: #9ca3af;
+    color: var(--hdx-neutral-5);
     font-size: 0.75rem;
     letter-spacing: -0.15em;
     cursor: grab;
@@ -343,24 +343,24 @@
   }
   .grip:hover,
   .grip:focus-visible {
-    color: #374151;
+    color: var(--hdx-neutral-8);
   }
   tr.drag-source {
     opacity: 0.4;
   }
   tr.drop-before td {
-    box-shadow: inset 0 2px #6366f1;
+    box-shadow: inset 0 2px var(--hdx-primary-5);
   }
   tr.drop-after td {
-    box-shadow: inset 0 -2px #6366f1;
+    box-shadow: inset 0 -2px var(--hdx-primary-5);
   }
   tr.edited td:first-child {
-    box-shadow: inset 3px 0 #6366f1;
+    box-shadow: inset 3px 0 var(--hdx-primary-5);
   }
   .rt-empty {
     padding: 1rem;
     text-align: center;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
     font-size: 0.875rem;
   }
 </style>

@@ -6,12 +6,13 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import { onDestroy, onMount } from "svelte";
   import { createSpin } from "$lib/utils/spin";
+  import { MAP_COLORS, MAP_FILL_OPACITY } from "$lib/utils/mapColors";
   import { loadMaplibre, loadStyle, polyFilter, lineWidth } from "$lib/utils/mapStyle";
 
   let {
     geojson = null,
     originalGeojson = null,
-    originalOutline = false,
+    overlayOutlineGeojson = null,
     showSide = undefined,
     bounds = null,
     processing = false,
@@ -20,8 +21,8 @@
   }: {
     geojson?: string | null;
     originalGeojson?: string | null;
-    // Draws originalGeojson as outlines above the result instead of a fill.
-    originalOutline?: boolean;
+    // Drawn as outlines above both fills, not selectable.
+    overlayOutlineGeojson?: string | null;
     // Shows only the original ("a") or only the result ("b") instead of stacking them.
     showSide?: "a" | "b";
     bounds?: [number, number, number, number] | null;
@@ -35,6 +36,7 @@
   let styleReady = $state(false);
   let blobUrl: string | undefined;
   let origBlobUrl: string | undefined;
+  let overlayBlobUrl: string | undefined;
   const { start: startSpin, stop: stopSpin } = createSpin(() => map);
   let selected: { source: string; id: string | number } | undefined;
 
@@ -43,18 +45,30 @@
     selected = undefined;
   }
 
-  function addSelectedLayer(source: string) {
+  function addSelectedLayer(source: string, before?: string) {
     if (!map || !onFeatureClick) return;
-    map.addLayer({
-      id: `${source}-selected`,
-      type: "line",
-      source,
-      paint: {
-        "line-color": "#dc2626",
-        "line-width": 3,
-        "line-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 1, 0],
+    map.addLayer(
+      {
+        id: `${source}-selected`,
+        type: "line",
+        source,
+        paint: {
+          "line-color": MAP_COLORS.selected,
+          "line-width": 3,
+          "line-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 1, 0],
+        },
       },
-    });
+      before,
+    );
+  }
+
+  function removeSide(source: "original" | "result" | "overlay") {
+    if (!map) return;
+    if (selected?.source === source) selected = undefined;
+    for (const suffix of ["fill", "line", "selected"]) {
+      if (map.getLayer(`${source}-${suffix}`)) map.removeLayer(`${source}-${suffix}`);
+    }
+    if (map.getSource(source)) map.removeSource(source);
   }
 
   $effect(() => {
@@ -89,7 +103,8 @@
 
   $effect(() => {
     const orig = originalGeojson;
-    if (!orig || !map || !styleReady) return;
+    if (!map || !styleReady) return;
+    if (!orig) return removeSide("original");
 
     if (origBlobUrl) URL.revokeObjectURL(origBlobUrl);
     origBlobUrl = URL.createObjectURL(new Blob([orig], { type: "application/json" }));
@@ -102,13 +117,10 @@
         (map.getSource("original") as GeoJSONSource).setData(oUrl);
       } else {
         map.addSource("original", { type: "geojson", data: oUrl, generateId: true });
-        if (originalOutline) {
-          map.addLayer({ id: "original-line", type: "line", source: "original", paint: { "line-color": "#111827", "line-width": 2 } });
-        } else {
-          map.addLayer({ id: "original-fill", type: "fill", source: "original", filter: polyFilter, paint: { "fill-color": "#8dc65a", "fill-opacity": 1 } });
-          map.addLayer({ id: "original-line", type: "line", source: "original", paint: { "line-color": "#222222", "line-width": lineWidth } });
-          addSelectedLayer("original");
-        }
+        const before = map.getLayer("overlay-line") ? "overlay-line" : undefined;
+        map.addLayer({ id: "original-fill", type: "fill", source: "original", filter: polyFilter, paint: { "fill-color": MAP_COLORS.original, "fill-opacity": MAP_FILL_OPACITY } }, before);
+        map.addLayer({ id: "original-line", type: "line", source: "original", paint: { "line-color": MAP_COLORS.outline, "line-width": lineWidth } }, before);
+        addSelectedLayer("original", before);
         applySide();
       }
     }
@@ -118,7 +130,8 @@
 
   $effect(() => {
     const result = geojson;
-    if (!result || !map || !styleReady) return;
+    if (!map || !styleReady) return;
+    if (!result) return removeSide("result");
 
     if (blobUrl) URL.revokeObjectURL(blobUrl);
     blobUrl = URL.createObjectURL(new Blob([result], { type: "application/json" }));
@@ -127,20 +140,35 @@
     function apply() {
       if (!map) return;
       // Insert result layers below original if original is already shown
-      const before = ["original-fill", "original-line"].find((l) => map?.getLayer(l));
+      const before = ["original-fill", "overlay-line"].find((l) => map?.getLayer(l));
       if (map.getSource("result")) {
         if (selected?.source === "result") clearSelection();
         (map.getSource("result") as GeoJSONSource).setData(rUrl);
       } else {
         map.addSource("result", { type: "geojson", data: rUrl, generateId: true });
-        map.addLayer({ id: "result-fill", type: "fill", source: "result", filter: polyFilter, paint: { "fill-color": "#aad4e0", "fill-opacity": 1 } }, before);
-        map.addLayer({ id: "result-line", type: "line", source: "result", paint: { "line-color": "#222222", "line-width": lineWidth } }, before);
-        addSelectedLayer("result");
+        map.addLayer({ id: "result-fill", type: "fill", source: "result", filter: polyFilter, paint: { "fill-color": MAP_COLORS.result, "fill-opacity": MAP_FILL_OPACITY } }, before);
+        map.addLayer({ id: "result-line", type: "line", source: "result", paint: { "line-color": MAP_COLORS.outline, "line-width": lineWidth } }, before);
+        addSelectedLayer("result", before);
         applySide();
       }
     }
 
     apply();
+  });
+
+  $effect(() => {
+    const overlay = overlayOutlineGeojson;
+    if (!map || !styleReady) return;
+    if (!overlay) return removeSide("overlay");
+
+    if (overlayBlobUrl) URL.revokeObjectURL(overlayBlobUrl);
+    overlayBlobUrl = URL.createObjectURL(new Blob([overlay], { type: "application/json" }));
+    if (map.getSource("overlay")) {
+      (map.getSource("overlay") as GeoJSONSource).setData(overlayBlobUrl);
+    } else {
+      map.addSource("overlay", { type: "geojson", data: overlayBlobUrl });
+      map.addLayer({ id: "overlay-line", type: "line", source: "overlay", paint: { "line-color": MAP_COLORS.outline, "line-width": 2 } });
+    }
   });
 
   onMount(async () => {
@@ -183,15 +211,9 @@
       }
       registerClear?.(() => {
         if (!map) return;
-        selected = undefined;
-        const layers = ["original-fill", "original-line", "original-selected", "result-fill", "result-line", "result-selected"];
-        const sources = ["original", "result"];
-        for (const layer of layers) {
-          if (map.getLayer(layer)) map.removeLayer(layer);
-        }
-        for (const source of sources) {
-          if (map.getSource(source)) map.removeSource(source);
-        }
+        removeSide("original");
+        removeSide("result");
+        removeSide("overlay");
       });
     });
   });
@@ -201,6 +223,7 @@
     map?.remove();
     if (blobUrl) URL.revokeObjectURL(blobUrl);
     if (origBlobUrl) URL.revokeObjectURL(origBlobUrl);
+    if (overlayBlobUrl) URL.revokeObjectURL(overlayBlobUrl);
   });
 </script>
 

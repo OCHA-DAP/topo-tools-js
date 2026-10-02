@@ -15,10 +15,10 @@ const OUT = resolve(__dirname, "..", "public", "icons");
 const svg = (safeZone = 0) => {
   const pad = safeZone;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="${safeZone ? 0 : 96}" fill="#aad4e0"/>
-  <g transform="translate(${pad},${pad}) scale(${(512 - 2 * pad) / 512})" fill="none" stroke="#222" stroke-width="14" stroke-linejoin="round">
+  <rect width="512" height="512" rx="${safeZone ? 0 : 96}" fill="#18614c"/>
+  <g transform="translate(${pad},${pad}) scale(${(512 - 2 * pad) / 512})" fill="none" stroke="#ffffff" stroke-width="14" stroke-linejoin="round">
     <polygon points="120,180 256,120 392,180 392,332 256,392 120,332"/>
-    <polygon points="200,220 256,196 312,220 312,292 256,316 200,292" fill="#f5f5f3"/>
+    <polygon points="200,220 256,196 312,220 312,292 256,316 200,292" fill="#e9f5f1"/>
   </g>
 </svg>`;
 };

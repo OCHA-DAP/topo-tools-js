@@ -44,10 +44,10 @@
   }
   .btns {
     display: flex;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
     overflow: hidden;
-    background: #fff;
+    background: var(--hdx-neutral-0);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
   .btn {
@@ -59,22 +59,22 @@
     font-size: 0.75rem;
     font-weight: 500;
     border: none;
-    background: #fff;
-    color: #6b7280;
+    background: var(--hdx-neutral-0);
+    color: var(--hdx-neutral-7);
     cursor: pointer;
-    border-left: 1px solid #e5e7eb;
+    border-left: 1px solid var(--hdx-neutral-1);
     text-align: center;
   }
   .btn:first-child {
     border-left: none;
   }
   .btn:hover:not(:disabled) {
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--hdx-neutral-05);
+    color: var(--hdx-neutral-8);
   }
   .btn.active {
-    background: #374151;
-    color: #fff;
+    background: var(--hdx-primary-5);
+    color: var(--hdx-neutral-0);
   }
   .btn:disabled {
     cursor: not-allowed;
@@ -83,10 +83,10 @@
   .hint {
     margin: 0;
     font-size: 0.7rem;
-    color: #6b7280;
-    background: #fff;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    color: var(--hdx-neutral-7);
+    background: var(--hdx-neutral-0);
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
     padding: 0.2rem 0.45rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
@@ -94,9 +94,9 @@
     font-family: inherit;
     font-size: 0.7rem;
     padding: 0.05rem 0.2rem;
-    border: 1px solid #d1d5db;
-    border-radius: 3px;
-    background: #f3f4f6;
-    color: #4b5563;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-sm);
+    background: var(--hdx-neutral-05);
+    color: var(--hdx-neutral-7);
   }
 </style>

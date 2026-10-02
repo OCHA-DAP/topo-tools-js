@@ -11,6 +11,7 @@
   import { createSpin } from "$lib/utils/spin";
   import { loadMaplibre, loadStyle, polyFilter, lineWidth } from "$lib/utils/mapStyle";
   import { REL_COLORS, REL_ORDER } from "./pipeline";
+  import { MAP_COLORS, MAP_FILL_OPACITY } from "$lib/utils/mapColors";
 
   let {
     overlayGeojson = null,
@@ -58,7 +59,7 @@
 
   function fillOpacityExpr(): ExpressionSpecification {
     if (hoveredClusterId == null) {
-      return 0.85 as unknown as ExpressionSpecification;
+      return MAP_FILL_OPACITY as unknown as ExpressionSpecification;
     }
     // Per-feature hover: the polygon under the cursor goes nearly opaque, its
     // cluster siblings fade back so the hovered one pops without darkening.
@@ -197,7 +198,7 @@
         source: "cw-overlay",
         filter: ["==", ["get", "cluster_id"], -1] as FilterSpecification,
         paint: {
-          "line-color": "#111",
+          "line-color": MAP_COLORS.outline,
           "line-width": 2.5,
         },
       });
@@ -244,7 +245,7 @@
         type: "line",
         source: id,
         paint: {
-          "line-color": "#000",
+          "line-color": MAP_COLORS.outline,
           "line-width": outlineWidth,
         },
       },
@@ -257,7 +258,7 @@
       source: id,
       filter: ["==", ["get", "cluster_id"], -1] as FilterSpecification,
       layout: { visibility: "none" },
-      paint: { "line-color": "#111", "line-width": 2.5 },
+      paint: { "line-color": MAP_COLORS.outline, "line-width": 2.5 },
     });
     map.on("mousemove", `cw-outline-${side}-fill`, (e) => {
       if (map) map.getCanvas().style.cursor = "pointer";

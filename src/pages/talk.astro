@@ -1,0 +1,393 @@
+---
+import { tools } from "$lib/tools";
+import Layout from "../layouts/Layout.astro";
+import * as intro from "$lib/talk/intro.md";
+import * as outro from "$lib/talk/outro.md";
+
+const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+
+// Root-relative links resolve against the deploy base; links open in a new tab so the talk never navigates away.
+const toSlides = async (md: typeof intro) =>
+  (await md.compiledContent())
+    .replace(/(href|src)="\/(?!\/)/g, `$1="${base}`)
+    .replace(/<a href=/g, '<a target="_blank" rel="noopener" href=')
+    .split(/<hr\s*\/?>/)
+    .map((html) => html.trim())
+    .filter(Boolean);
+
+// The main tool of each step on the landing page, in pipeline order.
+const mainTools = ["schema-map", "topo-clean", "edge-match", "code-update", "package"];
+const demos = mainTools
+  .map((slug) => tools.find((t) => t.slug === slug))
+  .filter((t) => t?.demo)
+  .map((t) => ({ ...t!, href: `${base}${t!.slug}?${new URLSearchParams(t!.demo)}` }));
+
+const before = await toSlides(intro);
+const after = await toSlides(outro);
+---
+
+<Layout
+  title="Client-Side DuckDB: Data Cleaning in the Browser"
+  description="An introduction to Topology Tools: why harmonized admin boundaries matter for UN80, and how the tools clean them in the browser."
+>
+  <div class="talk">
+    <nav class="topnav">
+      <a href={base}>Topology Tools</a>
+      <button type="button" class="toggle" data-toggle>
+        Present (P)
+      </button>
+    </nav>
+    <main class="deck">
+      {before.map((html, i) => (
+        <section class:list={["slide", { title: i === 0 }]}>
+          <Fragment set:html={html} />
+          {i === 0 && (
+            <div class="logos">
+              <img src={`${base}logos/ocha-white.png`} alt="OCHA" />
+              <img
+                src={`${base}logos/centre-humdata-white.png`}
+                alt="Centre for Humanitarian Data"
+              />
+            </div>
+          )}
+        </section>
+      ))}
+      {demos.map((t) => (
+        <section class="slide demo">
+          <h2>{t.name}</h2>
+          <iframe title={`${t.name} demo`} data-src={t.href} src="about:blank"></iframe>
+          <p>{t.tagline}</p>
+        </section>
+      ))}
+      {after.map((html) => (
+        <section class="slide" set:html={html} />
+      ))}
+    </main>
+  </div>
+</Layout>
+
+<script>
+  const slides = [...document.querySelectorAll<HTMLElement>(".slide")];
+  const body = document.body;
+  let current = 0;
+
+  // Each demo runs its own DuckDB, so only on-screen demos stay loaded.
+  const setLoaded = (slide: Element, on: boolean) => {
+    const frame = slide.querySelector<HTMLIFrameElement>("iframe[data-src]");
+    const src = on ? frame?.dataset.src : "about:blank";
+    if (frame && src && frame.getAttribute("src") !== src) frame.src = src;
+  };
+
+  const show = (i: number) => {
+    current = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, j) => s.classList.toggle("current", j === current));
+    if (body.classList.contains("present")) slides.forEach((s, j) => setLoaded(s, j === current));
+    history.replaceState(null, "", `${location.search}#${current + 1}`);
+    if (!body.classList.contains("present")) slides[current].scrollIntoView();
+  };
+
+  const setPresent = (on: boolean) => {
+    body.classList.toggle("present", on);
+    const url = new URL(location.href);
+    if (on) url.searchParams.set("present", "");
+    else url.searchParams.delete("present");
+    history.replaceState(null, "", url);
+    show(current);
+  };
+
+  // In read mode, track the slide nearest the top so P presents from where the reader is.
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (body.classList.contains("present")) return;
+      const hit = entries.find((e) => e.isIntersecting);
+      if (hit) {
+        current = slides.indexOf(hit.target as HTMLElement);
+        history.replaceState(null, "", `${location.search}#${current + 1}`);
+      }
+    },
+    { rootMargin: "0px 0px -70% 0px" },
+  );
+  slides.forEach((s) => observer.observe(s));
+
+  const demoObserver = new IntersectionObserver(
+    (entries) => {
+      if (body.classList.contains("present")) return;
+      entries.forEach((e) => setLoaded(e.target, e.isIntersecting));
+    },
+    { rootMargin: "200px 0px" },
+  );
+  document.querySelectorAll(".slide.demo").forEach((s) => demoObserver.observe(s));
+
+  const onKey = (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "p" || e.key === "P") return setPresent(!body.classList.contains("present"));
+    if (!body.classList.contains("present")) return;
+    if (e.key === "Escape") return setPresent(false);
+    const step = {
+      ArrowRight: 1,
+      ArrowDown: 1,
+      PageDown: 1,
+      " ": 1,
+      ArrowLeft: -1,
+      ArrowUp: -1,
+      PageUp: -1,
+    }[e.key];
+    if (step) show(current + step);
+    else if (e.key === "Home") show(0);
+    else if (e.key === "End") show(slides.length - 1);
+    else return;
+    e.preventDefault();
+  };
+  document.addEventListener("keydown", onKey);
+
+  // Keys typed inside a demo stay with the tool, apart from clicker keys and Escape.
+  document.querySelectorAll<HTMLIFrameElement>("iframe[data-src]").forEach((frame) =>
+    frame.addEventListener("load", () =>
+      frame.contentWindow?.addEventListener("keydown", (e) => {
+        if (["PageUp", "PageDown", "Escape"].includes(e.key)) onKey(e);
+      }),
+    ),
+  );
+
+  document
+    .querySelector("[data-toggle]")!
+    .addEventListener("click", () => setPresent(!body.classList.contains("present")));
+
+  current = Math.max(0, (parseInt(location.hash.slice(1), 10) || 1) - 1);
+  if (new URLSearchParams(location.search).has("present")) setPresent(true);
+  else if (location.hash) show(current);
+</script>
+
+<style>
+  .talk {
+    font-family: var(--hdx-font-body);
+    min-height: 100vh;
+    background: var(--hdx-neutral-01);
+    color: var(--hdx-neutral-9);
+  }
+  .topnav {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0.75rem 1.5rem;
+    background: var(--hdx-neutral-01);
+    font-size: 0.875rem;
+  }
+  .topnav a {
+    color: var(--hdx-neutral-7);
+    text-decoration: none;
+  }
+  .topnav a:hover {
+    color: var(--hdx-neutral-9);
+    text-decoration: underline;
+  }
+  .toggle {
+    font: inherit;
+    color: var(--hdx-neutral-7);
+    background: #fff;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
+    padding: 0.3rem 0.7rem;
+    cursor: pointer;
+  }
+  .toggle:hover {
+    color: var(--hdx-neutral-9);
+    border-color: var(--hdx-primary-5);
+  }
+  .deck {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 1rem 1.5rem 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+  .slide {
+    scroll-margin-top: 4rem;
+    padding: 2rem 2.25rem;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
+    background: #fff;
+    line-height: 1.55;
+    box-shadow: var(--hdx-shadow-sm);
+  }
+  .slide :global(h1),
+  .slide :global(h2) {
+    font-family: var(--hdx-font-display);
+  }
+  .slide :global(h1) {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0 0 1rem;
+  }
+  .slide :global(h2) {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--hdx-neutral-9);
+    margin: 0 0 1.25rem;
+  }
+  .slide :global(h2)::after {
+    content: "";
+    display: block;
+    width: 2.5rem;
+    height: 3px;
+    margin-top: 0.5rem;
+    background: var(--hdx-brand-5);
+  }
+  .slide :global(h3) {
+    font-size: 1.05rem;
+    font-weight: 400;
+    margin: 0 0 0.25rem;
+  }
+  .slide :global(ul) {
+    margin: 0 0 1rem;
+    padding-left: 1.25rem;
+    font-size: 1.1rem;
+  }
+  .slide :global(li::marker) {
+    color: var(--hdx-brand-6);
+  }
+  .slide :global(li + li) {
+    margin-top: 0.35rem;
+  }
+  .slide :global(table) {
+    border-collapse: collapse;
+    margin: 0 0 1rem;
+    font-size: 1.05rem;
+  }
+  .slide :global(th) {
+    color: var(--hdx-brand-6);
+    font-size: 0.8em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .slide :global(th),
+  .slide :global(td) {
+    text-align: left;
+    padding: 0.4rem 1.5rem 0.4rem 0;
+    border-bottom: 1px solid var(--hdx-neutral-2);
+  }
+  .slide :global(code) {
+    font-size: 0.95em;
+  }
+  .slide :global(a) {
+    color: var(--hdx-primary-5);
+  }
+  .slide :global(img) {
+    max-width: 100%;
+  }
+  .slide :global(p) {
+    color: var(--hdx-neutral-7);
+    margin: 0.75rem 0 0;
+    max-width: 68ch;
+  }
+  .slide :global(h3 + p),
+  .slide :global(ul + p),
+  .slide :global(table + p) {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px dashed var(--hdx-neutral-2);
+  }
+  .title {
+    background: var(--hdx-brand-7);
+    border-color: var(--hdx-brand-7);
+    color: #fff;
+  }
+  .title :global(h3) {
+    color: #fff;
+  }
+  .title :global(p) {
+    color: var(--hdx-brand-05);
+    border-color: rgb(255 255 255 / 0.2);
+  }
+  .logos {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    margin-top: 2rem;
+  }
+  .logos img {
+    height: 3.5rem;
+    width: auto;
+  }
+  .demo iframe {
+    display: block;
+    width: 100%;
+    height: 640px;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
+  }
+
+  :global(body.present) {
+    overflow: hidden;
+  }
+  :global(body.present) .topnav {
+    display: none;
+  }
+  :global(body.present) .deck {
+    max-width: none;
+    padding: 0;
+  }
+  :global(body.present) .slide {
+    display: none;
+  }
+  :global(body.present) .slide.current {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 6vh 8vw;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    font-size: clamp(1rem, 2.2vw, 2rem);
+  }
+  :global(body.present) .slide :global(p:not(:has(> img))) {
+    display: none;
+  }
+  :global(body.present) .logos {
+    position: absolute;
+    left: 8vw;
+    bottom: 6vh;
+    margin: 0;
+  }
+  :global(body.present) .logos img {
+    height: 2.4em;
+  }
+  :global(body.present) .demo.current {
+    justify-content: flex-start;
+    padding: 2vh 2vw;
+  }
+  :global(body.present) .demo h2 {
+    font-size: 1em;
+    margin-bottom: 0.5rem;
+  }
+  :global(body.present) .demo h2::after {
+    display: none;
+  }
+  :global(body.present) .demo iframe {
+    flex: 1;
+    height: auto;
+  }
+  :global(body.present) .slide :global(h1) {
+    font-size: 2.4em;
+  }
+  :global(body.present) .slide :global(h2) {
+    font-size: 1.8em;
+  }
+  :global(body.present) .slide :global(h3) {
+    font-size: 1.1em;
+  }
+  :global(body.present) .slide :global(ul),
+  :global(body.present) .slide :global(table) {
+    font-size: 1.1em;
+  }
+</style>

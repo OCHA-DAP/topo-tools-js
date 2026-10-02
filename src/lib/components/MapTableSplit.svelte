@@ -16,13 +16,13 @@
     height: 100%;
     min-width: 0;
     overflow: hidden;
-    background: #fff;
+    background: var(--hdx-neutral-0);
   }
 
   .map-pane {
     min-height: 0;
     position: relative;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--hdx-neutral-1);
   }
 
   .table-pane {
@@ -36,7 +36,7 @@
       grid-template-columns: 1fr minmax(30rem, 35%);
     }
     .map-pane {
-      border-right: 1px solid #e5e7eb;
+      border-right: 1px solid var(--hdx-neutral-1);
       border-bottom: none;
     }
   }

@@ -19,18 +19,19 @@
     gap: 0.4rem;
     margin-bottom: 0.6rem;
     padding: 0.35rem 0.7rem;
-    border: 1px solid #c4b5fd;
-    border-radius: 6px;
-    background: #f5f3ff;
-    color: #6d28d9;
+    border: 1px solid var(--hdx-primary-5);
+    border-radius: var(--hdx-radius-sm);
+    background: var(--hdx-neutral-0);
+    color: var(--hdx-primary-7);
+    box-shadow: var(--hdx-shadow-sm);
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: 500;
     text-decoration: none;
   }
 
   .demo-link:hover {
-    background: #ede9fe;
-    border-color: #a78bfa;
+    border-color: var(--hdx-primary-7);
+    box-shadow: none;
   }
 
   .demo-link span {

@@ -32,31 +32,22 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
     gap: 1rem;
     align-items: flex-start;
     padding: 1.25rem;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    background: #fff;
+    border: 1px solid var(--hdx-neutral-1);
+    border-radius: var(--hdx-radius-sm);
+    background: var(--hdx-neutral-0);
     text-decoration: none;
     color: inherit;
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.03),
-      0 2px 6px rgba(0, 0, 0, 0.03);
-    transition:
-      border-color 120ms ease,
-      box-shadow 120ms ease,
-      transform 120ms ease;
+    box-shadow: var(--hdx-shadow-sm);
+    transition: border-color 0.15s ease;
   }
   .card:hover {
-    border-color: #9ca3af;
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.04),
-      0 4px 12px rgba(0, 0, 0, 0.04);
-    transform: translateY(-1px);
+    border-color: var(--hdx-neutral-8);
   }
   .icon {
     width: 56px;
     height: 56px;
     flex-shrink: 0;
-    color: #1f2937;
+    color: var(--hdx-neutral-9);
   }
   .text {
     display: flex;
@@ -67,12 +58,12 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
   .name {
     font-size: 1.05rem;
     font-weight: 600;
-    color: #111;
+    color: var(--hdx-neutral-9);
     margin: 0;
   }
   .tagline {
     font-size: 0.875rem;
-    color: #4b5563;
+    color: var(--hdx-neutral-7);
     margin: 0;
     line-height: 1.45;
   }

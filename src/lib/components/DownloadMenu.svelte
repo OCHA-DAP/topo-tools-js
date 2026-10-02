@@ -232,8 +232,8 @@
   }
 
   .dl-btn {
-    background: #1d4ed8;
-    color: #fff;
+    background: var(--hdx-primary-5);
+    color: var(--hdx-neutral-0);
     border: none;
     padding: 0.6rem 1rem;
     font-size: 0.875rem;
@@ -242,11 +242,12 @@
   }
 
   .dl-btn:hover:not(:disabled) {
-    background: #1e40af;
+    background: var(--hdx-primary-9);
   }
 
   .dl-btn:disabled {
-    opacity: 0.6;
+    background: var(--hdx-neutral-05);
+    color: var(--hdx-neutral-3);
     cursor: not-allowed;
   }
 
@@ -254,13 +255,13 @@
      DownloadMenu elsewhere on the same page (e.g. "Download issues" next to
      the main "Download GeoJSON" CTA) — outline style instead of solid blue. */
   .dl-group.dl-secondary .dl-btn {
-    background: #fff;
-    color: #374151;
-    border: 1px solid #d1d5db;
+    background: var(--hdx-neutral-0);
+    color: var(--hdx-neutral-8);
+    border: 1px solid var(--hdx-neutral-2);
   }
 
   .dl-group.dl-secondary .dl-btn:hover:not(:disabled) {
-    background: #f3f4f6;
+    background: var(--hdx-neutral-01);
   }
 
   .dl-group.dl-secondary .dl-primary {
@@ -269,13 +270,13 @@
 
   .dl-primary {
     flex: 1;
-    border-radius: 6px 0 0 6px;
+    border-radius: var(--hdx-radius-sm) 0 0 var(--hdx-radius-sm);
   }
 
   .dl-caret {
     padding: 0.6rem 0.5rem;
-    border-radius: 0 6px 6px 0;
-    border-left: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 0 var(--hdx-radius-sm) var(--hdx-radius-sm) 0;
+    border-left: 1px solid var(--hdx-overlay-white-20);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -293,13 +294,13 @@
     position: absolute;
     right: 0;
     top: calc(100% + 4px);
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
+    background: var(--hdx-neutral-0);
+    border: 1px solid var(--hdx-neutral-1);
+    border-radius: var(--hdx-radius-sm);
     padding: 0.25rem;
     min-width: 100%;
     z-index: 10;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--hdx-shadow-md);
     list-style: none;
     margin: 0;
   }
@@ -311,28 +312,28 @@
     border: none;
     padding: 0.5rem 0.75rem;
     font-size: 0.875rem;
-    color: #111;
+    color: var(--hdx-neutral-9);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--hdx-radius-sm);
   }
 
   .dl-item:hover:not(:disabled) {
-    background: #f3f4f6;
+    background: var(--hdx-neutral-05);
   }
 
   .dl-item:disabled {
-    color: #9ca3af;
+    color: var(--hdx-neutral-5);
     cursor: not-allowed;
   }
 
   .dl-info {
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
     font-size: 0.8rem;
     padding: 0.5rem 0.75rem;
   }
 
   .dl-error {
-    color: #b91c1c;
+    color: var(--hdx-error-6);
     font-size: 0.8rem;
     padding: 0.5rem 0.75rem;
   }
@@ -341,14 +342,14 @@
     width: 100%;
     margin: 0.4rem 0 0;
     font-size: 0.8rem;
-    color: #6b7280;
+    color: var(--hdx-neutral-7);
   }
 
   .dl-error-line {
     width: 100%;
     margin: 0.4rem 0 0;
     font-size: 0.8rem;
-    color: #b91c1c;
+    color: var(--hdx-error-6);
     word-break: break-word;
   }
 </style>
