@@ -2,7 +2,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { quoteIdent } from "$lib/db/code";
 import {
   detectLevelColumnsOrSingle,
-  supplementalColumns,
+  levelLikeColumns,
   verifyFunctionalCluster,
 } from "$lib/tools/schema-map/pipeline/levelColumns";
 import { detectLevels } from "$lib/tools/schema-fill/pipeline/levels";
@@ -35,6 +35,7 @@ async function hasCodes(
 export async function resolveCodeLevels(
   conn: AsyncDuckDBConnection,
   table: string,
+  geomTable: string,
   schema: TargetSchema | null,
 ): Promise<Map<number, Level>> {
   if (schema !== null) {
@@ -63,7 +64,7 @@ export async function resolveCodeLevels(
     throw new Error(`no admin hierarchy level detected in ${table}`);
   }
   // A skipped level would corrupt every code below it, so never guess.
-  const supplemental = await supplementalColumns(conn, table);
+  const supplemental = await levelLikeColumns(conn, table, geomTable);
   if (supplemental.length > 0) {
     throw new Error(
       `${table}: ${JSON.stringify(supplemental)} group units like a level but were not detected as one; set the name/code field template explicitly`,

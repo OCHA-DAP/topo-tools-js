@@ -47,7 +47,7 @@ export async function runCodeCreate(
     allowEmptyDelimiter: true,
   });
   await conn.query("CREATE OR REPLACE TABLE cc_attr AS SELECT * FROM layer_attr");
-  const levels = await resolveCodeLevels(conn, "cc_attr", schema);
+  const levels = await resolveCodeLevels(conn, "cc_attr", "layer_01", schema);
   await assignCreateCodes(conn, "cc_attr", levels, fmt, sourceCodes);
   const issues = await buildCodeIssues(conn, "cc_attr", levels, fmt, sourceCodes);
 

@@ -86,6 +86,7 @@ export async function runCodeUpdate(
     conn,
     "cu_a_layer_attr",
     "cu_b_attr",
+    ["cu_a_layer_01", "cu_b_layer_01"],
     opts.schemaA,
     opts.schemaB,
     opts.rootCode,
