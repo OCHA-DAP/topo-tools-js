@@ -7,16 +7,21 @@ import {
 } from "$lib/db/codeJoin";
 
 // Clip's issues report: dropped input features, merged or dropped
-// micro-polygons, and code-join rows when one was supplied (docs/adr/0045).
+// micro-polygons, clip-detached pieces, and code-join rows when one was supplied (docs/adr/0045).
 
 type ClipIssueKind =
-  "unassigned" | "clip-empty" | "micro-polygon" | "code-mismatch" | "code-fallback";
+  | "unassigned"
+  | "clip-empty"
+  | "micro-polygon"
+  | "detached-part"
+  | "code-mismatch"
+  | "code-fallback";
 
 export interface ClipIssueRow {
   key: string;
   kind: ClipIssueKind;
   unitA: number;
-  unitB: number | null; // micro-polygon rows: the receiving fid, null when dropped
+  unitB: number | null; // micro-polygon/detached-part rows: the receiving fid, null when none
   overlayFid: number | null;
   reason: string | null;
   bbox: [number, number, number, number];
@@ -63,18 +68,27 @@ export async function buildClipIssues(
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE cl_issues AS
-    SELECT key, kind, unit_a, NULL::BIGINT AS unit_b, overlay_fid, reason, geom, xmin, ymin, xmax, ymax
+    SELECT key, kind, unit_a, NULL::BIGINT AS unit_b, overlay_fid, reason,
+           NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m, NULL::DOUBLE AS thinness_ratio,
+           NULL::BOOLEAN AS fixed, geom, xmin, ymin, xmax, ymax
     FROM cl_unassigned_issues
     UNION ALL
-    SELECT key, kind, unit_a, unit_b, NULL::BIGINT, reason, geom, xmin, ymin, xmax, ymax
+    SELECT key, kind, unit_a, unit_b, NULL::BIGINT, reason, area_m2, max_width_m, NULL,
+           fixed, geom, xmin, ymin, xmax, ymax
     FROM cl_micro
     UNION ALL
-    SELECT key, kind, unit_a, NULL::BIGINT, overlay_fid, reason, geom, xmin, ymin, xmax, ymax
+    SELECT key, kind, unit_a, unit_b, overlay_fid, reason, area_m2, max_width_m, thinness_ratio,
+           fixed, geom, xmin, ymin, xmax, ymax
+    FROM cl_detached
+    UNION ALL
+    SELECT key, kind, unit_a, NULL::BIGINT, overlay_fid, reason, NULL, NULL, NULL, NULL,
+           geom, xmin, ymin, xmax, ymax
     FROM cl_code_issues
   `);
   await conn.query("DROP TABLE IF EXISTS cl_unassigned_issues");
   await conn.query("DROP TABLE IF EXISTS cl_code_issues");
   await conn.query("DROP TABLE IF EXISTS cl_micro");
+  await conn.query("DROP TABLE IF EXISTS cl_detached");
 
   const meta = (
     await conn.query(`--sql

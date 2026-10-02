@@ -8,6 +8,9 @@ const OWNED_TABLES = [
   "overlay_raw_layer",
   "overlay_layer_01",
   "overlay_layer_attr",
+  "original_raw_layer",
+  "original_layer_01",
+  "original_layer_attr",
   "cl_input_parts",
   "cl_overlay_parts",
   "cl_overlay_pieces",
@@ -23,6 +26,7 @@ const OWNED_TABLES = [
   "cl_input_bbox",
   "cl_clip_pieces",
   "cl_clip",
+  "cl_detached",
   "cl_unassigned_issues",
   "cl_code_issues",
   "cl_issues",
@@ -42,8 +46,10 @@ export async function loadLayers(
   conn: AsyncDuckDBConnection,
   inputFiles: File[],
   overlayFiles: File[],
+  originalFiles: File[] = [],
 ): Promise<void> {
   await dropPriorRun(conn);
   await loadFile(db, conn, inputFiles, { prefix: "input_" });
   await loadFile(db, conn, overlayFiles, { prefix: "overlay_" });
+  if (originalFiles.length > 0) await loadFile(db, conn, originalFiles, { prefix: "original_" });
 }

@@ -34,7 +34,26 @@ scoping decisions the port required.
    clip result comes out empty, including every one lying outside the
    winner, is dropped from the output. `pipeline/issues.ts` reports these
    as `clip-empty` rows with their pre-clip geometry; `unassigned` rows
-   only arise when no overlay feature wins at all.
+   only arise when no overlay feature wins at all. Detached pieces are then
+   merged or kept (below), and micro-polygons merged.
+
+## Clip-detached pieces
+
+Clipping an extended feature to its overlay feature can cut one of its parts
+into several pieces, e.g. where the overlay edge crosses a thin tip.
+`mergeDetachedParts` (`$lib/db/coverage.ts`, shared with `edge-mosaic` and
+`edge-match` through `mergeClipDetached` and the per-group clip) groups each
+piece by the pre-clip part holding its interior point and keeps that part's
+largest piece on the original footprint. A piece under 1% of it merges into
+the neighbour it shares the longest edge with, unless the original drew it
+that way: mostly original land, with almost no original land clipped away
+beside it. `edge-match` uses its pre-extension input as the original;
+`edge-clip` and `edge-mosaic` need the optional original layer, and without it
+only report such pieces. A piece with no edge neighbour is never changed and
+isn't reported. Every JS clip runs against one overlay feature, so the
+same-overlay neighbour rule holds without an overlay column. See
+`docs/adr/0042` and topo-tools-py's ADR 0120 for why the rule is a ratio
+checked against the original, with no absolute size limit.
 
 ## Single winning overlay feature, no per-overlay-feature loop
 

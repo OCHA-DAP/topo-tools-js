@@ -1,6 +1,12 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { bboxColumnsSql, bboxOverlapSql } from "./bbox";
-import { NODING_FALLBACK_GRID, SNAP_TOLERANCE } from "./constants";
+import {
+  DETACHED_MAX_ORIGINAL_SHARE,
+  DETACHED_MERGE_MAX_RATIO,
+  DETACHED_MIN_NECK_RATIO,
+  NODING_FALLBACK_GRID,
+  SNAP_TOLERANCE,
+} from "./constants";
 import { intersectPairs } from "./overlap";
 import { degSqToM2, degToM } from "./units";
 
@@ -152,10 +158,11 @@ async function emptyMicroIssues(conn: AsyncDuckDBConnection, issuesTable: string
 }
 
 // Per-row rebuild of `rebuilt` after the set-based union throws: a row that still
-// throws is retried with its own parts snapped onto the incoming micro parts.
+// throws is retried with its own kept parts snapped onto the incoming parts.
 async function rebuildRowwise(
   conn: AsyncDuckDBConnection,
   parts: string,
+  keep: string,
   dest: string,
   touched: string,
   rebuilt: string,
@@ -168,7 +175,7 @@ async function rebuildRowwise(
   for (const { rnid } of rnids) {
     const insert = (combine: string) => `--sql
       INSERT INTO ${rebuilt}
-      WITH own AS (SELECT ST_Union_Agg(geom) AS g FROM ${parts} WHERE rnid = ${rnid} AND NOT micro),
+      WITH own AS (SELECT ST_Union_Agg(geom) AS g FROM ${parts} WHERE rnid = ${rnid} AND ${keep}),
       incoming AS (SELECT ST_Union_Agg(geom) AS g FROM ${dest} WHERE dest_rnid = ${rnid})
       SELECT * FROM (SELECT ${rnid}, ${combine} AS geom FROM own, incoming)
       WHERE NOT ST_IsEmpty(geom)
@@ -273,7 +280,7 @@ export async function mergeMicroPolygons(
       `);
     } catch {
       // WASM GEOS throws "non-noded intersection" on some near-coincident edges.
-      const snapped = await rebuildRowwise(conn, parts, dest, touched, rebuilt);
+      const snapped = await rebuildRowwise(conn, parts, "NOT micro", dest, touched, rebuilt);
       if (snapped > 0) console.warn(`mergeMicroPolygons: ${snapped} row(s) unioned after snapping`);
     }
     await conn.query(`--sql
@@ -289,6 +296,437 @@ export async function mergeMicroPolygons(
   } finally {
     for (const t of [all, parts, dest, touched, rebuilt, microBuf, nonMicro, weights])
       await conn.query(`DROP TABLE IF EXISTS ${t}`);
+  }
+}
+
+export interface DetachedPartsOptions {
+  preClipSql: string; // SELECT fid, geom: the rows before clipping
+  overlaySql: string; // SELECT geom: the one overlay feature they were clipped to
+  overlayFid: number;
+  originalTable: string | null; // pre-extension layer (fid, geom), when known
+  issuesTable: string;
+}
+
+export async function emptyDetachedIssues(
+  conn: AsyncDuckDBConnection,
+  issuesTable: string,
+): Promise<void> {
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE ${issuesTable} AS
+    SELECT NULL::VARCHAR AS key, NULL::VARCHAR AS kind, NULL::BIGINT AS unit_a,
+           NULL::BIGINT AS unit_b, NULL::BIGINT AS overlay_fid, NULL::VARCHAR AS reason,
+           NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m, NULL::DOUBLE AS thinness_ratio,
+           NULL::BOOLEAN AS fixed, NULL::GEOMETRY AS geom,
+           NULL::DOUBLE AS xmin, NULL::DOUBLE AS xmax, NULL::DOUBLE AS ymin, NULL::DOUBLE AS ymax
+    WHERE FALSE
+  `);
+}
+
+// Runs `build(g)` with exact geometry, then once more on the fallback grid
+// when WASM GEOS throws a noding error that native GEOS doesn't.
+async function queryOrGrid(
+  conn: AsyncDuckDBConnection,
+  label: string,
+  build: (g: (expr: string) => string) => string,
+): Promise<void> {
+  try {
+    await conn.query(build((expr) => expr));
+  } catch (e) {
+    console.warn(`${label} failed; retrying on a ${NODING_FALLBACK_GRID} grid:`, e);
+    await conn.query(build((expr) => `ST_ReducePrecision(${expr}, ${NODING_FALLBACK_GRID})`));
+  }
+}
+
+// Ported from topo-tools-py's merge_detached_parts, which holds the merge rule;
+// writes one detached-part row per non-isolated piece to issuesTable and
+// returns the merged count. Without originalTable nothing merges.
+export async function mergeDetachedParts(
+  conn: AsyncDuckDBConnection,
+  tableIn: string,
+  tableOut: string,
+  opts: DetachedPartsOptions,
+): Promise<number> {
+  const { preClipSql, overlaySql, overlayFid, originalTable, issuesTable } = opts;
+  const multi = await conn.query(
+    `SELECT COUNT(*) AS n FROM ${tableIn} WHERE ST_NumGeometries(geom) > 1`,
+  );
+  if (Number((multi.toArray()[0] as { n: bigint | number }).n) === 0) {
+    await emptyDetachedIssues(conn, issuesTable);
+    if (tableOut !== tableIn) {
+      await conn.query(`CREATE OR REPLACE TABLE ${tableOut} AS SELECT * FROM ${tableIn}`);
+    }
+    return 0;
+  }
+  const tol = SNAP_TOLERANCE;
+  const areaFactor = degSqToM2(1).toExponential();
+  const widthFactor = degToM(1).toExponential();
+  const t = (name: string) => `${issuesTable}_${name}`;
+  const [all, parts, pre, pts, q, group, rank, dest, moved, touched, rebuilt] = [
+    "all",
+    "parts",
+    "pre",
+    "pts",
+    "q",
+    "group",
+    "rank",
+    "dest",
+    "moved",
+    "touched",
+    "rebuilt",
+  ].map(t);
+  const scratch = [
+    all,
+    parts,
+    pre,
+    pts,
+    q,
+    group,
+    rank,
+    dest,
+    moved,
+    touched,
+    rebuilt,
+    t("oparts"),
+  ];
+  try {
+    await conn.query(
+      `CREATE OR REPLACE TABLE ${all} AS SELECT row_number() OVER () AS rnid, * FROM ${tableIn}`,
+    );
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${parts} AS
+      WITH p AS (
+        SELECT rnid, fid, ST_NumGeometries(geom) > 1 AS multi,
+               UNNEST(ST_Dump(geom)).geom AS geom
+        FROM ${all} WHERE geom IS NOT NULL
+      )
+      SELECT row_number() OVER () AS pid, *, ST_Area(geom) AS area, ${bboxColumnsSql()}
+      FROM p
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${pre} AS
+      WITH p AS (
+        SELECT fid, UNNEST(ST_Dump(geom)).geom AS geom FROM (${preClipSql})
+        WHERE fid IN (SELECT fid FROM ${parts} WHERE multi)
+      )
+      SELECT row_number() OVER () AS qid, fid, geom, ST_Area(geom) AS qarea, ${bboxColumnsSql()}
+      FROM p
+    `);
+    // Each output piece lies inside one pre-clip part, so a point test finds it.
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${pts} AS
+      SELECT pid, fid, pt, ST_X(pt) AS px, ST_Y(pt) AS py
+      FROM (SELECT pid, fid, ST_PointOnSurface(geom) AS pt FROM ${parts} WHERE multi)
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${q} AS
+      SELECT p.pid, p.fid, COALESCE(q.qid, -p.pid) AS qid
+      FROM ${pts} p LEFT JOIN ${pre} q
+        ON q.fid = p.fid AND q.xmin <= p.px AND q.xmax >= p.px
+       AND q.ymin <= p.py AND q.ymax >= p.py AND ST_Intersects(q.geom, p.pt)
+      QUALIFY row_number() OVER (PARTITION BY p.pid ORDER BY q.qarea DESC NULLS LAST, q.qid) = 1
+    `);
+    if (originalTable === null) {
+      await conn.query(`CREATE OR REPLACE TABLE ${group} AS SELECT *, TRUE AS on_src FROM ${q}`);
+    } else {
+      await groupOnOriginal(conn, issuesTable, originalTable, { parts, pre, pts, q, group });
+    }
+    // Per pre-clip part, the largest piece on the original footprint is kept,
+    // so an extension-only piece never outranks a unit's real footprint.
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${rank} AS
+      WITH flagged AS (
+        SELECT g.*, p.area,
+               row_number() OVER (
+                 PARTITION BY g.fid, g.qid ORDER BY g.on_src DESC, p.area DESC, g.pid
+               ) = 1 AS kept
+        FROM ${group} g JOIN ${parts} p USING (pid)
+      )
+      SELECT pid, area, kept,
+             max(area) FILTER (WHERE kept) OVER (PARTITION BY fid, qid) AS kept_area
+      FROM flagged
+    `);
+    // A point contact measures about 2*tol of neighbour boundary; an edge far more.
+    await queryOrGrid(
+      conn,
+      "mergeDetachedParts contact",
+      (g) => `--sql
+      CREATE OR REPLACE TABLE ${dest} AS
+      WITH d AS (
+        SELECT p.*, r.area / NULLIF(r.kept_area, 0) < ${DETACHED_MERGE_MAX_RATIO} AS small
+        FROM ${rank} r JOIN ${parts} p USING (pid)
+        WHERE NOT r.kept
+      ),
+      n AS (
+        SELECT * FROM ${parts} WHERE pid NOT IN (SELECT pid FROM d WHERE small IS NOT FALSE)
+      ),
+      pairs AS (
+        SELECT s.pid, n.pid AS dest_pid, n.rnid AS dest_rnid, n.fid AS dest_fid,
+               ST_Length(ST_Intersection(
+                 ST_Boundary(${g("n.geom")}), ST_Buffer(${g("s.geom")}, ${tol})
+               )) AS contact
+        FROM d s JOIN n
+          ON n.rnid <> s.rnid
+         AND n.xmin <= s.xmax + ${tol} AND n.xmax >= s.xmin - ${tol}
+         AND n.ymin <= s.ymax + ${tol} AND n.ymax >= s.ymin - ${tol}
+      ),
+      best AS (
+        SELECT * FROM pairs WHERE contact > ${10 * tol}
+        QUALIFY row_number() OVER (PARTITION BY pid ORDER BY contact DESC, dest_fid) = 1
+      )
+      SELECT d.pid, d.rnid, d.fid, d.area, d.geom, b.dest_rnid, b.dest_fid,
+             CASE WHEN b.dest_pid IS NULL THEN 'isolated'
+                  WHEN d.small IS NOT TRUE THEN 'too-large'
+                  WHEN ST_NumGeometries(ST_Union(${g("d.geom")}, ${g("np.geom")})) = 1
+                    THEN 'candidate'
+                  ELSE 'unattached' END AS outcome
+      FROM d LEFT JOIN best b USING (pid)
+      LEFT JOIN ${parts} np ON np.pid = b.dest_pid
+    `,
+    );
+    if (originalTable === null) {
+      await conn.query(`UPDATE ${dest} SET outcome = 'no-original' WHERE outcome = 'candidate'`);
+    } else {
+      await classifyDetachedCandidates(conn, issuesTable, overlaySql, dest);
+    }
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${issuesTable} AS
+      SELECT 'detached-part-' || fid || '-'
+               || row_number() OVER (PARTITION BY fid ORDER BY pid) AS key,
+             'detached-part' AS kind, fid AS unit_a, dest_fid AS unit_b,
+             ${overlayFid}::BIGINT AS overlay_fid,
+             CASE outcome WHEN 'merged' THEN '${MICRO_MERGED_REASON}'
+                          WHEN 'too-large' THEN 'kept: too large to merge'
+                          WHEN 'no-original' THEN 'kept: no original layer'
+                          WHEN 'lobe' THEN 'kept: matches original shape'
+                          ELSE 'kept: merge did not attach' END AS reason,
+             area * ${areaFactor} AS area_m2,
+             (ST_MaximumInscribedCircle(geom)).radius * 2 * ${widthFactor} AS max_width_m,
+             4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2) AS thinness_ratio,
+             outcome = 'merged' AS fixed, geom, ${bboxColumnsSql()}
+      FROM ${dest} WHERE outcome <> 'isolated' ORDER BY pid
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${moved} AS
+      SELECT pid, rnid, dest_rnid, geom FROM ${dest} WHERE outcome = 'merged'
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${touched} AS
+      SELECT rnid FROM ${moved} UNION SELECT dest_rnid FROM ${moved}
+    `);
+    const keep = `pid NOT IN (SELECT pid FROM ${moved})`;
+    try {
+      await conn.query(`--sql
+        CREATE OR REPLACE TABLE ${rebuilt} AS
+        WITH pieces AS (
+          SELECT p.rnid, p.geom FROM ${parts} p SEMI JOIN ${touched} USING (rnid) WHERE ${keep}
+          UNION ALL
+          SELECT dest_rnid, geom FROM ${moved}
+        )
+        SELECT rnid, ST_Union_Agg(geom) AS geom FROM pieces GROUP BY rnid
+      `);
+    } catch {
+      // WASM GEOS throws "non-noded intersection" on some near-coincident edges.
+      const snapped = await rebuildRowwise(conn, parts, keep, moved, touched, rebuilt);
+      if (snapped > 0) console.warn(`mergeDetachedParts: ${snapped} row(s) unioned after snapping`);
+    }
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${tableOut} AS
+      SELECT t.* EXCLUDE (geom, rnid),
+             COALESCE(ST_Multi(ST_CollectionExtract(r.geom, 3)), t.geom) AS geom
+      FROM ${all} t LEFT JOIN ${rebuilt} r USING (rnid)
+      ORDER BY t.rnid
+    `);
+    const r = await conn.query(`SELECT COUNT(*) AS n FROM ${moved}`);
+    const count = Number((r.toArray()[0] as { n: bigint | number }).n);
+    if (count > 0) console.log(`merged ${count} clip-detached piece(s) in ${tableIn}`);
+    return count;
+  } finally {
+    for (const s of scratch) await conn.query(`DROP TABLE IF EXISTS ${s}`);
+  }
+}
+
+// Writes `group` (pid, fid, qid, on_src): a piece is on the original footprint
+// when its interior point lies on an owned original part or at least
+// DETACHED_MAX_ORIGINAL_SHARE of it is original land.
+async function groupOnOriginal(
+  conn: AsyncDuckDBConnection,
+  prefix: string,
+  originalTable: string,
+  tables: { parts: string; pre: string; pts: string; q: string; group: string },
+): Promise<void> {
+  const { parts, pre, pts, q, group } = tables;
+  const t = (name: string) => `${prefix}_${name}`;
+  const [split, oparts, onsrc, offsrc, shared] = [
+    "split",
+    "oparts",
+    "onsrc",
+    "offsrc",
+    "shared",
+  ].map(t);
+  try {
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${split} AS
+      SELECT pid AS id, p.fid, p.geom, p.xmin, p.xmax, p.ymin, p.ymax
+      FROM ${parts} p JOIN ${q} q USING (pid)
+      WHERE q.qid IN (SELECT qid FROM ${q} GROUP BY qid HAVING count(*) > 1)
+    `);
+    await loadOwnedOriginal(conn, originalTable, split, pre, oparts);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${onsrc} AS
+      SELECT DISTINCT s.id AS pid
+      FROM ${split} s JOIN ${pts} t ON t.pid = s.id JOIN ${oparts} o
+        ON o.fid = s.fid AND o.xmin <= t.px AND o.xmax >= t.px
+       AND o.ymin <= t.py AND o.ymax >= t.py AND ST_Intersects(o.geom, t.pt)
+    `);
+    // An interior point can land in a hole of a piece mostly on the original.
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${offsrc} AS
+      SELECT * FROM ${split} WHERE id NOT IN (SELECT pid FROM ${onsrc})
+    `);
+    await intersectPairs(
+      conn,
+      "mergeDetachedParts share",
+      offsrc,
+      oparts,
+      shared,
+      "a.fid = b.fid AND ST_Intersects(a.geom, b.geom)",
+    );
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${group} AS
+      WITH share AS (
+        SELECT s.a_id AS pid FROM ${shared} s JOIN ${parts} p ON p.pid = s.a_id
+        GROUP BY s.a_id, p.area
+        HAVING sum(ST_Area(s.geom)) >= ${DETACHED_MAX_ORIGINAL_SHARE} * p.area
+      )
+      SELECT q.*, q.pid IN (SELECT pid FROM ${onsrc}) OR q.pid IN (SELECT pid FROM share) AS on_src
+      FROM ${q} q
+    `);
+  } finally {
+    for (const s of [split, onsrc, offsrc, shared]) await conn.query(`DROP TABLE IF EXISTS ${s}`);
+  }
+}
+
+// Writes `oparts` (id, fid, geom, bbox): original parts near a probe, each
+// owned by the pre-clip part holding its feature's interior point, so no key
+// column is shared with the input.
+async function loadOwnedOriginal(
+  conn: AsyncDuckDBConnection,
+  originalTable: string,
+  probeTable: string,
+  pre: string,
+  oparts: string,
+): Promise<void> {
+  const tol = SNAP_TOLERANCE;
+  await conn.query(`--sql
+    CREATE OR REPLACE TABLE ${oparts} AS
+    WITH o AS (SELECT geom, ${bboxColumnsSql()} FROM ${originalTable} WHERE geom IS NOT NULL),
+    near AS (
+      SELECT row_number() OVER () AS oid, geom FROM o
+      WHERE EXISTS (
+        SELECT 1 FROM ${probeTable} p
+        WHERE p.xmin - ${tol} <= o.xmax AND p.xmax + ${tol} >= o.xmin
+          AND p.ymin - ${tol} <= o.ymax AND p.ymax + ${tol} >= o.ymin
+      )
+    ),
+    pos AS (
+      SELECT oid, pt, ST_X(pt) AS px, ST_Y(pt) AS py
+      FROM (SELECT oid, ST_PointOnSurface(geom) AS pt FROM near)
+    ),
+    owner AS (
+      SELECT f.oid, q.fid FROM pos f JOIN ${pre} q
+        ON q.xmin <= f.px AND q.xmax >= f.px
+       AND q.ymin <= f.py AND q.ymax >= f.py AND ST_Intersects(q.geom, f.pt)
+      QUALIFY row_number() OVER (PARTITION BY f.oid ORDER BY q.qid) = 1
+    ),
+    dumped AS (
+      SELECT o.fid, UNNEST(ST_Dump(n.geom)).geom AS geom
+      FROM near n JOIN owner o USING (oid)
+    )
+    SELECT row_number() OVER () AS id, fid, geom, ${bboxColumnsSql()} FROM dumped
+  `);
+}
+
+// Marks each 'candidate' in `dest` as 'merged' or 'lobe'. Original land the
+// overlay clipped away beside a piece (the "neck") is large when the clip
+// sliced across the unit, near zero for a drawn lobe.
+async function classifyDetachedCandidates(
+  conn: AsyncDuckDBConnection,
+  prefix: string,
+  overlaySql: string,
+  dest: string,
+): Promise<void> {
+  const tol = SNAP_TOLERANCE;
+  const t = (name: string) => `${prefix}_${name}`;
+  const [cand, src, su, shared, rule] = ["cand", "src", "su", "cshared", "rule"].map(t);
+  const oparts = t("oparts");
+  try {
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${cand} AS
+      SELECT pid AS id, fid, area, geom, ${bboxColumnsSql()}
+      FROM ${dest} WHERE outcome = 'candidate'
+    `);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${src} AS
+      WITH probe AS (
+        SELECT id, fid, b, ${bboxColumnsSql("b")}
+        FROM (SELECT id, fid, ST_Buffer(geom, ${tol}) AS b FROM ${cand})
+      )
+      SELECT p.id AS pid, o.geom FROM probe p JOIN ${oparts} o
+        ON o.fid = p.fid AND ${bboxOverlapSql("p", "o")}
+      WHERE ST_Intersects(o.geom, p.b)
+    `);
+    await queryOrGrid(
+      conn,
+      "mergeDetachedParts original union",
+      (g) => `--sql
+      CREATE OR REPLACE TABLE ${su} AS
+      SELECT pid AS id, geom, ${bboxColumnsSql()}
+      FROM (SELECT pid, ST_Union_Agg(${g("geom")}) AS geom FROM ${src} GROUP BY pid)
+    `,
+    );
+    await intersectPairs(
+      conn,
+      "mergeDetachedParts candidate share",
+      cand,
+      su,
+      shared,
+      "a.id = b.id",
+    );
+    await queryOrGrid(
+      conn,
+      "mergeDetachedParts neck",
+      (g) => `--sql
+      CREATE OR REPLACE TABLE ${rule} AS
+      WITH ov AS (SELECT ST_Union_Agg(geom) AS geom FROM (${overlaySql})),
+      outside AS (
+        SELECT su.id AS pid, UNNEST(ST_Dump(ST_Difference(
+          ${g("su.geom")},
+          ST_CollectionExtract(ST_Intersection(${g("ov.geom")}, ST_MakeEnvelope(
+            su.xmin - 0.01, su.ymin - 0.01, su.xmax + 0.01, su.ymax + 0.01
+          )), 3)
+        ))).geom AS geom
+        FROM ${su} su, ov
+      ),
+      neck AS (
+        SELECT c.id AS pid, sum(ST_Area(o.geom)) AS neck_area
+        FROM ${cand} c JOIN outside o ON o.pid = c.id
+        WHERE ST_Dimension(o.geom) = 2 AND ST_Intersects(o.geom, ST_Buffer(c.geom, ${tol}))
+        GROUP BY c.id
+      ),
+      share AS (SELECT a_id AS pid, sum(ST_Area(geom)) AS a FROM ${shared} GROUP BY a_id)
+      SELECT c.id AS pid, COALESCE(s.a, 0) / c.area AS share,
+             COALESCE(n.neck_area, 0) / c.area AS neck
+      FROM ${cand} c LEFT JOIN share s ON s.pid = c.id LEFT JOIN neck n ON n.pid = c.id
+    `,
+    );
+    await conn.query(`--sql
+      UPDATE ${dest} d SET outcome = CASE
+        WHEN r.share < ${DETACHED_MAX_ORIGINAL_SHARE} OR r.neck >= ${DETACHED_MIN_NECK_RATIO}
+          THEN 'merged' ELSE 'lobe' END
+      FROM ${rule} r WHERE r.pid = d.pid
+    `);
+  } finally {
+    for (const s of [cand, src, su, shared, rule]) await conn.query(`DROP TABLE IF EXISTS ${s}`);
   }
 }
 

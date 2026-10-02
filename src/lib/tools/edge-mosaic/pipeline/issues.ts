@@ -7,12 +7,19 @@ import {
 } from "$lib/db/codeJoin";
 import { buildStitchIssues } from "../../edge-stitch/pipeline/issues";
 
-// Combined issues report: dropped input features, stitch's leftover gaps and
-// micro-polygons, and code-join rows when one was supplied (docs/adr/0045).
+// Combined issues report: dropped input features, clip-detached pieces,
+// stitch's leftover gaps and micro-polygons, and code-join rows when one was supplied (docs/adr/0045).
 
 export interface MosaicIssueRow {
   key: string;
-  kind: "unassigned" | "clip-empty" | "gap" | "micro-polygon" | "code-mismatch" | "code-fallback";
+  kind:
+    | "unassigned"
+    | "clip-empty"
+    | "detached-part"
+    | "gap"
+    | "micro-polygon"
+    | "code-mismatch"
+    | "code-fallback";
   areaM2: number | null;
   maxWidthM: number | null;
   thinnessRatio: number | null;
@@ -69,29 +76,40 @@ export async function buildMosaicIssues(
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ms_issues AS
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, NULL::BIGINT AS unit_b,
-           overlay_fid, reason, geom, xmin, ymin, xmax, ymax
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, NULL::BOOLEAN AS fixed, unit_a,
+           NULL::BIGINT AS unit_b, overlay_fid, reason, geom, xmin, ymin, xmax, ymax
     FROM ms_unassigned
     UNION ALL
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, NULL::BIGINT,
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, NULL, unit_a, NULL::BIGINT,
            overlay_fid, reason, geom, xmin, ymin, xmax, ymax
     FROM ms_code_issues
     UNION ALL
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, unit_b,
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, fixed, unit_a, unit_b,
+           overlay_fid, reason, geom, xmin, ymin, xmax, ymax
+    FROM cl_detached
+    UNION ALL
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, fixed, unit_a, unit_b,
            NULL::BIGINT AS overlay_fid, reason, geom, xmin, ymin, xmax, ymax
     FROM st_issues
   `);
   await conn.query("DROP TABLE IF EXISTS ms_code_issues");
+  await conn.query("DROP TABLE IF EXISTS cl_detached");
 
   const meta = (
     await conn.query(`--sql
-      SELECT key, kind, unit_a, overlay_fid, reason, xmin, ymin, xmax, ymax
-      FROM ms_issues WHERE kind IN ('unassigned', 'clip-empty', 'code-mismatch', 'code-fallback')
+      SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, unit_b, overlay_fid, reason,
+             xmin, ymin, xmax, ymax
+      FROM ms_issues
+      WHERE kind IN ('unassigned', 'clip-empty', 'detached-part', 'code-mismatch', 'code-fallback')
     `)
   ).toArray() as Array<{
     key: string;
-    kind: "unassigned" | "clip-empty" | "code-mismatch" | "code-fallback";
+    kind: "unassigned" | "clip-empty" | "detached-part" | "code-mismatch" | "code-fallback";
+    area_m2: number | null;
+    max_width_m: number | null;
+    thinness_ratio: number | null;
     unit_a: bigint | number;
+    unit_b: bigint | number | null;
     overlay_fid: bigint | number | null;
     reason: string | null;
     xmin: number;
@@ -104,10 +122,11 @@ export async function buildMosaicIssues(
     ...meta.map((r) => ({
       key: r.key,
       kind: r.kind,
-      areaM2: null,
-      maxWidthM: null,
-      thinnessRatio: null,
+      areaM2: r.area_m2,
+      maxWidthM: r.max_width_m,
+      thinnessRatio: r.thinness_ratio,
       unitA: Number(r.unit_a),
+      unitB: r.unit_b == null ? null : Number(r.unit_b),
       overlayFid: r.overlay_fid == null ? null : Number(r.overlay_fid),
       reason: r.reason,
       bbox: [r.xmin, r.ymin, r.xmax, r.ymax] as [number, number, number, number],

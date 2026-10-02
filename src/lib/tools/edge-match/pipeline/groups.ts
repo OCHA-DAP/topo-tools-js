@@ -1,6 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { PipelineError, runPipeline } from "$lib/tools/edge-extend/pipeline/index";
 import { clipEngine } from "$lib/db/clipEngine";
+import { emptyDetachedIssues, mergeDetachedParts } from "$lib/db/coverage";
 import { queryToGeoJSON } from "$lib/db/geojson";
 
 // Sentinel overlay_fid for the orphan passthrough pseudo-group (ported from
@@ -32,7 +33,10 @@ export type GroupStageFn = (
 export type GroupDoneFn = (groupIndex: number, groupTotal: number, result: GroupResult) => void;
 
 // Map preview only, so a failure leaves the group done without one.
-async function groupGeoJSON(conn: AsyncDuckDBConnection, overlayFid: number): Promise<string | undefined> {
+async function groupGeoJSON(
+  conn: AsyncDuckDBConnection,
+  overlayFid: number,
+): Promise<string | undefined> {
   try {
     return await queryToGeoJSON(
       conn,
@@ -103,6 +107,7 @@ export async function runGroups(
   await conn.query(
     "CREATE OR REPLACE TABLE ge_clip_empty (unit_a BIGINT, overlay_fid BIGINT, geom GEOMETRY)",
   );
+  await emptyDetachedIssues(conn, "ge_detached");
   const results: GroupResult[] = [];
 
   for (let i = 0; i < groups.length; i++) {
@@ -145,6 +150,14 @@ export async function runGroups(
           `SELECT geom FROM overlay_layer_01 WHERE fid = ${group.overlayFid}`,
           "ge_group_clip",
         );
+        await mergeDetachedParts(conn, "ge_group_clip", "ge_group_clip", {
+          preClipSql: "SELECT fid, geom FROM layer_05",
+          overlaySql: `SELECT geom FROM overlay_layer_01 WHERE fid = ${group.overlayFid}`,
+          overlayFid: group.overlayFid,
+          originalTable: "input_layer_01",
+          issuesTable: "ge_group_detached",
+        });
+        await conn.query("INSERT INTO ge_detached SELECT * FROM ge_group_detached");
         console.log("[EE-DEBUG] group:3 insert into ge_results");
         await conn.query(`--sql
           INSERT INTO ge_results
@@ -195,6 +208,7 @@ export async function runGroups(
         await conn.query("DROP TABLE IF EXISTS layer_attr");
         await conn.query("DROP TABLE IF EXISTS layer_05");
         await conn.query("DROP TABLE IF EXISTS ge_group_clip");
+        await conn.query("DROP TABLE IF EXISTS ge_group_detached");
       } catch (cleanupError) {
         console.warn(`Cleanup after group ${group.label} failed:`, cleanupError);
       }

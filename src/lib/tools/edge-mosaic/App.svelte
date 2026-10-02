@@ -2,6 +2,7 @@
   import CarryColumnsPicker from "$lib/components/CarryColumnsPicker.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
+  import DetachedNote from "$lib/components/DetachedNote.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import SideToggle from "$lib/components/SideToggle.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
@@ -24,6 +25,9 @@
 
   let inputFiles = $state<File[]>([]);
   let overlayFiles = $state<File[]>([]);
+  let originalFiles = $state<File[]>([]);
+  let detachedMerged = $state(0);
+  let detachedKept = $state(0);
   let running = $state(false);
   let currentStage = $state(0); // 0=idle, 1-6=active stage, 7=done
   let errorStage = $state(0);
@@ -116,6 +120,14 @@
     });
   });
 
+  $effect(() => {
+    const _o = originalFiles;
+    untrack(() => {
+      if (!resultGeoJSON || running) return;
+      handleRun();
+    });
+  });
+
   async function handleRun(): Promise<void> {
     clearMap?.();
     error = null;
@@ -124,6 +136,8 @@
     originalGeoJSON = null;
     overlayOutlineGeoJSON = null;
     resultBounds = null;
+    detachedMerged = 0;
+    detachedKept = 0;
     overlayFid = null;
     issues = [];
     issuesGeoJSON = null;
@@ -147,6 +161,7 @@
         duckdbState.conn!,
         inputFiles,
         overlayFiles,
+        originalFiles,
         (stage, label) => {
           currentStage = stage;
           stageLabel = label;
@@ -161,6 +176,8 @@
       originalGeoJSON = result.inputGeoJSON;
       overlayOutlineGeoJSON = result.overlayOutlineGeoJSON;
       resultBounds = result.bounds;
+      detachedMerged = result.detachedMergedCount;
+      detachedKept = result.detachedKeptCount;
       overlayFid = result.overlayFid;
       issues = result.issues;
       issuesGeoJSON = result.issuesGeoJSON;
@@ -242,6 +259,18 @@
         helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 input layer."
       />
     </section>
+
+    <details class="step">
+      <summary class="step-heading">
+        Original layer <span class="optional">(optional)</span>
+      </summary>
+      <DropZone
+        bind:files={originalFiles}
+        urlParam="original"
+        disabled={running}
+        helpText="The input before Edge Extender. Small pieces the clip cuts off a unit merge into their longest-edge neighbour only where this layer doesn't draw them as part of the unit."
+      />
+    </details>
 
     {#if inputColumns && overlayColumns}
       <section class="step">
@@ -365,6 +394,9 @@
             into a neighbouring feature or dropped.
           </p>
         {/if}
+        {#if detachedMerged + detachedKept > 0}
+          <p class="warn-line"><DetachedNote merged={detachedMerged} kept={detachedKept} /></p>
+        {/if}
         {#if hadResidualOverlaps}
           <p class="warn-line">Overlaps remain after seam-closing, see the issues download.</p>
         {/if}
@@ -425,6 +457,17 @@
 </div>
 
 <style>
+  summary.step-heading {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .optional {
+    font-weight: 400;
+    color: var(--hdx-neutral-7);
+    font-size: 0.85rem;
+  }
+
   .layout {
     display: grid;
     grid-template-columns: 320px 1fr;

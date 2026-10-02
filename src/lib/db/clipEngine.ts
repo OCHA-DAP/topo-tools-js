@@ -1,6 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { bboxColumnsSql } from "./bbox";
 import { subdivideBoundary } from "./clipTiling";
+import { mergeDetachedParts } from "./coverage";
 import { intersectPairs } from "./overlap";
 
 export interface ClipEngineResult {
@@ -56,4 +57,23 @@ export async function clipEngine(
   await conn.query("DROP TABLE IF EXISTS cl_input_bbox");
 
   return { outputCount, emptyCount: Math.max(0, assignedCount - outputCount) };
+}
+
+// Clip and Mosaic's detached-piece pass over cl_clip (cl_assign's input
+// features clipped to one overlay feature), writing cl_detached.
+export async function mergeClipDetached(
+  conn: AsyncDuckDBConnection,
+  overlayFid: number,
+  hasOriginal: boolean,
+): Promise<{ merged: number; kept: number }> {
+  const merged = await mergeDetachedParts(conn, "cl_clip", "cl_clip", {
+    preClipSql:
+      "SELECT c.fid, c.geom FROM input_layer_01 c JOIN cl_assign a ON a.input_fid = c.fid",
+    overlaySql: `SELECT geom FROM overlay_layer_01 WHERE fid = ${overlayFid}`,
+    overlayFid,
+    originalTable: hasOriginal ? "original_layer_01" : null,
+    issuesTable: "cl_detached",
+  });
+  const r = await conn.query("SELECT COUNT(*) AS n FROM cl_detached");
+  return { merged, kept: Number((r.toArray()[0] as { n: bigint | number }).n) - merged };
 }

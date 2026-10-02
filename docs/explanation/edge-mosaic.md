@@ -19,8 +19,10 @@ usual `layer_01`). Ported from topo-tools-py's `edge-mosaic`.
    (`docs/adr/0026`, shared by both tools). If overlay columns were
    requested, they're joined under their own names from the winning
    overlay feature's own attribute row onto `input_layer_attr` here, before clipping.
-3. **Clip** (`$lib/db/clipEngine.ts`) — the same tiled clip Clip uses.
-   Fails the run if zero output rows result.
+3. **Clip** (`$lib/db/clipEngine.ts`) — the same tiled clip Clip uses,
+   followed by the same clip-detached merge against the optional original
+   layer (`docs/explanation/edge-clip.md`). Fails the run if zero output
+   rows result.
 4. **Stitch** (`stitch/pipeline/index.ts`'s `runStitch`, called with
    `sourceTable="cl_clip"`, `attrTable="input_layer_attr"`) — one
    whole-table `ST_CoverageClean` pass over the clipped result, closing
@@ -30,7 +32,8 @@ usual `layer_01`). Ported from topo-tools-py's `edge-mosaic`.
    never reached the final output (kind `clip-empty` for one clipped to
    nothing, including every one outside the winner overlay feature, or
    `unassigned` when no overlay feature won)
-   with every leftover gap `runStitch`'s own issues check finds (kind
+   with every merged or kept clip-detached piece (kind `detached-part`),
+   every leftover gap `runStitch`'s own issues check finds (kind
    `gap`) and any `code-mismatch`/`code-fallback` rows from an optional
    code-based assignment override (same override Clip's assign-one
    accepts, see `docs/explanation/edge-clip.md`), into one report.

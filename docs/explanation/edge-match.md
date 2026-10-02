@@ -40,6 +40,9 @@ an optional code-based assignment override is available (see below).
    shared clip engine (`src/lib/db/clipEngine.ts`, the same one Clip and
    Mosaic use, as in topo-tools-py), except the passthrough group, which
    has no real overlay feature boundary and lands in `ge_results` unclipped.
+   Each clipped group's detached pieces are merged or kept against the
+   whole pre-extension input (`input_layer_01`, see
+   `docs/explanation/edge-clip.md`), accumulating rows in `ge_detached`.
    An extended input feature whose clip comes out empty is recorded in
    `ge_clip_empty`, which in assign-one mode is every input feature lying
    outside the winning overlay feature. A
@@ -56,9 +59,10 @@ an optional code-based assignment override is available (see below).
 ## Issues export
 
 `ge_unassigned` (input features left without an overlay feature), `ge_dropped` (input features
-whose whole group's extension failed) and `ge_clip_empty` (input features
-clipped to nothing) are combined into one `ge_issues` table, each row
-tagged with a `kind` (`unassigned`, `dropped_group` or `clip-empty`) and,
+whose whole group's extension failed), `ge_clip_empty` (input features
+clipped to nothing) and `ge_detached` (clip-detached pieces) are combined
+into one `ge_issues` table, each row tagged with a `kind` (`unassigned`,
+`dropped_group`, `clip-empty` or `detached-part`) and,
 for dropped groups, the overlay feature fid and the error that caused the drop. When
 the passthrough toggle is on and a formerly-unassigned input feature made it through
 its pseudo-group into `ge_results`, it's also surfaced as a `passthrough`
