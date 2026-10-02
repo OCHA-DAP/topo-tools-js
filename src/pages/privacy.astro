@@ -1,0 +1,99 @@
+---
+import SiteHeader from "$lib/components/SiteHeader.astro";
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout
+  title="Privacy: Topology Tools"
+  description="Topology Tools runs entirely in your browser. Files you open are never uploaded."
+>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <SiteHeader class="masthead-bar" />
+      <h1>Privacy</h1>
+      <p class="tagline">
+        Topology Tools runs entirely in your web browser. Files you open are processed on your
+        device and are never uploaded to us or anyone else.
+      </p>
+    </div>
+  </header>
+
+  <main class="page">
+    <ul>
+      <li>
+        <strong>No accounts, cookies, analytics or tracking.</strong>
+      </li>
+      <li>
+        <strong>Hosting:</strong> the site is served by GitHub Pages. GitHub may log requests
+        (including IP addresses) under the{" "}
+        <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">
+          GitHub Privacy Statement
+        </a>
+        .
+      </li>
+      <li>
+        <strong>Third-party requests:</strong> to work, your browser downloads the DuckDB engine
+        from cdn.jsdelivr.net, its spatial extension from extensions.duckdb.org, and basemap tiles
+        from tiles.openfreemap.org. "Try with demo data" loads files from data.source.coop. If you
+        paste a URL, your browser fetches it directly. These services receive normal request
+        information such as your IP address. None of them receive the contents of your files.
+      </li>
+      <li>
+        <strong>Stored on your device:</strong> if you turn on offline mode, the app's files are
+        saved in your browser's cache, and one setting is saved in local storage. Turning offline
+        mode off deletes both.
+      </li>
+    </ul>
+    <p>
+      Questions: open an issue at{" "}
+      <a href="https://github.com/OCHA-DAP/topo-tools-js/issues">
+        github.com/OCHA-DAP/topo-tools-js
+      </a>
+      .
+    </p>
+  </main>
+</Layout>
+
+<style>
+  :global(body):has(> .masthead) {
+    background: var(--hdx-neutral-01);
+  }
+  .masthead {
+    background: var(--hdx-brand-7);
+    color: var(--hdx-neutral-0);
+  }
+  .masthead-inner,
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .masthead-inner {
+    padding: 1.25rem 1.5rem 2.5rem;
+  }
+  .masthead :global(.masthead-bar) {
+    margin-bottom: 2rem;
+  }
+  .masthead h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 0.75rem;
+  }
+  .masthead .tagline {
+    font-size: 1rem;
+    color: var(--hdx-brand-05);
+    margin: 0;
+    line-height: 1.55;
+    max-width: 56ch;
+  }
+  .page {
+    padding: 2.5rem 1.5rem 4rem;
+    line-height: 1.6;
+    color: var(--hdx-neutral-9);
+  }
+  .page ul {
+    margin: 0 0 1.5rem;
+  }
+  .page li + li {
+    margin-top: 0.75rem;
+  }
+</style>
