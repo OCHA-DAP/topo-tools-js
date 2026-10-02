@@ -14,6 +14,7 @@ const iconBase = base ? `${base}/` : "/";
 export default defineConfig({
   site: "https://topo-tools.org",
   base,
+  redirects: { "/talk": "/intro" },
   integrations: [
     starlight({
       title: "Topology Tools",
