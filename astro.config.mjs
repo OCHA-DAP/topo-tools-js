@@ -1,4 +1,7 @@
+import { unified } from "@astrojs/markdown-remark";
+import starlight from "@astrojs/starlight";
 import svelte from "@astrojs/svelte";
+import rehypeAstroRelativeMarkdownLinks from "astro-rehype-relative-markdown-links";
 import AstroPWA from "@vite-pwa/astro";
 import { defineConfig } from "astro/config";
 import { fileURLToPath } from "node:url";
@@ -9,8 +12,30 @@ const base = process.env.BASE_PATH ?? "";
 const iconBase = base ? `${base}/` : "/";
 
 export default defineConfig({
+  site: "https://topo-tools.org",
   base,
   integrations: [
+    starlight({
+      title: "Topology Tools",
+      favicon: "/icons/icon-192.png",
+      customCss: ["./src/styles/hdx-tokens.css", "./src/styles/starlight-hdx.css"],
+      components: {
+        Head: "./src/lib/components/starlight/Head.astro",
+        Header: "./src/lib/components/starlight/Header.astro",
+        ThemeProvider: "./src/lib/components/starlight/ThemeProvider.astro",
+        ThemeSelect: "./src/lib/components/starlight/ThemeSelect.astro",
+      },
+      sidebar: [
+        { label: "Overview", link: "/docs/" },
+        { label: "Agents", items: [{ autogenerate: { directory: "docs/agents" } }] },
+        { label: "1. Schema", items: [{ autogenerate: { directory: "docs/1-schema" } }] },
+        { label: "2. Topology", items: [{ autogenerate: { directory: "docs/2-topology" } }] },
+        { label: "3. Edge matching", items: [{ autogenerate: { directory: "docs/3-edge" } }] },
+        { label: "4. Codes", items: [{ autogenerate: { directory: "docs/4-codes" } }] },
+        { label: "5. Names", items: [{ autogenerate: { directory: "docs/5-names" } }] },
+        { label: "6. Packaging", items: [{ autogenerate: { directory: "docs/6-packaging" } }] },
+      ],
+    }),
     svelte(),
     AstroPWA({
       strategies: "injectManifest",
@@ -28,7 +53,7 @@ export default defineConfig({
       // "Enable offline".
       injectManifest: {
         globPatterns: ["**/*.{html,css,js,ico,svg,png,webmanifest,woff,woff2}"],
-        globIgnores: ["**/duckdb/**", "**/data/**"],
+        globIgnores: ["**/duckdb/**", "**/data/**", "**/docs/**", "pagefind/**"],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
       },
       manifest: {
@@ -51,8 +76,17 @@ export default defineConfig({
       },
     }),
   ],
+  markdown: {
+    processor: unified({
+      rehypePlugins: [
+        [rehypeAstroRelativeMarkdownLinks, { collectionBase: false, trailingSlash: "always" }],
+      ],
+    }),
+  },
   vite: {
     resolve: {
+      // Resolve MDX imports in the symlinked py docs from this project's node_modules.
+      preserveSymlinks: true,
       alias: {
         $lib: fileURLToPath(new URL("./src/lib", import.meta.url)),
       },

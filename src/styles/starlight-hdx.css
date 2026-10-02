@@ -1,0 +1,98 @@
+:root,
+:root[data-theme="light"] {
+  --sl-font: var(--hdx-font-body);
+  --sl-color-white: var(--hdx-neutral-9);
+  --sl-color-gray-1: var(--hdx-neutral-85);
+  --sl-color-gray-2: var(--hdx-neutral-8);
+  --sl-color-gray-3: var(--hdx-neutral-7);
+  --sl-color-gray-4: var(--hdx-neutral-6);
+  --sl-color-gray-5: var(--hdx-neutral-3);
+  --sl-color-gray-6: var(--hdx-neutral-1);
+  --sl-color-gray-7: var(--hdx-neutral-05);
+  --sl-color-black: var(--hdx-neutral-0);
+  --sl-color-accent-high: var(--hdx-brand-7);
+  --sl-color-accent: var(--hdx-brand-5);
+  --sl-color-accent-low: var(--hdx-brand-1);
+  --sl-color-bg-nav: var(--hdx-brand-7);
+  --sl-color-hairline-shade: var(--hdx-brand-8);
+  --sl-color-blue-low: var(--hdx-primary-1);
+  --sl-color-blue: var(--hdx-primary-5);
+  --sl-color-blue-high: var(--hdx-primary-8);
+  --sl-color-green-low: var(--hdx-success-1);
+  --sl-color-green: var(--hdx-success-5);
+  --sl-color-green-high: var(--hdx-success-8);
+  --sl-color-orange-low: var(--hdx-warning-1);
+  --sl-color-orange: var(--hdx-warning-5);
+  --sl-color-orange-high: var(--hdx-warning-8);
+  --sl-color-red-low: var(--hdx-error-1);
+  --sl-color-red: var(--hdx-error-5);
+  --sl-color-red-high: var(--hdx-error-8);
+}
+
+h1,
+h2,
+h3,
+.sl-markdown-content :is(h1, h2, h3) {
+  font-family: var(--hdx-font-display);
+  font-weight: var(--hdx-fw-bold);
+}
+
+header.header {
+  color: var(--hdx-neutral-0);
+}
+
+header.header site-search > button {
+  border-color: var(--hdx-overlay-white-20);
+  background: var(--hdx-overlay-white-10);
+  color: var(--hdx-neutral-0);
+  border-radius: var(--hdx-radius-md);
+}
+
+header.header site-search > button:hover {
+  border-color: var(--hdx-overlay-white-90);
+  color: var(--hdx-neutral-0);
+}
+
+.sl-markdown-content :is(table, code, pre) {
+  border-radius: var(--hdx-radius-sm);
+}
+
+header.header site-search kbd {
+  background: transparent;
+  color: var(--hdx-brand-05);
+}
+
+.sidebar-content details details > summary .group-label {
+  text-transform: capitalize;
+}
+
+/* Badges follow c-label's semantic formula: scale 1 background, scale 8 text. */
+.sl-badge {
+  border: none;
+  border-radius: var(--hdx-radius-md);
+  font-family: var(--hdx-font-body);
+}
+.sl-badge.caution {
+  background: var(--hdx-warning-1);
+  color: var(--hdx-warning-8);
+}
+
+article.card {
+  --sl-card-border: var(--hdx-brand-3);
+  --sl-card-bg: var(--hdx-brand-05);
+  border: 1px solid var(--hdx-neutral-1);
+  border-radius: var(--hdx-radius-sm);
+  box-shadow: var(--hdx-shadow-sm);
+  padding: var(--hdx-space-6);
+}
+article.card .title {
+  font-family: var(--hdx-font-body);
+  font-size: var(--hdx-fs-l);
+}
+article.card .icon {
+  color: var(--hdx-brand-7);
+}
+
+mobile-starlight-toc nav {
+  background-color: var(--hdx-neutral-05);
+}
