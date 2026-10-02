@@ -6,6 +6,7 @@
   import type { ExportSource } from "$lib/db/export";
   import { runPackage, type PackageResult, type TargetSchema } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
+  import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -149,6 +150,7 @@
     <header>
       <a class="back" href={base}>← Topology Tools</a>
       <h1>Package</h1>
+      <DemoLink slug="package" />
       <p class="blurb">
         Run Package Polygons, Package Points, and Package Lines against the same layer in one
         pass, and browse all three outputs.

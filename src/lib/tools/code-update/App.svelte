@@ -9,6 +9,7 @@
     type ParamCodec,
   } from "$lib/utils/syncParam.svelte";
   import { tableToGeoJSON } from "$lib/db/geojson";
+  import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -233,6 +234,7 @@
     <header>
       <a class="back" href={base}>&larr; Topology Tools</a>
       <h1>Code Update</h1>
+      <DemoLink slug="code-update" />
       <p class="blurb">
         Reconcile an already-coded OLD layer against an uncoded NEW candidate. Unchanged and renamed
         units keep their code; modified, relocated, split, merged, and newly created units get a
