@@ -130,6 +130,15 @@ const validate = bySlug("validate");
         </Step>
 
         <Step
+          title="Validate"
+          summary="Check the layer's schema, topology, codes and names in one pass before packaging it."
+        >
+          <GroupBox>
+            <ToolCard tool={validate} header />
+          </GroupBox>
+        </Step>
+
+        <Step
           n={6}
           title="Packaging"
           summary="Build per-level polygons, label points, and the boundary line network for release."
@@ -137,11 +146,10 @@ const validate = bySlug("validate");
         >
           <GroupBox>
             <ToolCard tool={pkg} header />
-            <Disclosure label="Show 4 individual tools">
+            <Disclosure label="Show 3 individual tools">
               <ToolCard tool={packagePolygons} variant="secondary" />
               <ToolCard tool={packagePoints} variant="secondary" />
               <ToolCard tool={packageLines} variant="secondary" />
-              <ToolCard tool={validate} variant="secondary" />
             </Disclosure>
           </GroupBox>
         </Step>
