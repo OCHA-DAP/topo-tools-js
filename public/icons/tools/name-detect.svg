@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+  <!-- Name label tag -->
+  <path d="M6 14 L30 14 L44 28 L30 42 L6 42 Z" fill="currentColor" fill-opacity="0.12" />
+  <circle cx="34" cy="28" r="2" />
+  <path d="M12 22 L24 22" stroke-width="1.5" />
+  <path d="M12 32 L20 32" stroke-width="1.5" />
+  <!-- Magnifying glass inspecting the label -->
+  <circle cx="40" cy="40" r="11" />
+  <path d="M48 48 L58 58" />
+</svg>

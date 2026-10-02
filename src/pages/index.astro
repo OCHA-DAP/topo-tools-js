@@ -26,6 +26,8 @@ const schemaJoin = bySlug("schema-join");
 const schemaFill = bySlug("schema-fill");
 const codeCreate = bySlug("code-create");
 const codeUpdate = bySlug("code-update");
+const nameClean = bySlug("name-clean");
+const nameDetect = bySlug("name-detect");
 ---
 
 <Layout
@@ -112,9 +114,15 @@ const codeUpdate = bySlug("code-update");
         <Step
           n={5}
           title="Names"
-          icon="icons/steps/names.svg"
-          summary="Review names by hand: duplicates under the same parent, near-duplicate typos, blanks and placeholders, and encoding artifacts."
-        />
+          summary="Fix spacing, invisible characters and encoding errors, then review what's left by hand: duplicates under the same parent, near-duplicate typos, blanks and placeholders."
+        >
+          <GroupBox>
+            <ToolCard tool={nameClean} header />
+            <Disclosure label="Show 1 individual tool">
+              <ToolCard tool={nameDetect} variant="secondary" />
+            </Disclosure>
+          </GroupBox>
+        </Step>
 
         <Step
           n={6}

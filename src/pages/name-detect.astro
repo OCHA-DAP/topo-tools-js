@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import App from "$lib/tools/name-detect/App.svelte";
+---
+
+<Layout
+  title="Name Detect: check admin unit names in your browser"
+  description="Browser-only tool that checks a coded admin boundary layer's unit names for blanks, placeholders, duplicates, encoding errors and invisible characters, without changing anything."
+>
+  <App client:load />
+</Layout>
