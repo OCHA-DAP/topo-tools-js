@@ -82,6 +82,11 @@ export const tools: Tool[] = [
     tagline:
       "Run Package Polygons, Package Points, and Package Lines against the same layer in one pass.",
     iconHref: "/icons/tools/package.svg",
+    demo: {
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/package/nld_admin2.parquet",
+      name: "adm{n}_name",
+      code: "adm{n}_code",
+    },
   },
   {
     slug: "package-polygons",
@@ -145,6 +150,10 @@ export const tools: Tool[] = [
     tagline:
       "Reconcile an already-coded layer against an uncoded candidate: retain codes for unchanged units, assign fresh ones for the rest.",
     iconHref: "/icons/tools/code-update.svg",
+    demo: {
+      old: "https://data.source.coop/hdx/topo-tools/nld/demo/code/nld_admin2_2022.parquet",
+      new: "https://data.source.coop/hdx/topo-tools/nld/demo/code/nld_admin2_2023.parquet",
+    },
   },
   {
     slug: "name-detect",
@@ -152,6 +161,9 @@ export const tools: Tool[] = [
     tagline:
       "Check a coded layer's unit names for blanks, placeholders, duplicates under one parent, encoding errors and invisible characters, without changing anything.",
     iconHref: "/icons/tools/name-detect.svg",
+    demo: {
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/names/nld_admin2.parquet",
+    },
   },
   {
     slug: "name-clean",
@@ -159,5 +171,8 @@ export const tools: Tool[] = [
     tagline:
       "Fix the name defects that can't change a name's meaning (spacing, invisible characters, Unicode normalization, encoding repairs) and report the rest for review.",
     iconHref: "/icons/tools/name-clean.svg",
+    demo: {
+      url: "https://data.source.coop/hdx/topo-tools/nld/demo/names/nld_admin2.parquet",
+    },
   },
 ];
