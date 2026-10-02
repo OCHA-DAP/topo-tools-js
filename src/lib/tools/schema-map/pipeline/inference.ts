@@ -851,7 +851,9 @@ export async function resolveColumns(
   );
   let levelGroups = await buildLevelGroups(conn, table, chainableColumns, counts);
   levelGroups = await orderGroupsByContainment(conn, table, levelGroups);
-  let { chain, vetoed } = await buildChain(conn, table, levelGroups);
+  const built = await buildChain(conn, table, levelGroups);
+  let chain = built.chain;
+  const vetoed = built.vetoed;
   // A lone level with a lone column has no parent to embed and no sibling
   // to pair with, indistinguishable from an arbitrary non-hierarchy column.
   if (chain.length === 1 && chain[0].cols.length < MIN_ROOT_EVIDENCE_COLUMNS) {
