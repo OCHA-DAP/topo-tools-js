@@ -16,8 +16,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: OCHA-DAP/topo-tools-py
           path: topo-tools-py
@@ -25,12 +25,12 @@ jobs:
           sparse-checkout: |
             docs/pages
             plugins
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - uses: actions/configure-pages@v4
+      - uses: actions/configure-pages@v6
         id: pages
       - run: npm run build
         env:
@@ -78,7 +78,7 @@ jobs:
         with:
           args: --offline --no-progress --root-dir ${{ github.workspace }}/dist 'dist/**/*.html'
           lycheeVersion: v0.24.2
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -93,4 +93,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
