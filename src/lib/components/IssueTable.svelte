@@ -3,7 +3,6 @@
 
   let {
     issues,
-    failed,
     selectedKey,
     emptyText,
     noneText,
@@ -14,7 +13,6 @@
     onIssueClick,
   }: {
     issues: I[] | null;
-    failed: string[];
     selectedKey: string | null;
     emptyText: string;
     noneText: string;
@@ -44,9 +42,6 @@
           {plural(errors, "error", "errors")}, {plural(warnings, "warning", "warnings")}{extra}.
         {/if}
       </p>
-      {#if failed.length > 0}
-        <p class="bad">Couldn't run: {failed.join(", ")}. A zero count for these means unchecked.</p>
-      {/if}
     </section>
 
     {#if issues.length === 0}
@@ -92,9 +87,6 @@
   }
   .summary p {
     margin: 0 0 0.3rem;
-  }
-  .summary p.bad {
-    color: var(--hdx-error-6);
   }
   table {
     width: 100%;

@@ -17,7 +17,6 @@ export type { NameIssueRow } from "./report";
 
 export interface NameResult {
   issues: NameIssueRow[];
-  failed: NameIssueKind[];
   map: FlaggedLayer;
 }
 
@@ -27,11 +26,11 @@ export async function scanNames(
   attrTable: string,
   prefix: string,
   schema: TargetSchema | null,
-): Promise<{ levels: Map<number, Level>; failed: NameIssueKind[] }> {
+): Promise<{ levels: Map<number, Level> }> {
   const levels = await resolveLevels(conn, attrTable, schema);
   await buildLevelUnits(conn, attrTable, prefix, levels);
-  const failed = await runNameChecks(conn, prefix);
-  return { levels, failed };
+  await runNameChecks(conn, prefix);
+  return { levels };
 }
 
 // Builds `${prefix}_report` and the map highlights from a finished scan.
@@ -39,7 +38,7 @@ export async function nameResult(
   conn: AsyncDuckDBConnection,
   prefix: string,
   attrTable: string,
-  scan: { levels: Map<number, Level>; failed: NameIssueKind[] },
+  scan: { levels: Map<number, Level> },
   fixedSql: string | null,
 ): Promise<NameResult> {
   const issues = await buildNameReport(conn, prefix, fixedSql);
@@ -47,7 +46,6 @@ export async function nameResult(
   await buildFlagged(conn, `${prefix}_flagged`, `${prefix}_report`, attrTable, codeColumns);
   return {
     issues,
-    failed: scan.failed,
     map: await flaggedLayer(conn, flaggedUnitsSql(`${prefix}_flagged`)),
   };
 }

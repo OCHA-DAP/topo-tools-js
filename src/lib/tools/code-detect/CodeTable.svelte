@@ -17,7 +17,6 @@
 
 <IssueTable
   issues={result?.issues ?? null}
-  failed={result?.failed ?? []}
   {selectedKey}
   {emptyText}
   noneText="No code issues found."
@@ -29,8 +28,8 @@
     <th class="flex">Detail</th>
   {/snippet}
   {#snippet cells(issue)}
-    <td class="fit">{issue.level}</td>
-    <td class="fit value">{issue.codeA ?? issue.column}</td>
+    <td class="fit">{issue.level ?? ""}</td>
+    <td class="fit value">{issue.codeA ?? issue.column ?? ""}</td>
     <td class="flex"><span class="muted">{issue.reason}</span></td>
   {/snippet}
 </IssueTable>

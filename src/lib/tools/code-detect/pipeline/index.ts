@@ -24,8 +24,8 @@ export interface CodeIssueRow {
   key: string;
   kind: CodeIssueKind;
   severity: Severity;
-  level: number;
-  column: string;
+  level: number | null;
+  column: string | null;
   codeA: string | null;
   nameA: string | null;
   codeB: string | null;
@@ -35,7 +35,6 @@ export interface CodeIssueRow {
 
 export interface CodeResult {
   issues: CodeIssueRow[];
-  failed: CodeIssueKind[];
   map: FlaggedLayer;
 }
 
@@ -47,7 +46,7 @@ export async function runCodeDetect(
 ): Promise<CodeResult> {
   const levels = await resolveLevels(conn, "layer_attr", schema);
   await buildLevelUnits(conn, "layer_attr", prefix, levels, { nameless: true });
-  const failed = await runCodeChecks(conn, prefix);
+  await runCodeChecks(conn, prefix);
   const severity = Object.entries(SEVERITY)
     .map(([k, v]) => `WHEN '${k}' THEN '${v}'`)
     .join(" ");
@@ -74,15 +73,14 @@ export async function runCodeDetect(
       key: r.key as string,
       kind: r.kind as CodeIssueKind,
       severity: r.severity as Severity,
-      level: Number(r.level),
-      column: r.column as string,
+      level: r.level === null ? null : Number(r.level),
+      column: (r.column as string | null) ?? null,
       codeA: (r.code_a as string | null) ?? null,
       nameA: (r.name_a as string | null) ?? null,
       codeB: (r.code_b as string | null) ?? null,
       nameB: (r.name_b as string | null) ?? null,
       reason: r.reason as string,
     })),
-    failed,
     map: await flaggedLayer(conn, flaggedUnitsSql(`${prefix}_flagged`)),
   };
 }

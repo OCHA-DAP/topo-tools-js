@@ -598,16 +598,15 @@ function breakShapeTie(
   embedsParent: Map<string, boolean>,
   schema: TargetSchema,
 ): void {
-  const shapeOnly = [...roles.keys()].filter(
-    (c) => roles.get(c) === "code" && !embedsParent.get(c),
-  );
-  if ([...roles.values()].includes("name") || shapeOnly.length < MIN_TIED_CODES) return;
+  const codes = [...roles.keys()].filter((c) => roles.get(c) === "code");
+  if ([...roles.values()].includes("name") || codes.length < MIN_TIED_CODES) return;
+  const shapeOnly = codes.filter((c) => !embedsParent.get(c));
   const nameMarkers = roleMarkers(schema.nameField, schema.codeField);
   const codeMarkers = roleMarkers(schema.codeField, schema.nameField);
   const named = shapeOnly.filter(
     (c) => nameMarkers.some((m) => c.includes(m)) && !codeMarkers.some((m) => c.includes(m)),
   );
-  if (named.length < shapeOnly.length) for (const c of named) roles.set(c, "name");
+  if (named.length < codes.length) for (const c of named) roles.set(c, "name");
 }
 
 async function allFullyPopulated(
@@ -645,8 +644,9 @@ async function assignChainRoles(
     const roles = new Map<string, "code" | "name">();
     for (const c of cols) {
       let parentEmbedded = false;
+      // A prefix, since a name can contain a short constant like `lang` by chance.
       for (const p of parentCols) {
-        if (await embeds(conn, table, c, p)) {
+        if (await embeds(conn, table, c, p, false, true)) {
           parentEmbedded = true;
           break;
         }

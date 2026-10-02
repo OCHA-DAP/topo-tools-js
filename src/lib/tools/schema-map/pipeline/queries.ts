@@ -106,20 +106,21 @@ export async function spatiallyCoherent(
   return 1 - within / total >= MIN_SPATIAL_R2;
 }
 
-// child contains parent on every evaluated row, tolerating one sentinel
-// value only if child is also spatially coherent.
+// child contains (or, with prefix, starts with) parent on every evaluated row,
+// tolerating one sentinel value only if child is also spatially coherent.
 export async function embeds(
   conn: AsyncDuckDBConnection,
   table: string,
   child: string,
   parent: string,
   hasGeom = false,
+  prefix = false,
 ): Promise<boolean> {
   const qc = quoteIdent(child);
   const qp = quoteIdent(parent);
   // A blank parent value is contained in every string, so it's no evidence.
   const evaluatedWhere = `${qc} IS NOT NULL AND trim(CAST(${qp} AS VARCHAR)) != ''`;
-  const notContains = `NOT contains(CAST(${qc} AS VARCHAR), CAST(${qp} AS VARCHAR))`;
+  const notContains = `NOT ${prefix ? "starts_with" : "contains"}(CAST(${qc} AS VARCHAR), CAST(${qp} AS VARCHAR))`;
   const r = await conn.query(`
     SELECT
       COUNT(*) FILTER (WHERE ${evaluatedWhere}) AS evaluated,

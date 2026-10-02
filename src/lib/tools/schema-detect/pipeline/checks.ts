@@ -97,12 +97,12 @@ const CHECKS: Array<[string, Check]> = [
   ["orphan-child", orphan],
 ];
 
-// Writes `${p}_03`, every finding over `${p}_02` and table, and returns the checks that failed.
+// Writes `${p}_03`, every finding over `${p}_02` and table.
 export async function runSchemaChecks(
   conn: AsyncDuckDBConnection,
   p: string,
   table: string,
-): Promise<string[]> {
+): Promise<void> {
   const codes = (
     await conn.query(`--sql
       SELECT level, column_name FROM ${p}_02
@@ -112,16 +112,17 @@ export async function runSchemaChecks(
   const parents: Parent[] = codes
     .slice(1)
     .map((c, i) => [Number(c.level), c.column_name, codes[i].column_name]);
-  const failed: string[] = [];
   await conn.query(`CREATE OR REPLACE TABLE ${p}_03 (${COLUMNS})`);
   for (const [kind, build] of CHECKS) {
     try {
       await conn.query(`INSERT INTO ${p}_03 ${build(p, table, parents)}`);
     } catch (e) {
-      // One failing check must not hide the rest.
-      console.warn(`${kind} check failed; reporting none`, e);
-      failed.push(kind);
+      // One failing check must not hide the rest, and its failure is a finding.
+      console.warn(`${kind} check failed`, e);
+      const reason = `${kind} check failed: ${e instanceof Error ? e.message : String(e)}`;
+      await conn.query(
+        `INSERT INTO ${p}_03 (kind, reason) VALUES ('check-failed', '${reason.replace(/'/g, "''")}')`,
+      );
     }
   }
-  return failed;
 }

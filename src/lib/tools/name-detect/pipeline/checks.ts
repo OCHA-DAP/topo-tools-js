@@ -248,23 +248,25 @@ const CHECKS: Array<[NameIssueKind, (source: string) => string]> = [
   ["code-in-name", codeInName],
 ];
 
-// Writes `${prefix}_03`, every finding over `${prefix}_02`, and returns the kinds whose check failed.
+// Writes `${prefix}_03`, every finding over `${prefix}_02`.
 export async function runNameChecks(
   conn: AsyncDuckDBConnection,
   prefix: string,
-): Promise<NameIssueKind[]> {
+): Promise<void> {
   const source = `${prefix}_02`;
   const target = `${prefix}_03`;
-  const failed: NameIssueKind[] = [];
   await createNameMacros(conn);
   await conn.query(`CREATE OR REPLACE TABLE ${target} (${COLUMNS})`);
   for (const [kind, build] of CHECKS) {
     try {
       await conn.query(`INSERT INTO ${target} ${build(source)}`);
     } catch (e) {
-      // One failing check must not hide the rest.
-      console.warn(`${kind} check failed; reporting none`, e);
-      failed.push(kind);
+      // One failing check must not hide the rest, and its failure is a finding.
+      console.warn(`${kind} check failed`, e);
+      const reason = `${kind} check failed: ${e instanceof Error ? e.message : String(e)}`;
+      await conn.query(
+        `INSERT INTO ${target} (kind, reason) VALUES ('check-failed', '${reason.replace(/'/g, "''")}')`,
+      );
     }
   }
   // One defect per unit: a blank name or an encoding error explains the rest.
@@ -275,5 +277,4 @@ export async function runNameChecks(
       AND ((d.kind = 'blank-name' AND i.kind <> 'blank-name')
            OR (d.kind = 'encoding-artifact' AND i.kind = 'invisible-character'))
   `);
-  return failed;
 }

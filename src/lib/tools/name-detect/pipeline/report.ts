@@ -26,8 +26,8 @@ export interface NameIssueRow {
   key: string;
   kind: NameIssueKind;
   severity: Severity;
-  level: number;
-  nameColumn: string;
+  level: number | null;
+  nameColumn: string | null;
   codeA: string | null;
   nameA: string | null;
   codeB: string | null;
@@ -91,8 +91,8 @@ export async function buildNameReport(
     key: r.key as string,
     kind: r.kind as NameIssueKind,
     severity: r.severity as Severity,
-    level: Number(r.level),
-    nameColumn: r.name_column as string,
+    level: r.level === null ? null : Number(r.level),
+    nameColumn: (r.name_column as string | null) ?? null,
     codeA: (r.code_a as string | null) ?? null,
     nameA: (r.name_a as string | null) ?? null,
     codeB: (r.code_b as string | null) ?? null,

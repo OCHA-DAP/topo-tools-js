@@ -25,7 +25,6 @@
 
 <IssueTable
   issues={result?.issues ?? null}
-  failed={result?.failed ?? []}
   {selectedKey}
   {emptyText}
   {summary}
