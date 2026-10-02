@@ -10,9 +10,10 @@ export type { TargetSchema } from "./targetSchema";
 export async function runSchemaMap(
   conn: AsyncDuckDBConnection,
   schema: TargetSchema,
+  level: number | null = null,
 ): Promise<CrosswalkRow[]> {
   validateTargetSchema(schema);
-  const rows = await inferSchemaMap(conn, "layer_attr", schema);
+  const rows = await inferSchemaMap(conn, "layer_attr", schema, level);
   await writeCrosswalkTable(conn, rows);
   return rows;
 }

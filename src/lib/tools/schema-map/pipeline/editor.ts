@@ -38,8 +38,9 @@ export function rowIssues(rows: EditableRow[]): Map<string, string> {
 export async function inferCrosswalk(
   conn: AsyncDuckDBConnection,
   schema: TargetSchema,
+  level: number | null = null,
 ): Promise<CrosswalkRow[]> {
-  return runSchemaMap(conn, schema);
+  return runSchemaMap(conn, schema, level);
 }
 
 // Schema Refactor's rename/drop plus the crosswalk table the CSV download reads.

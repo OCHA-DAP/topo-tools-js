@@ -46,7 +46,8 @@ name instead of repeating them.
   | `code-update` | `root`, `delim`, `width`, `name-a`, `code-a`, `name-b`, `code-b`, `match`, `same`, `by-code`, `by-name`, `link` |
   | `edge-match` | `fit` (`all`/`each`), `passthrough`, `fill`, `name`, `code`, `depth` |
   | `edge-mosaic`, `edge-stitch` | `fill`, `name`, `code`, `depth` |
-  | `package`, `package-polygons`, `package-points`, `package-lines`, `schema-map` | `name`, `code` |
+  | `package`, `package-polygons`, `package-points`, `package-lines` | `name`, `code` |
+  | `schema-map` | `name`, `code`, `level` |
   | `schema-fill` | `name`, `code`, `depth` |
   | `schema-join` | `templates`, `name`, `code`, `overlap` |
   | `topo-clean` | `gap` (see `topo-clean.md`) |

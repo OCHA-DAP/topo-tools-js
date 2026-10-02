@@ -1,5 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
+import { NOTE_SUPPLEMENTAL, WINNER_MAX_COLLAPSE_RATIO } from "./constants";
 import { resolveColumns, type ResolvedColumn } from "./inference";
+import { commonPrefixSuffix } from "./naming";
 import { quoteIdent } from "./queries";
 import { DEFAULT_TARGET_SCHEMA } from "./targetSchema";
 
@@ -12,32 +14,15 @@ export interface LevelColumns {
 
 const MIN_LEVELS_TO_DIFF = 2;
 const LEVEL_DIGIT_RE = /\d+/;
+const MIN_PAIRS_FOR_LEAF_TOLERANCE = 2;
 
-function commonPrefix(strs: string[]): string {
-  if (strs.length === 0) return "";
-  let prefix = strs[0];
-  for (const s of strs.slice(1)) {
-    let i = 0;
-    while (i < prefix.length && i < s.length && prefix[i] === s[i]) i++;
-    prefix = prefix.slice(0, i);
-    if (prefix === "") break;
-  }
-  return prefix;
-}
-
-function commonPrefixSuffix(names: string[]): [string, string] {
-  const prefix = commonPrefix(names);
-  const remainders = names.map((n) => n.slice(prefix.length));
-  const reversedSuffix = commonPrefix(remainders.map((r) => [...r].reverse().join("")));
-  const suffix = [...reversedSuffix].reverse().join("");
-  return [prefix, suffix];
-}
+type Anchor = [string, string, string];
 
 // Each level's own (prefix, anchor, suffix) split, diffed against every other.
-function levelAnchors(codeColumns: Map<number, string>): Map<number, [string, string, string]> {
+function levelAnchors(codeColumns: Map<number, string>): Map<number, Anchor> {
   if (codeColumns.size < MIN_LEVELS_TO_DIFF) return new Map();
   const [prefix, suffix] = commonPrefixSuffix([...codeColumns.values()]);
-  const anchors = new Map<number, [string, string, string]>();
+  const anchors = new Map<number, Anchor>();
   for (const [level, name] of codeColumns) {
     const anchor = name.slice(prefix.length, name.length - suffix.length);
     if (anchor) anchors.set(level, [prefix, anchor, suffix]);
@@ -65,6 +50,77 @@ function maxCardinalityColumn(rows: Map<string, ResolvedColumn>, columns: string
   );
 }
 
+function sharedLength(names: string[]): number {
+  const [prefix, suffix] = commonPrefixSuffix(names);
+  return prefix.length + suffix.length;
+}
+
+// Each level's column to diff naming anchors on, sharing the most text.
+function anchorColumns(
+  groupByByLevel: Map<number, string[]>,
+  codes: Map<number, string>,
+): Map<number, string> {
+  if (codes.size < MIN_LEVELS_TO_DIFF) return codes;
+  let best = codes;
+  let bestLength = sharedLength([...codes.values()]);
+  let referenceLevel = groupByByLevel.keys().next().value!;
+  for (const [level, cols] of groupByByLevel) {
+    if (cols.length < groupByByLevel.get(referenceLevel)!.length) referenceLevel = level;
+  }
+  for (const reference of groupByByLevel.get(referenceLevel)!) {
+    const picked = new Map<number, string>();
+    for (const [level, cols] of groupByByLevel) {
+      picked.set(
+        level,
+        cols.reduce((m, c) =>
+          sharedLength([reference, c]) > sharedLength([reference, m]) ? c : m,
+        ),
+      );
+    }
+    picked.set(referenceLevel, reference);
+    const length = sharedLength([...picked.values()]);
+    if (length > bestLength) {
+      best = picked;
+      bestLength = length;
+    }
+  }
+  return best;
+}
+
+interface ResolvedLevels {
+  rows: Map<string, ResolvedColumn>;
+  codes: Map<number, string>;
+  anchors: Map<number, Anchor>;
+  display: Map<number, number>;
+}
+
+// Rows, each level's code, naming anchor, and display number.
+async function resolveLevels(conn: AsyncDuckDBConnection, table: string): Promise<ResolvedLevels> {
+  const rows = await resolveColumns(conn, table, DEFAULT_TARGET_SCHEMA);
+  const groupByByLevel = new Map<number, string[]>();
+  for (const [source, row] of rows) {
+    if (row.level !== null && row.role !== null) {
+      if (!groupByByLevel.has(row.level)) groupByByLevel.set(row.level, []);
+      groupByByLevel.get(row.level)!.push(source);
+    }
+  }
+  const codes = new Map<number, string>();
+  for (const [level, cols] of groupByByLevel) codes.set(level, maxCardinalityColumn(rows, cols));
+  const anchors = levelAnchors(anchorColumns(groupByByLevel, codes));
+  return { rows, codes, anchors, display: displayLevels(codes, anchors) };
+}
+
+// Each displayed level's (prefix, anchor, suffix) naming split.
+async function detectAnchors(
+  conn: AsyncDuckDBConnection,
+  table: string,
+): Promise<Map<number, Anchor>> {
+  const { anchors, display } = await resolveLevels(conn, table);
+  const out = new Map<number, Anchor>();
+  for (const [level, a] of anchors) out.set(display.get(level) ?? level, a);
+  return out;
+}
+
 async function isFunctionallyDependent(
   conn: AsyncDuckDBConnection,
   table: string,
@@ -89,7 +145,7 @@ async function isFunctionallyDependent(
 // falls back to the structural level itself when no digit or unordered.
 function displayLevels(
   codes: Map<number, string>,
-  anchors: Map<number, [string, string, string]>,
+  anchors: Map<number, Anchor>,
 ): Map<number, number> {
   const ordered = [...codes.keys()].sort((a, b) => a - b);
   const identity = new Map(ordered.map((l) => [l, l]));
@@ -119,7 +175,7 @@ export async function detectLevelColumns(
   conn: AsyncDuckDBConnection,
   table: string,
 ): Promise<Map<number, LevelColumns>> {
-  const rows = await resolveColumns(conn, table, DEFAULT_TARGET_SCHEMA);
+  const { rows, codes, anchors, display } = await resolveLevels(conn, table);
 
   const allColumnsByLevel = new Map<number, string[]>();
   const groupByByLevel = new Map<number, string[]>();
@@ -136,10 +192,6 @@ export async function detectLevelColumns(
     throw new Error(`no admin hierarchy level detected in ${table}`);
   }
 
-  const codes = new Map<number, string>();
-  for (const [level, cols] of groupByByLevel) codes.set(level, maxCardinalityColumn(rows, cols));
-  const anchors = levelAnchors(codes);
-  const display = displayLevels(codes, anchors);
   const assigned = new Set<string>();
   for (const cols of allColumnsByLevel.values()) for (const c of cols) assigned.add(c);
   const tableColumns = await tableColumnNames(conn, table);
@@ -184,9 +236,11 @@ export async function detectLevelColumns(
     });
   }
 
-  const finalResult = new Map<number, LevelColumns>();
-  for (const [level, v] of result) finalResult.set(display.get(level) ?? level, v);
-  return finalResult;
+  const displayed = new Map<number, LevelColumns>();
+  for (const [level, v] of result) displayed.set(display.get(level) ?? level, v);
+  const leaf = await detectLeafLevel(conn, table, displayed);
+  if (leaf !== null) displayed.set(Math.max(...displayed.keys()) + 1, leaf);
+  return displayed;
 }
 
 // detectLevelColumns, falling back to one ungrouped level for zero evidence.
@@ -206,23 +260,22 @@ export async function detectLevelCodes(
   conn: AsyncDuckDBConnection,
   table: string,
 ): Promise<Map<number, string>> {
-  const rows = await resolveColumns(conn, table, DEFAULT_TARGET_SCHEMA);
-  const groupByByLevel = new Map<number, string[]>();
-  for (const [source, row] of rows) {
-    if (row.level !== null && row.role !== null) {
-      if (!groupByByLevel.has(row.level)) groupByByLevel.set(row.level, []);
-      groupByByLevel.get(row.level)!.push(source);
-    }
-  }
-  if (groupByByLevel.size === 0) {
+  const { codes, display } = await resolveLevels(conn, table);
+  if (codes.size === 0) {
     throw new Error(`no admin hierarchy code column detected in ${table}`);
   }
-  const codes = new Map<number, string>();
-  for (const [level, cols] of groupByByLevel) codes.set(level, maxCardinalityColumn(rows, cols));
-  const display = displayLevels(codes, levelAnchors(codes));
   const result = new Map<number, string>();
   for (const [level, column] of codes) result.set(display.get(level) ?? level, column);
   return result;
+}
+
+// Columns detection set aside as a coarser grouping, never as a level.
+export async function supplementalColumns(
+  conn: AsyncDuckDBConnection,
+  table: string,
+): Promise<string[]> {
+  const rows = await resolveColumns(conn, table, DEFAULT_TARGET_SCHEMA);
+  return [...rows].filter(([, r]) => r.note.startsWith(NOTE_SUPPLEMENTAL)).map(([c]) => c);
 }
 
 // Find an unassigned family's (prefix, anchor, suffix), or null if ambiguous.
@@ -230,8 +283,8 @@ async function rootAnchor(
   conn: AsyncDuckDBConnection,
   table: string,
   levelColumns: Map<number, LevelColumns>,
-): Promise<[string, string, string] | null> {
-  const anchors = levelAnchors(await detectLevelCodes(conn, table));
+): Promise<Anchor | null> {
+  const anchors = await detectAnchors(conn, table);
   if (anchors.size === 0) return null;
   const [prefix, , suffix] = anchors.values().next().value!;
   const usedAnchors = new Set([...anchors.values()].map(([, a]) => a));
@@ -284,13 +337,74 @@ export async function detectRootLevel(
   return { groupBy: [], identityColumns: rootColumns, hasCode: true, nameColumn: null };
 }
 
+// (parentColumn, column) pairs are each distinct, tolerating noise.
+async function isParentScopedUnique(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  parentColumn: string,
+  column: string,
+): Promise<boolean> {
+  const qp = quoteIdent(parentColumn);
+  const qc = quoteIdent(column);
+  const r = await conn.query(`
+    SELECT COUNT(*) AS populated, COUNT(DISTINCT (${qp}, ${qc})) AS combos
+    FROM ${table}
+    WHERE ${qc} IS NOT NULL
+  `);
+  const row = r.toArray()[0] as Record<string, number | bigint>;
+  const populated = Number(row.populated);
+  if (populated === 0) return false;
+  const tolerance = populated > MIN_PAIRS_FOR_LEAF_TOLERANCE ? 1 : 0;
+  return populated - Number(row.combos) <= tolerance;
+}
+
+// A finer, name-only level one past the deepest one found, mirroring
+// detectRootLevel, checked unique scoped to its own parent.
+export async function detectLeafLevel(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  levelColumns: Map<number, LevelColumns>,
+): Promise<LevelColumns | null> {
+  const realLevels = [...levelColumns.keys()].filter((k) => k !== 0);
+  if (realLevels.length === 0) return null;
+  const deepest = Math.max(...realLevels);
+  const parentCode = (await detectLevelCodes(conn, table)).get(deepest);
+  if (parentCode === undefined) return null;
+
+  const families = await groupFamiliesByLevel(conn, table, levelColumns);
+  const tableColumns = await tableColumnNames(conn, table);
+  const assigned = new Set<string>();
+  for (const cols of levelColumns.values()) for (const c of cols.identityColumns) assigned.add(c);
+  const candidates = new Set<string>();
+  for (const perLevel of families.values()) {
+    const anchors = levelAnchors(perLevel);
+    const a = anchors.get(deepest);
+    if (a === undefined) continue;
+    const [prefix, anchor, suffix] = a;
+    const match = LEVEL_DIGIT_RE.exec(anchor);
+    if (match === null) continue;
+    const nextAnchor = String(Number(match[0]) + 1);
+    for (const c of tableColumns) {
+      if (!assigned.has(c) && isLevelIdentityColumn(c, prefix, nextAnchor, suffix)) {
+        candidates.add(c);
+      }
+    }
+  }
+  const valid: string[] = [];
+  for (const c of [...candidates].sort()) {
+    if (await isParentScopedUnique(conn, table, parentCode, c)) valid.push(c);
+  }
+  if (valid.length === 0) return null;
+  return { groupBy: valid, identityColumns: valid, hasCode: false, nameColumn: valid[0] };
+}
+
 // Groups every level's identity columns by shared naming kind, across levels.
 export async function groupFamiliesByLevel(
   conn: AsyncDuckDBConnection,
   table: string,
   levelColumns: Map<number, LevelColumns>,
 ): Promise<Map<string, Map<number, string>>> {
-  const anchors = levelAnchors(await detectLevelCodes(conn, table));
+  const anchors = await detectAnchors(conn, table);
   if (levelColumns.has(0) && !anchors.has(0)) {
     const realLevels = new Map([...levelColumns].filter(([k]) => k !== 0));
     const root = await rootAnchor(conn, table, realLevels);
@@ -333,12 +447,48 @@ export async function verifyFunctionalCluster(
   table: string,
   canonicalColumn: string,
   cluster: string[],
+  parentColumn: string | null = null,
 ): Promise<void> {
   for (const other of cluster) {
     if (other === canonicalColumn) continue;
     if (!(await isFunctionallyDependent(conn, table, canonicalColumn, other))) {
       throw new Error(
         `${table}: grouping by ${JSON.stringify(cluster)} fragments ${JSON.stringify(canonicalColumn)}; ${JSON.stringify(other)} takes more than one non-null value within a group`,
+      );
+    }
+  }
+  if (parentColumn !== null) {
+    await verifyNoCoarserMember(conn, table, canonicalColumn, cluster, parentColumn);
+  }
+}
+
+// Throws if a member collapses the level's own units under each parent.
+async function verifyNoCoarserMember(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  canonicalColumn: string,
+  cluster: string[],
+  parentColumn: string,
+): Promise<void> {
+  const parent = quoteIdent(parentColumn);
+  const canonical = quoteIdent(canonicalColumn);
+  for (const other of cluster) {
+    if (other === canonicalColumn) continue;
+    const member = quoteIdent(other);
+    // Only rows where the member has a value: an empty alternate-name column
+    // would otherwise count as one value per parent.
+    const r = await conn.query(`
+      SELECT COUNT(DISTINCT (${parent}, ${canonical})) AS units,
+             COUNT(DISTINCT (${parent}, ${member})) AS vals
+      FROM ${table}
+      WHERE ${member} IS NOT NULL
+    `);
+    const row = r.toArray()[0] as Record<string, number | bigint>;
+    const units = Number(row.units);
+    const values = Number(row.vals);
+    if (units && 1 - values / units > WINNER_MAX_COLLAPSE_RATIO) {
+      throw new Error(
+        `${table}: ${JSON.stringify(other)} (${values} values under ${JSON.stringify(parentColumn)}) groups ${JSON.stringify(canonicalColumn)} (${units}), a coarser level merged into this one; set the name and code fields explicitly`,
       );
     }
   }

@@ -28,3 +28,10 @@ export function isNumericDuckdbType(duckdbType: string): boolean {
   const upper = duckdbType.toUpperCase();
   return NUMERIC_DUCKDB_TYPE_PREFIXES.some((p) => upper.startsWith(p));
 }
+
+const FLOATING_DUCKDB_TYPE_PREFIXES = ["FLOAT", "DOUBLE", "DECIMAL", "REAL"];
+
+export function isFloatingDuckdbType(duckdbType: string): boolean {
+  const upper = duckdbType.toUpperCase();
+  return FLOATING_DUCKDB_TYPE_PREFIXES.some((p) => upper.startsWith(p));
+}
