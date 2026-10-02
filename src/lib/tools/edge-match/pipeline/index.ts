@@ -10,6 +10,7 @@ import {
   type MatchColumnOptions,
 } from "$lib/db/codeJoin";
 import { applyOptionalFill, type ApplyFillOptions } from "$lib/db/fillCompose";
+import { setCentroidLat } from "$lib/db/units";
 import { CLIP_EMPTY_REASON } from "$lib/db/assignOne";
 import { dropInternalTables } from "$lib/tools/edge-extend/pipeline/index";
 import { loadLayers } from "./load";
@@ -253,6 +254,9 @@ export async function runEdgeMatch(
     conn,
     "SELECT ST_AsGeoJSON(geom) AS _geom, fid FROM overlay_layer_01 WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)",
   );
+
+  const inputBounds = await computeBounds(conn, "input_layer_01");
+  if (inputBounds) setCentroidLat((inputBounds[1] + inputBounds[3]) / 2);
 
   onProgress({ phase: "assigning" });
   const assignment = await computeAssignment(conn, matchColumns, passthrough, perFeature);
