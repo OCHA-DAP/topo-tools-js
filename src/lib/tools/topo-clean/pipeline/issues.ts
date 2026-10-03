@@ -57,7 +57,8 @@ export async function buildIssues(
 ): Promise<IssuesResult> {
   await conn.query(`--sql
     CREATE OR REPLACE TABLE tc_micro_regions AS
-    SELECT row_number() OVER () AS n, unit_a, unit_b, reason, fixed, geom FROM tc_micro
+    SELECT row_number() OVER (ORDER BY unit_a, hash(geom)) AS n, unit_a, unit_b, reason, fixed, geom
+    FROM tc_micro
   `);
   try {
     return await assembleIssues(
@@ -88,7 +89,8 @@ export async function syncOutputMicroIssues(
   if (exists) {
     await conn.query(`--sql
       CREATE OR REPLACE TABLE tc_clean_micro_regions AS
-      SELECT row_number() OVER () AS n, unit_a, unit_b, reason, fixed, geom FROM tc_clean_micro
+      SELECT row_number() OVER (ORDER BY unit_a, hash(geom)) AS n, unit_a, unit_b, reason, fixed, geom
+      FROM tc_clean_micro
     `);
   }
   try {

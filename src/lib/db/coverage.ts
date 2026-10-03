@@ -38,7 +38,7 @@ function gapHolesSql(targetTable: string, sourceTable: string, geomExpr: string)
       )).geom AS geom
       FROM parts WHERE ST_NumInteriorRings(poly) > 0
     )
-    SELECT row_number() OVER () AS n, geom
+    SELECT row_number() OVER (ORDER BY hash(geom)) AS n, geom
     FROM holes
     WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `;
@@ -254,14 +254,15 @@ export async function mergeMicroPolygons(
     `);
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ${issuesTable} AS
-      SELECT 'micro-polygon-' || pid AS key, 'micro-polygon' AS kind,
+      SELECT 'micro-polygon-' || row_number() OVER (ORDER BY fid, hash(geom)) AS key,
+             'micro-polygon' AS kind,
              fid AS unit_a, dest_fid AS unit_b,
              CASE WHEN dest_rnid IS NULL THEN '${MICRO_DROPPED_REASON}'
                   ELSE '${MICRO_MERGED_REASON}' END AS reason,
              ST_Area(geom) * ${areaFactor} AS area_m2,
              (ST_MaximumInscribedCircle(geom)).radius * 2 * ${widthFactor} AS max_width_m,
              TRUE AS fixed, geom, ${bboxColumnsSql()}
-      FROM ${dest}
+      FROM ${dest} ORDER BY fid, hash(geom)
     `);
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ${touched} AS
@@ -779,7 +780,7 @@ export async function buildOverlapTable(
     );
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ${targetTable} AS
-      SELECT row_number() OVER () AS n, a_id AS fa, b_id AS fb, geom
+      SELECT row_number() OVER (ORDER BY a_id, b_id) AS n, a_id AS fa, b_id AS fb, geom
       FROM ${pieces}
       WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
     `);
