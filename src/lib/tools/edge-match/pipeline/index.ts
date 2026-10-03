@@ -142,7 +142,7 @@ async function appendMicroIssues(conn: AsyncDuckDBConnection): Promise<number> {
   if (Number((r.toArray()[0] as { n: bigint | number }).n) === 0) return 0;
   await conn.query(`--sql
     INSERT INTO ge_issues BY NAME
-    SELECT key, kind, unit_a, unit_b, reason, geom FROM ge_micro
+    SELECT key, kind, unit_a, unit_b, reason, area_m2, max_width_m, fixed, geom FROM ge_micro
   `);
   const n = await conn.query("SELECT COUNT(*) AS n FROM ge_micro");
   await conn.query("DROP TABLE ge_micro");
@@ -154,7 +154,8 @@ async function appendGapIssues(conn: AsyncDuckDBConnection): Promise<number> {
     await buildGapTable(conn, "ge_gap_regions", "ge_results");
     await conn.query(`--sql
       INSERT INTO ge_issues BY NAME
-      SELECT key, kind, reason, geom FROM (${gapIssuesSql("ge_gap_regions")})
+      SELECT key, kind, reason, area_m2, max_width_m, thinness_ratio, fixed, geom
+      FROM (${gapIssuesSql("ge_gap_regions")})
     `);
     const r = await conn.query("SELECT COUNT(*) AS n FROM ge_issues WHERE kind = 'gap'");
     return Number((r.toArray()[0] as { n: bigint | number }).n);
