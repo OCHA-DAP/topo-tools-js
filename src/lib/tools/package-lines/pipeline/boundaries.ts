@@ -247,6 +247,7 @@ export async function buildBoundaries(
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE "${name}" AS SELECT * EXCLUDE (left_fid, right_fid) FROM "${name}"
+    ORDER BY left_fid, right_fid NULLS LAST, hash(geom)
   `);
 
   for (const suffix of [

@@ -85,7 +85,7 @@ export async function buildMicroRegions(
   try {
     await conn.query(`--sql
       CREATE OR REPLACE TABLE ${targetTable} AS
-      SELECT row_number() OVER () AS n, fid AS unit_a, NULL::BIGINT AS unit_b,
+      SELECT row_number() OVER (ORDER BY fid, hash(geom)) AS n, fid AS unit_a, NULL::BIGINT AS unit_b,
              NULL::VARCHAR AS reason, FALSE AS fixed, geom
       FROM (SELECT fid, UNNEST(ST_Dump(geom)).geom AS geom FROM ${sourceTable}
             WHERE geom IS NOT NULL)
@@ -109,7 +109,7 @@ export function gapIssuesSql(regionsTable: string): string {
   const areaFactor = degSqToM2(1).toExponential();
   const widthFactor = degToM(1).toExponential();
   return `--sql
-    SELECT 'gap-' || n AS key, 'gap' AS kind,
+    SELECT 'gap-' || row_number() OVER (ORDER BY hash(geom)) AS key, 'gap' AS kind,
            ST_Area(geom) * ${areaFactor} AS area_m2,
            (ST_MaximumInscribedCircle(geom)).radius * 2 * ${widthFactor} AS max_width_m,
            4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2) AS thinness_ratio,

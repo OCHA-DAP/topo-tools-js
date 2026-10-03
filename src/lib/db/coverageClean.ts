@@ -6,7 +6,7 @@ import { buildGapTable, hasMicroPolygons, mergeMicroPolygons } from "./coverage"
 // (topo-clean/pipeline/clean.ts) and Edge Extender's input-clean gate and
 // merge finalization. ST_CoverageClean takes a GEOMETRY[] and returns a
 // GeometryCollection in the SAME order as the input list, so every caller here
-// follows the same shape: freeze an (fid, geom) table into an ORDER BY fid
+// follows the same shape: freeze an (fid, geom) table into a content-ordered
 // array once, then explode the cleaned result back to one row per fid by the
 // top-level dump-path index.
 
@@ -29,8 +29,8 @@ export interface CoverageCleanOptions {
 }
 
 // Freezes an (fid, geom) source table into a single-row (geoms[], fids[]) array
-// table, ordered by fid so geoms[i] <-> fids[i] holds — load-bearing since
-// preserve_insertion_order=false is set globally. Returns the row count (array
+// table, both ordered by geometry hash then fid so geoms[i] <-> fids[i] holds and
+// ST_CoverageClean (input-order dependent) sees topo-tools-py's order. Returns the row count (array
 // length) so callers can detect an empty/all-null input before cleaning.
 export async function buildCoverageCleanInput(
   conn: AsyncDuckDBConnection,
@@ -40,8 +40,8 @@ export async function buildCoverageCleanInput(
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ${targetTable} AS
     SELECT
-      array_agg(geom ORDER BY fid)::GEOMETRY[] AS geoms,
-      array_agg(fid  ORDER BY fid)             AS fids
+      array_agg(geom ORDER BY hash(geom), fid)::GEOMETRY[] AS geoms,
+      array_agg(fid  ORDER BY hash(geom), fid)             AS fids
     FROM ${sourceTable}
     WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `);

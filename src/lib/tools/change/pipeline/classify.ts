@@ -134,6 +134,7 @@ export async function stageClassify(
       FROM cw_pairs p
       LEFT JOIN cw_a_keyed ak ON ak.fid = p.a_fid
       LEFT JOIN cw_b_keyed bk ON bk.fid = p.b_fid
+      ORDER BY p.a_fid, p.b_fid
     `)
   )
     .toArray()
@@ -150,10 +151,10 @@ export async function stageClassify(
       b_name: str(r.b_name),
     }));
 
-  const aRows = (await conn.query("SELECT fid, code, name FROM cw_a_keyed")).toArray() as Array<
+  const aRows = (await conn.query("SELECT fid, code, name FROM cw_a_keyed ORDER BY fid")).toArray() as Array<
     Record<string, unknown>
   >;
-  const bRows = (await conn.query("SELECT fid, code, name FROM cw_b_keyed")).toArray() as Array<
+  const bRows = (await conn.query("SELECT fid, code, name FROM cw_b_keyed ORDER BY fid")).toArray() as Array<
     Record<string, unknown>
   >;
 
