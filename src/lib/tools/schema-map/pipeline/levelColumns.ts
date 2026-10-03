@@ -2,7 +2,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { NOTE_SUPPLEMENTAL, WINNER_MAX_COLLAPSE_RATIO } from "./constants";
 import { resolveColumns, type ResolvedColumn } from "./inference";
 import { commonPrefixSuffix } from "./naming";
-import { quoteIdent } from "./queries";
+import { quoteIdent, spatiallyCoherent } from "./queries";
 import { DEFAULT_TARGET_SCHEMA } from "./targetSchema";
 
 export interface LevelColumns {
@@ -276,6 +276,21 @@ export async function supplementalColumns(
 ): Promise<string[]> {
   const rows = await resolveColumns(conn, table, DEFAULT_TARGET_SCHEMA);
   return [...rows].filter(([, r]) => r.note.startsWith(NOTE_SUPPLEMENTAL)).map(([c]) => c);
+}
+
+// Supplemental columns whose groups cluster on the map (geomTable's geom, by fid),
+// as a missed level would.
+export async function levelLikeColumns(
+  conn: AsyncDuckDBConnection,
+  table: string,
+  geomTable: string,
+): Promise<string[]> {
+  const located = `(SELECT t.*, g.geom FROM ${quoteIdent(table)} t JOIN ${quoteIdent(geomTable)} g USING (fid))`;
+  const found: string[] = [];
+  for (const c of await supplementalColumns(conn, table)) {
+    if (await spatiallyCoherent(conn, located, c)) found.push(c);
+  }
+  return found;
 }
 
 // Find an unassigned family's (prefix, anchor, suffix), or null if ambiguous.

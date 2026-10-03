@@ -153,8 +153,7 @@ async function structuralRows(conn: AsyncDuckDBConnection, table: string): Promi
         columnName: column,
         problem: "supplemental-column",
         reason:
-          "set aside as a coarser grouping, not a level; Name Detect and Code Detect " +
-          "need the name/code templates for this layer",
+          "set aside as a coarser grouping, not a level; if it is one, set the name/code templates",
       }),
     );
   }

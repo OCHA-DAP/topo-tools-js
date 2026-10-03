@@ -12,7 +12,7 @@ import {
 } from "$lib/db/code";
 import {
   detectLevelColumnsOrSingle,
-  supplementalColumns,
+  levelLikeColumns,
   verifyFunctionalCluster,
   type LevelColumns,
 } from "$lib/tools/schema-map/pipeline/levelColumns";
@@ -40,6 +40,7 @@ async function columnSet(conn: AsyncDuckDBConnection, table: string): Promise<Se
 async function resolveSide(
   conn: AsyncDuckDBConnection,
   table: string,
+  geomTable: string,
   schema: TargetSchema | null,
   seedMissingCodes = false,
 ): Promise<SideLevels> {
@@ -80,7 +81,7 @@ async function resolveSide(
     throw new Error(`no admin hierarchy level detected in ${table}`);
   }
   // A skipped level would corrupt every code below it, so never guess.
-  const supplemental = await supplementalColumns(conn, table);
+  const supplemental = await levelLikeColumns(conn, table, geomTable);
   if (supplemental.length > 0) {
     throw new Error(
       `${table}: ${JSON.stringify(supplemental)} group units like a level but were not detected as one; set OLD's or NEW's name/code field template explicitly`,
@@ -163,14 +164,15 @@ export async function resolveSideLevels(
   conn: AsyncDuckDBConnection,
   oldTable: string,
   newTable: string,
+  geomTables: [old: string, new: string],
   schemaA: TargetSchema | null,
   schemaB: TargetSchema | null,
   rootCode: string | null,
   delimiter: string | null,
   minWidth: string | null,
 ): Promise<ResolvedSideLevels> {
-  const sideA = await resolveSide(conn, oldTable, schemaA);
-  const sideB = await resolveSide(conn, newTable, schemaB, true);
+  const sideA = await resolveSide(conn, oldTable, geomTables[0], schemaA);
+  const sideB = await resolveSide(conn, newTable, geomTables[1], schemaB, true);
 
   const levelsA = [...sideA.columns.keys()].sort((a, b) => a - b);
   const levelsB = [...sideB.columns.keys()].sort((a, b) => a - b);

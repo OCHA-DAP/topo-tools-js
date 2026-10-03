@@ -2,7 +2,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { siblingName } from "$lib/db/adminColumns";
 import { quoteIdent } from "$lib/db/code";
 import { detectLevels } from "$lib/tools/schema-fill/pipeline/levels";
-import { detectLevelColumnsOrSingle, supplementalColumns } from "./levelColumns";
+import { detectLevelColumnsOrSingle } from "./levelColumns";
 import type { TargetSchema } from "./targetSchema";
 
 // One level's code column and its name columns, primary first (may be none).
@@ -55,7 +55,7 @@ export async function resolveLevels(
     // A skipped level would compare names under the wrong parent, so never guess.
     const found = coded.map(([n]) => n);
     const skipped = found.length === 0 || found.some((n, i) => n !== found[0] + i);
-    if (skipped || (await supplementalColumns(conn, table)).length > 0) {
+    if (skipped) {
       throw new Error(
         `admin levels could not be detected reliably; set the name/code field templates explicitly`,
       );
