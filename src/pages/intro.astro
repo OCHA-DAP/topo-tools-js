@@ -1,4 +1,5 @@
 ---
+import { explorerViews } from "$lib/talk/explorer";
 import { tools } from "$lib/tools";
 import Layout from "../layouts/Layout.astro";
 import * as intro from "$lib/talk/intro.md";
@@ -29,6 +30,9 @@ const demos = mainTools
   .filter((t) => t?.demo)
   .map((t) => ({ ...t!, href: `${base}${t!.slug}?${new URLSearchParams(t!.demo)}` }));
 
+// A slide holding this comment gets the cycling boundary map in its place.
+const EXPLORER_MARKER = "<!-- explorer -->";
+
 const before = await toSlides(intro);
 const after = await toSlides(outro);
 ---
@@ -45,20 +49,31 @@ const after = await toSlides(outro);
       </button>
     </nav>
     <main class="deck">
-      {before.map((html, i) => (
-        <section class:list={["slide", { title: i === 0 }]}>
-          <Fragment set:html={html} />
-          {i === 0 && (
-            <div class="logos">
-              <img src={`${base}logos/ocha-white.png`} alt="OCHA" />
-              <img
-                src={`${base}logos/centre-humdata-white.png`}
-                alt="Centre for Humanitarian Data"
-              />
-            </div>
-          )}
-        </section>
-      ))}
+      {before.map((html, i) =>
+        html.includes(EXPLORER_MARKER) ? (
+          <section class="slide demo explorer">
+            <Fragment set:html={html.split(EXPLORER_MARKER)[0]} />
+            <figure>
+              <div class="boundary-map" role="img" aria-label="Admin boundaries by source"></div>
+              <figcaption>{explorerViews[0].caption}</figcaption>
+            </figure>
+            <Fragment set:html={html.split(EXPLORER_MARKER)[1]} />
+          </section>
+        ) : (
+          <section class:list={["slide", { title: i === 0 }]}>
+            <Fragment set:html={html} />
+            {i === 0 && (
+              <div class="logos">
+                <img src={`${base}logos/ocha-white.png`} alt="OCHA" />
+                <img
+                  src={`${base}logos/centre-humdata-white.png`}
+                  alt="Centre for Humanitarian Data"
+                />
+              </div>
+            )}
+          </section>
+        ),
+      )}
       {demos.map((t) => (
         <section class="slide demo">
           <h2>{t.name}</h2>
@@ -74,6 +89,7 @@ const after = await toSlides(outro);
 </Layout>
 
 <script>
+  import { startBoundaryLoop } from "$lib/talk/boundaryMap";
   const slides = [...document.querySelectorAll<HTMLElement>(".slide")];
   const body = document.body;
   let current = 0;
@@ -83,6 +99,22 @@ const after = await toSlides(outro);
     const frame = slide.querySelector<HTMLIFrameElement>("iframe[data-src]");
     const src = on ? frame?.dataset.src : "about:blank";
     if (frame && src && frame.getAttribute("src") !== src) frame.src = src;
+    if (slide === explorer) setCycling(on);
+  };
+
+  // Like a demo iframe, the boundary map only exists while its slide is on screen.
+  const explorer = document.querySelector<HTMLElement>(".slide.explorer");
+  let stopLoop: (() => void) | undefined;
+  const setCycling = (on: boolean) => {
+    if (on === (stopLoop !== undefined)) return;
+    stopLoop?.();
+    stopLoop = on
+      ? startBoundaryLoop(
+          explorer!.querySelector(".boundary-map")!,
+          explorer!.querySelector("figcaption")!,
+          2500,
+        )
+      : undefined;
   };
 
   const show = (i: number) => {
@@ -332,6 +364,20 @@ const after = await toSlides(outro);
     border-radius: var(--hdx-radius-md);
   }
 
+  .explorer figure {
+    margin: 0;
+  }
+  .boundary-map {
+    height: 640px;
+    border: 1px solid var(--hdx-neutral-2);
+    border-radius: var(--hdx-radius-md);
+    overflow: hidden;
+  }
+  .explorer figcaption {
+    margin-top: 0.5rem;
+    font-weight: 700;
+  }
+
   :global(body.present) {
     overflow: hidden;
   }
@@ -373,14 +419,23 @@ const after = await toSlides(outro);
     justify-content: flex-start;
     padding: 2vh 2vw;
   }
-  :global(body.present) .demo h2 {
+  :global(body.present) .slide.demo :global(h2) {
     font-size: 1em;
     margin-bottom: 0.5rem;
   }
-  :global(body.present) .demo h2::after {
+  :global(body.present) .slide.demo :global(h2)::after {
     display: none;
   }
   :global(body.present) .demo iframe {
+    flex: 1;
+    height: auto;
+  }
+  :global(body.present) .explorer figure {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  :global(body.present) .boundary-map {
     flex: 1;
     height: auto;
   }

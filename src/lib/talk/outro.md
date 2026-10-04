@@ -8,7 +8,7 @@
 
 In the new COD-AB process, a candidate dataset goes through validation before anyone starts cleaning it, and issues are sorted into blocking and non-blocking. The browser tools let a country office run those checks themselves before they submit.
 
-The Humanitarian Data Model has the same idea for tabular data: check your data against the shared model before you share it.
+The Humanitarian Data Model's validator does the same for tabular data.
 
 ---
 
