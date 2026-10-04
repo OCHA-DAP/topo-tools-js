@@ -16,7 +16,7 @@ This page is both the slides from the talk and a standalone introduction to the 
 - The Data Quint: OCHA, WFP, UNICEF, UNHCR, IOM
 - Shared work on core data, geodata, analysis and capacity
 
-UN80 is the reform effort across the UN system. Its report, published in September 2025, commits to a Humanitarian Data Collaborative so that everyone can work from one evidence base.
+UN80 is the reform effort across the UN system. Its report, published in September 2025, commits to a Humanitarian Data Collaborative, so agencies work from one evidence base.
 
 The Data Quint is five agencies working on that together: OCHA, WFP, UNICEF, UNHCR and IOM. The work is split into a few focus areas, and the two with the most momentum are core data and geodata.
 
@@ -28,7 +28,7 @@ The Data Quint is five agencies working on that together: OCHA, WFP, UNICEF, UNH
 - Datasets join on shared dimensions: geography and time
 - Plus shared vocabularies: population group, cluster, gender
 
-The direction the quint has settled on is the Humanitarian Data Model. It's federated: our files don't need to live in the same place, they need to be joinable.
+The direction the quint has settled on is the Humanitarian Data Model. It's federated: each agency keeps its files where they are, as long as they can be joined.
 
 To test this, the core data group took real Afghanistan data from all five agencies and tried to answer a few common questions with it. Joining it by hand took a lot of manual work and institutional knowledge, and two analysts joining the same files in different ways can get very different answers.
 
@@ -96,7 +96,17 @@ Each step works on its own, but the handoffs are slow. In Mali it took 121 days 
 
 Boundary data comes from national authorities, and every country delivers it differently. The column names change, levels get merged or skipped, and units don't always nest inside their parents.
 
-Most of these problems aren't visible in an attribute table. You have to look at the geometry, and you have to compare against the previous release.
+Most of these problems aren't visible in an attribute table. You find them by looking at the geometry and comparing it against the previous release.
+
+---
+
+## Same country, different sources
+
+<!-- explorer -->
+
+These maps come from the HDX Boundaries Explorer, which compares admin boundaries from seven sources. For six African countries, they show OCHA's COD-AB in blue, then an older source in red.
+
+In the Central African Republic, Mali and Ghana, the COD-AB has more admin 1 units than the older source: 20 against FAO's 7, 20 against WFP's 10 from 2023, and 16 against UNICEF's 10. Madagascar is the extreme case, 24 against the World Bank's 6. Burkina Faso's 2025 release has 17 regions with new names, where UNICEF still has the old 13. South Sudan goes the other way: the World Bank has 12 units because it counts Ruweng and Pibor as their own areas, and OCHA has 10.
 
 ---
 
