@@ -21,7 +21,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   first attempt with no invalid edges or after the attempt cap, whichever
   comes first.
 - The pass MUST merge micro-polygons first (see `docs/reference/shared.md`).
-  It MUST otherwise preserve the input's fid set: a feature
+  It MUST otherwise preserve the input's fid set: a polygon
   `ST_CoverageClean` collapses to empty MUST fall back to its pre-clean
   geometry rather than being dropped.
 

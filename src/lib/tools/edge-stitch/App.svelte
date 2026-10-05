@@ -4,7 +4,7 @@
   import { PipelineError, runStitch, type StitchIssueRow } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
-  import MicroNote from "$lib/components/MicroNote.svelte";
+  import CleanupNote from "$lib/components/CleanupNote.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import SideToggle from "$lib/components/SideToggle.svelte";
@@ -186,7 +186,7 @@
         {/if}
         {#if microCount > 0}
           <div class="issues-note">
-            <MicroNote count={microCount} />
+            <CleanupNote count={microCount} />
           </div>
         {/if}
         <DownloadMenu

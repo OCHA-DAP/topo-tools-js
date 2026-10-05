@@ -86,7 +86,7 @@ export async function runClip(
   const inputColumns = await detectColumns(conn, "input_layer_attr");
   const overlayColumns = await detectColumns(conn, "overlay_layer_attr");
 
-  onProgress(2, "Assigning to overlay feature");
+  onProgress(2, "Assigning to overlay polygon");
   let assign;
   try {
     assign = await assignOne(conn, matchColumns);
@@ -95,7 +95,7 @@ export async function runClip(
   }
   if (assign.overlayFid === null) {
     throw new PipelineError(
-      "No input features overlap any overlay feature, so there is nothing to clip.",
+      "No input polygons overlap any overlay polygon, so there is nothing to clip.",
       2,
     );
   }

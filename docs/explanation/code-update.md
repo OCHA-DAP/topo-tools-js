@@ -148,7 +148,7 @@ pair, never a full N×M cross-product. The changelog table itself has no
 `predecessor_code` column (that lineage lives only on the output layer's
 own attribute table), matching Python's own changelog schema exactly.
 
-## UI scope: no per-feature outcome coloring on the map
+## UI scope: no per-polygon outcome coloring on the map
 
 The shared `MapView` component supports only fixed-color original/result
 layers, no categorical or property-based fill. `code-update`'s result map

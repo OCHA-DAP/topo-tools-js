@@ -50,14 +50,14 @@ const leafRepeats = (source: string): string => `(
 
 const duplicate = (source: string): string => `--sql
   SELECT 'duplicate-code', level, code_column, code, NULL, NULL, NULL,
-         printf('code %s is on %d features with different names or parents', code, features)
+         printf('code %s is on %d polygons with different names or parents', code, features)
   FROM ${leafRepeats(source)} WHERE variants > 1
 `;
 
 const split = (source: string): string => `--sql
   SELECT 'split-unit', level, code_column, code, NULL, NULL, NULL,
-         printf('code %s is on %d features with the same name and parent: '
-                'one unit split across features', code, features)
+         printf('code %s is on %d polygons with the same name and parent: '
+                'one unit split across polygons', code, features)
   FROM ${leafRepeats(source)} WHERE variants = 1
 `;
 

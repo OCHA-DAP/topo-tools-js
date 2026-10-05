@@ -20,6 +20,7 @@ const OWNED_TABLES = [
   "ge_group_clip",
   "ge_results",
   "ge_results_attr",
+  "ge_clip_targets",
 ];
 
 export async function dropPriorRun(conn: AsyncDuckDBConnection): Promise<void> {

@@ -22,7 +22,7 @@ export interface AssignOneResult {
   spatialAgrees?: boolean | null;
 }
 
-export const CLIP_EMPTY_REASON = "clip intersection with its overlay feature was empty";
+export const CLIP_EMPTY_REASON = "clip intersection with its overlay polygon was empty";
 
 // Issue rows for input features missing from clipTable: 'unassigned' when no
 // winner took them, 'clip-empty' when their clip to the winner came out empty.

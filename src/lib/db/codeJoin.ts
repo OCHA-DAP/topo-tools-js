@@ -4,7 +4,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 // assignOne.ts and match/pipeline/assign.ts (docs/adr/0045).
 
 export const CODE_MISMATCH_REASON =
-  "code join picked a different overlay feature than spatial majority";
+  "code join picked a different overlay polygon than spatial majority";
 export const CODE_FALLBACK_REASON = "no matching code; fell back to spatial majority";
 
 export interface MatchColumnOptions {

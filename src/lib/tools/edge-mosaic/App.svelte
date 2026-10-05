@@ -2,8 +2,7 @@
   import CarryColumnsPicker from "$lib/components/CarryColumnsPicker.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
-  import DetachedNote from "$lib/components/DetachedNote.svelte";
-  import MicroNote from "$lib/components/MicroNote.svelte";
+  import CleanupNote from "$lib/components/CleanupNote.svelte";
   import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
   import CodeJoinPicker from "$lib/components/CodeJoinPicker.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -17,7 +16,7 @@
 
   const STAGE_LABELS = [
     "Loading input",
-    "Assigning to overlay feature",
+    "Assigning to overlay polygon",
     "Clipping to overlay boundary",
     "Closing seams",
     "Checking for residual gaps",
@@ -194,8 +193,8 @@
       <a class="back" href={base}>← Topology Tools</a>
       <h1>Mosaic</h1>
       <p class="blurb">
-        Fit an already-extended input layer into a new overlay feature boundary without re-running
-        Voronoi extension: assign by majority vote, clip to the winning overlay feature, then close seams
+        Fit an already-extended input layer into a new overlay polygon boundary without re-running
+        Voronoi extension: assign by majority vote, clip to the winning overlay polygon, then close seams
         with a single coverage-clean pass. For inputs that haven't been extended yet, use Edge
         Matcher instead.
       </p>
@@ -244,7 +243,7 @@
           overlayColumns={overlayColumns.all}
           bind:inputValue={inputMatchColumn}
           bind:overlayValue={overlayMatchColumn}
-          hint="Pick the overlay feature by a shared code column where the codes agree, falling back to overlap where they don't."
+          hint="Pick the overlay polygon by a shared code column where the codes agree, falling back to overlap where they don't."
           disabled={running}
         />
       {/if}
@@ -252,7 +251,7 @@
         <div>
           <h3>Carry overlay columns</h3>
           <p class="hint">
-            Copy the overlay feature's own values onto every output row. A column the input layer already has
+            Copy the overlay polygon's own values onto every output row. A column the input layer already has
             can't be carried.
           </p>
           <CarryColumnsPicker
@@ -289,10 +288,10 @@
 
     {#if resultGeoJSON && overlayFid !== null}
       <section class="step">
-        <p class="info-line">Fitted to overlay feature fid {overlayFid}.</p>
+        <p class="info-line">Fitted to overlay polygon fid {overlayFid}.</p>
         {#if clipEmptyCount > 0}
           <p class="warn-line">
-            {clipEmptyCount} input feature{clipEmptyCount === 1 ? " falls" : "s fall"} outside it and
+            {clipEmptyCount} input polygon{clipEmptyCount === 1 ? " falls" : "s fall"} outside it and
             {clipEmptyCount === 1 ? "was" : "were"} clipped away, see the issues download.
           </p>
         {/if}
@@ -301,26 +300,21 @@
             {gapCount} gap{gapCount === 1 ? "" : "s"} remaining, see the issues download.
           </p>
         {/if}
-        {#if microCount > 0}
-          <p class="warn-line">
-            <MicroNote count={microCount} />
-          </p>
-        {/if}
-        {#if detachedMerged + detachedKept > 0}
-          <p class="warn-line"><DetachedNote merged={detachedMerged} kept={detachedKept} /></p>
+        {#if microCount + detachedMerged + detachedKept > 0}
+          <p class="info-line"><CleanupNote count={microCount + detachedMerged + detachedKept} /></p>
         {/if}
         {#if hadResidualOverlaps}
           <p class="warn-line">Overlaps remain after seam-closing, see the issues download.</p>
         {/if}
         {#if codeMismatchCount > 0}
           <p class="warn-line">
-            {codeMismatchCount} input feature{codeMismatchCount === 1 ? " was" : "s were"} matched by code to a
-            different overlay feature than overlap alone would pick.
+            {codeMismatchCount} input polygon{codeMismatchCount === 1 ? " was" : "s were"} matched by code to a
+            different overlay polygon than overlap alone would pick.
           </p>
         {/if}
         {#if codeFallbackCount > 0}
           <p class="warn-line">
-            {codeFallbackCount} input feature{codeFallbackCount === 1 ? "" : "s"} had no matching code and
+            {codeFallbackCount} input polygon{codeFallbackCount === 1 ? "" : "s"} had no matching code and
             {codeFallbackCount === 1 ? "was" : "were"} matched by overlap.
           </p>
         {/if}

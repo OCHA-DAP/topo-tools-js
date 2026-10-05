@@ -82,10 +82,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   previous cleaned output untouched — if any of: the output still has
   coverage violations; the output's total area falls below a floor set by
   a small baseline tolerance plus headroom sized to the total area of the
-  overlaps actually detected; a feature with no connection to any detected
-  gap or overlap collapses to nothing; any feature's fixed shape is not
+  overlaps actually detected; a polygon with no connection to any detected
+  gap or overlap collapses to nothing; any polygon's fixed shape is not
   a valid polygon; or the output has a gap at or below the resolved
-  gap-fill width, when that width is above `0`. A feature that was itself
+  gap-fill width, when that width is above `0`. A polygon that was itself
   party to a gap or overlap being resolved MAY change area substantially, including losing all of
   it, without triggering rejection. This validation gate is separate from,
   and stricter than, the export check below.
@@ -104,8 +104,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `topo-clean` MUST merge or drop every micro-polygon left in its output,
   including when the clean was skipped, and MUST replace the previous
   clean's output `micro-polygon` issues with this clean's on every reclean.
-- `topo-clean` MUST report a collapsed-feature count (input row count minus
-  surviving cleaned row count) whenever a clean or reclean runs. A feature
+- `topo-clean` MUST report a collapsed-polygon count (input row count minus
+  surviving cleaned row count) whenever a clean or reclean runs. A polygon
   removed by the micro-polygon merge MUST NOT count toward the validation
   gate's unrelated-collapse check.
 

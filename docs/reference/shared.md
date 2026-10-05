@@ -44,7 +44,7 @@ name instead of repeating them.
   | `change` | `match`, `same`, `by` (`geometry`/`identity`), `link` (`either`/`both`) |
   | `code-create` | `root`, `delim` (a character, or `none`), `width`, `source` (`replace`/`embed`/`copy`), `name`, `code` |
   | `code-update` | `root`, `delim` (absent = detect, `none`, or a character), `width`, `name-a`, `code-a`, `name-b`, `code-b`, `code-col-a`, `code-col-b`, `name-col-a`, `name-col-b`, `match`, `same`, `by-code`, `by-name`, `link` |
-  | `edge-match` | `match` (`auto`/`one`/`several`), `passthrough` |
+  | `edge-match` | `match` (`auto`/`one`/`many`), `passthrough` |
   | `package`, `package-polygons`, `package-points`, `package-lines` | `name`, `code` |
   | `schema-map` | `name`, `code`, `level` |
   | `schema-fill` | `name`, `code`, `depth` |
@@ -117,7 +117,7 @@ name instead of repeating them.
   however narrow. Every caller that wants this behavior MUST go through
   `gatedCoverageClean` rather than calling `ST_CoverageClean` directly.
 - `gatedCoverageClean` MUST preserve the input's fid set, apart from
-  features the micro-polygon merge removes: a feature that
+  polygons the micro-polygon merge removes: a polygon that
   `ST_CoverageClean` collapses to empty MUST fall back to its pre-clean
   geometry rather than being dropped.
 - A `gatedCoverageClean` failure MUST be caught and logged, leaving the
@@ -130,15 +130,15 @@ name instead of repeating them.
   `SNAP_TOLERANCE` across. A wider part MUST be kept, however small its
   area.
 - A tool that modifies geometry MUST NOT output a micro-polygon. Where it
-  finds one, it MUST merge the part into the feature whose non-micro part
+  finds one, it MUST merge the part into the polygon whose non-micro part
   it overlaps most once buffered by `SNAP_TOLERANCE` (ties to the lowest
-  fid, including the part's own feature), or drop it when it touches no
-  feature. A feature left with no parts MUST be removed.
+  fid, including the part's own polygon), or drop it when it touches no
+  polygon. A polygon left with no parts MUST be removed.
 - The merge MUST measure each buffered micro part's overlap with its
-  candidate features through `intersectPairs` (see Overlap measurement),
+  candidate polygons through `intersectPairs` (see Overlap measurement),
   with its snap and grid retries. When the set-based union that rebuilds
-  the receiving features throws, the merge MUST rebuild them one by one,
-  retrying a feature that still throws with its own parts snapped onto its
+  the receiving polygons throws, the merge MUST rebuild them one by one,
+  retrying a polygon that still throws with its own parts snapped onto its
   incoming micro parts at `SNAP_TOLERANCE`.
 - Every `buildCoverageClean` call MUST merge micro-polygons before
   `ST_CoverageClean` runs, so `edge-extend`, `edge-stitch`, `edge-match`, `edge-mosaic`,
@@ -149,7 +149,7 @@ name instead of repeating them.
   by every tool that writes an issues report (`edge-clip`, `edge-stitch`, `edge-mosaic`,
   `edge-match`, `topo-clean` and `package-polygons`), with the part's own fid in
   `unit_a`, the receiving fid in `unit_b` (null when dropped), `reason`
-  `merged into neighbouring feature` or `dropped: touches no feature`,
+  `merged into neighbouring polygon` or `dropped: touches no polygon`,
   `fixed` true where the table has that column, and the part itself as
   `geom`. `package-points` and `package-lines` MUST log the count instead.
 - `topo-detect` MUST report micro-polygons unfixed, with `unit_b` and `reason`
@@ -162,16 +162,16 @@ name instead of repeating them.
 Shared by `edge-clip`, `edge-mosaic` and `edge-match`'s per-group clip, run on
 each clipped output before any micro-polygon merge.
 
-- A clip-detached piece is any polygon part of a clipped feature other than
+- A clip-detached piece is any polygon part of a clipped polygon other than
   the kept piece of its own pre-clip part (the pre-clip part holding the
   piece's interior point). The kept piece is the largest piece on the
   unit's original footprint, or the largest piece when none is.
 - A piece is on the original footprint when its interior point falls on an
-  original part of the same feature, or when at least
+  original part of the same polygon, or when at least
   `DETACHED_MAX_ORIGINAL_SHARE` (50%) of its area is original land. An
-  original feature belongs to the pre-clip part holding its interior point.
+  original polygon belongs to the pre-clip part holding its interior point.
 - A piece under `DETACHED_MERGE_MAX_RATIO` (1%) of its kept piece's area
-  MUST merge into the feature, clipped to the same overlay feature, it
+  MUST merge into the polygon, clipped to the same overlay polygon, it
   shares the longest edge with (ties to the lowest fid), when under 50% of
   the piece is original land or when the original land the overlay clipped
   away beside it is at least `DETACHED_MIN_NECK_RATIO` (0.1) of its area.
@@ -180,24 +180,24 @@ each clipped output before any micro-polygon merge.
   `kept: no original layer`. `edge-match` always uses its own pre-extension
   input; `edge-clip` and `edge-mosaic` take an optional original layer
   (`original` URL param).
-- A destination MUST be a kept piece, a single-part feature, or a piece
+- A destination MUST be a kept piece, a single-part polygon, or a piece
   kept as too large. A point contact (shared boundary not longer than
   10 × `SNAP_TOLERANCE`), or a neighbour that is any other clip-detached
   piece, MUST NOT count as sharing an edge.
-- A piece MUST stay on its own feature when it is 1% or larger
+- A piece MUST stay on its own polygon when it is 1% or larger
   (`kept: too large to merge`), or when merging would leave the receiving
-  feature with an extra part (`kept: merge did not attach`). A piece that
+  polygon with an extra part (`kept: merge did not attach`). A piece that
   shares no edge with any destination MUST stay and MUST NOT be reported.
 - Each reported piece MUST be a `detached-part` row with `key`
   `detached-part-<fid>-<n>`, its own fid in `unit_a`, the neighbour's fid in
   `unit_b`, the overlay fid in `overlay_fid`, `reason`
-  `merged into neighbouring feature` or one of the `kept:` reasons above,
+  `merged into neighbouring polygon` or one of the `kept:` reasons above,
   `area_m2`, `max_width_m`, `thinness_ratio`, `fixed` true only when merged,
   and the piece itself as `geom`.
 - Original-land shares MUST be measured through `intersectPairs` (see
   Overlap measurement). The edge-length, attach and clipped-away-land steps
   MUST retry once on `ST_ReducePrecision(geom, 1e-11)` when they throw, and
-  the receiving-feature rebuild MUST fall back row by row as the
+  the receiving-polygon rebuild MUST fall back row by row as the
   micro-polygon merge does.
 
 ## No-erosion guard (`$lib/db/coverage.ts::checkNoErosion`)
@@ -242,10 +242,10 @@ per-group clip), the micro-polygon and clip-detached merges, and the shared over
 Shared by `edge-match` (input/overlay assignment), `code-update` (per-level
 reparent), and `schema-join` (join assignment).
 
-- `assignBestOverlap` MUST assign each input feature (`input_fid`) to the
-  overlay feature (`overlay_fid`) it shares the largest overlap area with,
+- `assignBestOverlap` MUST assign each input polygon (`input_fid`) to the
+  overlay polygon (`overlay_fid`) it shares the largest overlap area with,
   breaking a tie by lowest overlay fid.
-- An input feature with zero overlapping overlay features MUST be absent
+- An input polygon with zero overlapping overlay polygons MUST be absent
   from the output table entirely, not assigned a null overlay.
 
 ## Code-based assignment override (`$lib/db/codeJoin.ts`)
@@ -258,7 +258,7 @@ Shared by `edge-match`, `edge-mosaic`, and `edge-clip` for overlay assignment.
 - When supplied, an exact code join, restricted to `(input, overlay)` pairs
   that already spatially overlap, MUST win over the default
   spatial-majority-vote assignment wherever a code match exists, even when
-  it disagrees with the spatial result. An input feature (or, for assign-one,
+  it disagrees with the spatial result. An input polygon (or, for assign-one,
   a whole file) whose code has no overlapping-overlay match MUST fall back to
   the spatial result (see `docs/adr/0029`).
 - The outcome MUST be recorded as `assignmentMethod: 'code' | 'spatial_fallback'`
@@ -267,10 +267,10 @@ Shared by `edge-match`, `edge-mosaic`, and `edge-clip` for overlay assignment.
 - A disagreement or fallback MUST surface as an issues row: `kind='code-mismatch'`
   when the code match won but disagreed with the spatial result, or
   `kind='code-fallback'` when no code match existed, with `reason`
-  `code join picked a different overlay feature than spatial majority` or
+  `code join picked a different overlay polygon than spatial majority` or
   `no matching code; fell back to spatial majority` respectively. `unitA`
-  MUST hold the input feature's own fid, `overlayFid` the winning overlay
-  feature's fid.
+  MUST hold the input polygon's own fid, `overlayFid` the winning overlay
+  polygon's fid.
 - Omitting both parameters MUST leave assignment behavior and output schema
   unchanged for existing callers.
 
