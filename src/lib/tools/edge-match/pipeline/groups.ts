@@ -77,7 +77,7 @@ export async function listGroups(
       inputCount: Number(r.input_count),
       label:
         overlayFid === PASSTHROUGH_OVERLAY_FID
-          ? "Unmatched input polygons (passthrough)"
+          ? "Input polygons outside the overlay"
           : r.name
             ? `${r.name} (fid ${overlayFid})`
             : `Group ${overlayFid}`,
