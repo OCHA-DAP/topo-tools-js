@@ -3,14 +3,15 @@
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import DetachedNote from "$lib/components/DetachedNote.svelte";
+  import MicroNote from "$lib/components/MicroNote.svelte";
+  import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
+  import CodeJoinPicker from "$lib/components/CodeJoinPicker.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import SideToggle from "$lib/components/SideToggle.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
-  import { boolParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { onMount, untrack } from "svelte";
   import { PipelineError, runMosaic, type MosaicIssueRow } from "./pipeline/index";
   import type { ColumnGuess } from "$lib/db/columns";
-  import type { ApplyFillOptions } from "$lib/db/fillCompose";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -26,6 +27,10 @@
   let inputFiles = $state<File[]>([]);
   let overlayFiles = $state<File[]>([]);
   let originalFiles = $state<File[]>([]);
+  let advancedOpen = $state(false);
+  $effect(() => {
+    if (originalFiles.length > 0) advancedOpen = true;
+  });
   let detachedMerged = $state(0);
   let detachedKept = $state(0);
   let running = $state(false);
@@ -52,26 +57,12 @@
   let overlayMatchColumn = $state<string | null>(null);
   let carryOverlayColumns = $state<string[]>([]);
 
-  let fillSchema = $state(false);
-  let fillNameField = $state("");
-  let fillCodeField = $state("");
-  let fillDepthColumn = $state("adm_lvl");
-  syncParam("fill", boolParam, () => fillSchema, (v) => (fillSchema = v));
-  syncParam("name", textParam, () => fillNameField, (v) => (fillNameField = v));
-  syncParam("code", textParam, () => fillCodeField, (v) => (fillCodeField = v));
-  syncParam("depth", textParam, () => fillDepthColumn, (v) => (fillDepthColumn = v));
 
   let clearMap: (() => void) | undefined;
 
   onMount(() => {
     initDuckDB();
   });
-
-  const fillOneBlank = $derived((fillNameField.trim() === "") !== (fillCodeField.trim() === ""));
-  const fillBothBlank = $derived(fillNameField.trim() === "" && fillCodeField.trim() === "");
-  const fillTemplateValid = $derived(
-    !fillOneBlank && (fillBothBlank || (fillNameField.includes("{n}") && fillCodeField.includes("{n}"))),
-  );
 
   $effect(() => {
     const c = inputFiles;
@@ -107,19 +98,6 @@
     });
   });
 
-  // Re-run picks up a schema-fill option change on already-produced output;
-  // holds off while the template pair is mid-edit (one side blank).
-  $effect(() => {
-    const _s = fillSchema;
-    const _n = fillNameField;
-    const _c = fillCodeField;
-    const _d = fillDepthColumn;
-    untrack(() => {
-      if (!resultGeoJSON || running || !fillTemplateValid) return;
-      handleRun();
-    });
-  });
-
   $effect(() => {
     const _o = originalFiles;
     untrack(() => {
@@ -147,15 +125,6 @@
     stageLabel = "";
 
     try {
-      const fillOptions: ApplyFillOptions | undefined = fillSchema
-        ? {
-            requested: true,
-            nameField: fillBothBlank ? null : fillNameField,
-            codeField: fillBothBlank ? null : fillCodeField,
-            depthColumn: fillDepthColumn,
-          }
-        : undefined;
-
       const result = await runMosaic(
         duckdbState.db!,
         duckdbState.conn!,
@@ -168,7 +137,6 @@
         },
         { overlayMatchColumn: overlayMatchColumn ?? undefined, inputMatchColumn: inputMatchColumn ?? undefined },
         carryOverlayColumns,
-        fillOptions,
       );
 
       resultGeoJSON = result.mosaicGeoJSON;
@@ -260,97 +228,42 @@
       />
     </section>
 
-    <details class="step">
-      <summary class="step-heading">
-        Original layer <span class="optional">(optional)</span>
-      </summary>
-      <DropZone
-        bind:files={originalFiles}
-        urlParam="original"
-        disabled={running}
-        helpText="The input before Edge Extender. Small pieces the clip cuts off a unit merge into their longest-edge neighbour only where this layer doesn't draw them as part of the unit."
-      />
-    </details>
-
-    {#if inputColumns && overlayColumns}
-      <section class="step">
-        <h2 class="step-heading">Code join (optional)</h2>
-        <p class="hint">
-          Wins over the majority-vote overlay feature wherever the codes agree on an overlay feature the file
-          overlaps at all, falls back to the majority vote when no code match exists.
-        </p>
-        <div class="match-cols">
-          <label class="match-field">
-            <span>Input code</span>
-            <select bind:value={inputMatchColumn} disabled={running}>
-              <option value={null}>(none)</option>
-              {#each inputColumns.all as col (col)}<option value={col}>{col}</option>{/each}
-            </select>
-          </label>
-          <label class="match-field">
-            <span>Overlay code</span>
-            <select bind:value={overlayMatchColumn} disabled={running}>
-              <option value={null}>(none)</option>
-              {#each overlayColumns.all as col (col)}<option value={col}>{col}</option>{/each}
-            </select>
-          </label>
-        </div>
-      </section>
-    {/if}
-
-    {#if overlayColumns}
-      <section class="step">
-        <h2 class="step-heading">Carry overlay columns (optional)</h2>
-        <p class="hint">
-          Join the winning overlay feature's own attribute values onto every output row. A column the input layer
-          already has can't be carried.
-        </p>
-        <CarryColumnsPicker
+    <AdvancedOptions bind:open={advancedOpen}>
+      <div>
+        <h3>Original layer</h3>
+        <DropZone
+          bind:files={originalFiles}
+          urlParam="original"
+          disabled={running}
+          helpText="The input before Edge Extender. Small pieces the clip cuts off a unit merge into their longest-edge neighbour only where this layer doesn't draw them as part of the unit."
+        />
+      </div>
+      {#if inputColumns && overlayColumns}
+        <CodeJoinPicker
+          inputColumns={inputColumns.all}
           overlayColumns={overlayColumns.all}
-          inputColumns={inputColumns?.all ?? []}
-          bind:selected={carryOverlayColumns}
+          bind:inputValue={inputMatchColumn}
+          bind:overlayValue={overlayMatchColumn}
+          hint="Pick the overlay feature by a shared code column where the codes agree, falling back to overlap where they don't."
           disabled={running}
         />
-      </section>
-    {/if}
-
-    <section class="step">
-      <h2 class="step-heading">Schema fill (optional)</h2>
-      <label class="checkbox-field">
-        <input type="checkbox" bind:checked={fillSchema} disabled={running} />
-        <span>Cascade admin-hierarchy columns down before export</span>
-      </label>
-      {#if fillSchema}
-        <p class="hint">Leave both templates blank to auto-detect the hierarchy structurally.</p>
-        <label class="field">
-          <span>Name template</span>
-          <input
-            type="text"
-            bind:value={fillNameField}
-            placeholder="auto-detect"
-            disabled={running}
-          />
-        </label>
-        <label class="field">
-          <span>Code template</span>
-          <input
-            type="text"
-            bind:value={fillCodeField}
-            placeholder="auto-detect"
-            disabled={running}
-          />
-        </label>
-        <label class="field">
-          <span>Depth column</span>
-          <input type="text" bind:value={fillDepthColumn} disabled={running} />
-        </label>
-        {#if fillOneBlank}
-          <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
-        {:else if !fillBothBlank && !fillTemplateValid}
-          <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
-        {/if}
       {/if}
-    </section>
+      {#if overlayColumns}
+        <div>
+          <h3>Carry overlay columns</h3>
+          <p class="hint">
+            Copy the overlay feature's own values onto every output row. A column the input layer already has
+            can't be carried.
+          </p>
+          <CarryColumnsPicker
+            overlayColumns={overlayColumns.all}
+            inputColumns={inputColumns?.all ?? []}
+            bind:selected={carryOverlayColumns}
+            disabled={running}
+          />
+        </div>
+      {/if}
+    </AdvancedOptions>
 
     {#if running || errorStage > 0}
       <ol class="stages">
@@ -390,8 +303,7 @@
         {/if}
         {#if microCount > 0}
           <p class="warn-line">
-            {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance) merged
-            into a neighbouring feature or dropped.
+            <MicroNote count={microCount} />
           </p>
         {/if}
         {#if detachedMerged + detachedKept > 0}
@@ -402,16 +314,14 @@
         {/if}
         {#if codeMismatchCount > 0}
           <p class="warn-line">
-            Code match disagreed with the majority-vote overlay feature for {codeMismatchCount} input feature{codeMismatchCount ===
-             1
-              ? ""
-              : "s"}; the code match won.
+            {codeMismatchCount} input feature{codeMismatchCount === 1 ? " was" : "s were"} matched by code to a
+            different overlay feature than overlap alone would pick.
           </p>
         {/if}
         {#if codeFallbackCount > 0}
           <p class="warn-line">
-            No overlapping code match for {codeFallbackCount} input feature{codeFallbackCount === 1 ? "" : "s"};
-            fell back to the majority-vote overlay.
+            {codeFallbackCount} input feature{codeFallbackCount === 1 ? "" : "s"} had no matching code and
+            {codeFallbackCount === 1 ? "was" : "were"} matched by overlap.
           </p>
         {/if}
       </section>
@@ -457,16 +367,7 @@
 </div>
 
 <style>
-  summary.step-heading {
-    cursor: pointer;
-    user-select: none;
-  }
 
-  .optional {
-    font-weight: 400;
-    color: var(--hdx-neutral-7);
-    font-size: 0.85rem;
-  }
 
   .layout {
     display: grid;
@@ -527,58 +428,12 @@
     line-height: 1.4;
   }
 
-  .match-cols {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
 
-  .match-field {
-    display: grid;
-    grid-template-columns: 70px 1fr;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
-  }
 
-  .match-field select {
-    width: 100%;
-    padding: 0.25rem 0.4rem;
-    font-size: 0.8rem;
-    border: 1px solid var(--hdx-neutral-2);
-    border-radius: var(--hdx-radius-sm);
-    background: var(--hdx-neutral-0);
-  }
 
-  .checkbox-field {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
-    color: var(--hdx-neutral-8);
-  }
 
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.8rem;
-    color: var(--hdx-neutral-8);
-  }
 
-  .field input {
-    padding: 0.4rem 0.55rem;
-    border: 1px solid var(--hdx-neutral-2);
-    border-radius: var(--hdx-radius-md);
-    font-size: 0.85rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
 
-  .field-error {
-    font-size: 0.75rem;
-    color: var(--hdx-error-6);
-    margin: 0;
-  }
 
   .blurb {
     font-size: 0.825rem;

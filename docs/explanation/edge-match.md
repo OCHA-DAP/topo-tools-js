@@ -1,11 +1,14 @@
 # Edge Matcher
 
-Assigns a fine (input) layer to coarse (overlay) polygons, by default all of
-it to the one overlay feature most input features overlap (assign-one, as
-topo-tools-py's `edge-match`), optionally each input feature to the overlay
-feature it overlaps most (per-feature). Groups input features by their assigned overlay feature, then
+Assigns a fine (input) layer to coarse (overlay) polygons, either all of it
+to the one overlay feature most input features overlap (assign-one, the
+"One" mode and topo-tools-py's default) or each input feature to the overlay
+feature it overlaps most (per-feature, "Several"). The default "auto" mode
+picks between them from the data and shows the pick on the switch, so the
+user can compare the other mode on the map
+([`0052`](../adr/0052-match-defaults-to-auto-mode.md)). Groups input features by their assigned overlay feature, then
 runs Edge Extender's pipeline independently within each group so the
-group's result meets its own overlay feature boundary exactly. Automatic by default;
+group's result meets its own overlay feature boundary exactly. Spatial by default;
 an optional code-based assignment override is available (see below).
 
 ## Pipeline
@@ -15,9 +18,11 @@ an optional code-based assignment override is available (see below).
    [`0012`](../adr/0012-match-cleans-parent-and-child-inputs-on-load.md)).
    Real source data commonly carries pre-existing seam imprecision that this
    pipeline's later per-group clip step has no way to fix downstream.
-2. **Assign** (`pipeline/assign.ts`), by default runs Clip's `assignOne`
+2. **Assign** (`pipeline/assign.ts`), in assign-one mode runs Clip's `assignOne`
    (`docs/explanation/edge-clip.md`), assigning every input feature, overlapping
-   or not, to the majority-vote winner. With the per-feature option it
+   or not, to the majority-vote winner. Auto mode runs the same vote, then
+   switches to per-feature when fewer than half the input features overlap
+   the winner. In per-feature mode it
    instead computes area-overlap pairs between every input feature and
    nearby overlay feature (`src/lib/db/overlap.ts`, shared with the Changelog
    tool) and assigns each input feature to the overlay feature with the
@@ -95,15 +100,6 @@ full contract, and `src/lib/db/codeJoin.ts` for the shared implementation
 Update, and Schema Join) computes overlap via exact `ST_Intersection`, with a
 per-pair snap fallback for the WASM-only GEOS robustness failure described in
 [`docs/explanation/performance.md`](performance.md#wasm-geos-overlayng-floating-point-divergence).
-
-## Optional schema fill
-
-`edge-match` accepts an opt-in `fillSchema` flag (`$lib/db/fillCompose.ts`,
-shared with `edge-stitch` and `edge-mosaic`) that cascades admin-hierarchy column
-families down `ge_results_attr` in place, right after the attribute join and
-before export, using `schema-fill`'s own depth-pin algorithm. See
-`docs/explanation/schema-fill.md` for the algorithm; off by default, and a
-no-op on output when disabled.
 
 ## Cross-group boundary seams
 

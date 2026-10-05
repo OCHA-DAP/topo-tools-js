@@ -1,17 +1,21 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
-  import { boolParam, choiceParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
+  import { boolParam, choiceParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { onMount, untrack } from "svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import DetachedNote from "$lib/components/DetachedNote.svelte";
+  import MicroNote from "$lib/components/MicroNote.svelte";
+  import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
+  import CodeJoinPicker from "$lib/components/CodeJoinPicker.svelte";
   import MapView from "./MapView.svelte";
   import SideToggle from "$lib/components/SideToggle.svelte";
+  import SegmentedControl from "$lib/components/SegmentedControl.svelte";
   import { runEdgeMatch, type EdgeMatchPhase } from "./pipeline/index";
+  import type { MatchMode } from "./pipeline/assign";
   import type { GroupResult } from "./pipeline/groups";
   import type { ColumnGuess } from "$lib/db/columns";
-  import type { ApplyFillOptions } from "$lib/db/fillCompose";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -55,7 +59,11 @@
   let detachedKeptCount = $state<number | null>(null);
   let assignedOverlayLabel = $state<string | null>(null);
   let passthrough = $state(false);
-  let perFeature = $state(false);
+  let advancedOpen = $state(false);
+  let matchMode = $state<MatchMode>("auto");
+  // What the last run used; under "auto" this is the automatic pick.
+  let resolvedMode = $state<"one" | "several" | null>(null);
+  const perFeature = $derived(resolvedMode === "several");
 
   // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
   // first auto-run never changes behavior, even when a plausible code column
@@ -66,31 +74,20 @@
   let inputMatchColumn = $state<string | null>(null);
   let overlayMatchColumn = $state<string | null>(null);
 
-  let fillSchema = $state(false);
-  let fillNameField = $state("");
-  let fillCodeField = $state("");
-  let fillDepthColumn = $state("adm_lvl");
   syncParam(
-    "fit",
-    choiceParam(["all", "each"] as const),
-    () => (perFeature ? "each" : "all"),
-    (v) => (perFeature = v === "each"),
+    "match",
+    choiceParam(["auto", "one", "several"] as const),
+    () => matchMode,
+    (v) => (matchMode = v),
   );
   syncParam("passthrough", boolParam, () => passthrough, (v) => (passthrough = v));
-  syncParam("fill", boolParam, () => fillSchema, (v) => (fillSchema = v));
-  syncParam("name", textParam, () => fillNameField, (v) => (fillNameField = v));
-  syncParam("code", textParam, () => fillCodeField, (v) => (fillCodeField = v));
-  syncParam("depth", textParam, () => fillDepthColumn, (v) => (fillDepthColumn = v));
+  $effect(() => {
+    if (passthrough) advancedOpen = true;
+  });
 
   onMount(() => {
     initDuckDB();
   });
-
-  const fillOneBlank = $derived((fillNameField.trim() === "") !== (fillCodeField.trim() === ""));
-  const fillBothBlank = $derived(fillNameField.trim() === "" && fillCodeField.trim() === "");
-  const fillTemplateValid = $derived(
-    !fillOneBlank && (fillBothBlank || (fillNameField.includes("{n}") && fillCodeField.includes("{n}"))),
-  );
 
   $effect(() => {
     if (duckdbState.ready) {
@@ -129,22 +126,9 @@
 
   $effect(() => {
     const _p = passthrough;
-    const _f = perFeature;
+    const _m = matchMode;
     untrack(() => {
       if (!resultGeoJSON || running) return;
-      handleRun();
-    });
-  });
-
-  // Re-run picks up a schema-fill option change on already-produced output;
-  // holds off while the template pair is mid-edit (one side blank).
-  $effect(() => {
-    const _s = fillSchema;
-    const _n = fillNameField;
-    const _c = fillCodeField;
-    const _d = fillDepthColumn;
-    untrack(() => {
-      if (!resultGeoJSON || running || !fillTemplateValid) return;
       handleRun();
     });
   });
@@ -233,15 +217,6 @@
     phaseLabel = "";
 
     try {
-      const fillOptions: ApplyFillOptions | undefined = fillSchema
-        ? {
-            requested: true,
-            nameField: fillBothBlank ? null : fillNameField,
-            codeField: fillBothBlank ? null : fillCodeField,
-            depthColumn: fillDepthColumn,
-          }
-        : undefined;
-
       const result = await runEdgeMatch(
         duckdbState.db!,
         duckdbState.conn!,
@@ -250,8 +225,7 @@
         onProgress,
         { overlayMatchColumn: overlayMatchColumn ?? undefined, inputMatchColumn: inputMatchColumn ?? undefined },
         passthrough,
-        fillOptions,
-        perFeature,
+        matchMode,
       );
       resultGeoJSON = result.geojson;
       showSide = "b";
@@ -268,6 +242,7 @@
       detachedMergedCount = result.detachedMergedCount;
       detachedKeptCount = result.detachedKeptCount;
       assignedOverlayLabel = result.assignedOverlayLabel;
+      resolvedMode = result.mode;
       inputColumns = result.inputColumns;
       overlayColumns = result.overlayColumns;
       phaseLabel = "Done";
@@ -301,13 +276,12 @@
       <h1>Edge Matcher</h1>
       <DemoLink slug="edge-match" />
       <p class="blurb">
-        Match a fine polygon layer to whichever coarse boundary polygon it overlaps the most, then
-        extend each group's edges outward so every group's result meets its boundary exactly.
-        Works the same whether the two layers are adjacent levels (admin 4 into 3) or far apart
+        Fit an input polygon layer into an overlay boundary layer, extending edges so the result
+        meets the boundary exactly. The layers can be adjacent levels (admin 4 into 3) or far apart
         (admin 4 straight into 0).
       </p>
       <p class="hint">
-        Coarse layer should be a clean coverage — run Topology Cleaner first if unsure.
+        The overlay layer should be a clean coverage. Run Topology Cleaner first if unsure.
       </p>
     </header>
 
@@ -324,7 +298,7 @@
         bind:files={inputFiles}
         urlParam="input"
         disabled={running}
-        helpText="The layer to match and extend — any polygon set, any admin level. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
+        helpText="The layer to match and extend, any polygon set at any admin level. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />
     </section>
 
@@ -339,129 +313,91 @@
     </section>
 
     <section class="step">
-      <h2 class="step-heading">Fitting</h2>
-      <p class="fit-mode">
-        {perFeature
-          ? "Each input feature goes into the overlay feature it overlaps most."
-          : "All input features go into the one overlay feature most of them overlap."}
-        <button class="link-btn" disabled={running} onclick={() => (perFeature = !perFeature)}>
-          {perFeature ? "Fit all into one" : "Fit each separately"}
-        </button>
-      </p>
-    </section>
-
-    {#if inputColumns && overlayColumns}
-      <section class="step">
-        <h2 class="step-heading">Code join (optional)</h2>
-        <p class="hint">
-          Wins over spatial overlap wherever the codes agree on an overlay feature the input feature overlaps at all,
-          falls back to spatial when no code match exists.
-        </p>
-        <div class="match-cols">
-          <label class="match-field">
-            <span>Fine code</span>
-            <select bind:value={inputMatchColumn} disabled={running}>
-              <option value={null}>(none)</option>
-              {#each inputColumns.all as col (col)}<option value={col}>{col}</option>{/each}
-            </select>
-          </label>
-          <label class="match-field">
-            <span>Coarse code</span>
-            <select bind:value={overlayMatchColumn} disabled={running}>
-              <option value={null}>(none)</option>
-              {#each overlayColumns.all as col (col)}<option value={col}>{col}</option>{/each}
-            </select>
-          </label>
-        </div>
-      </section>
-    {/if}
-
-    {#if inputColumns && overlayColumns}
-      <section class="step">
-        <h2 class="step-heading">Unmatched fine units</h2>
-        <label class="passthrough-field">
-          <input type="checkbox" bind:checked={passthrough} disabled={running} />
-          <span>Include zero-overlap units unclipped, instead of dropping them</span>
-        </label>
-      </section>
-    {/if}
-
-    <section class="step">
-      <h2 class="step-heading">Schema fill (optional)</h2>
-      <label class="checkbox-field">
-        <input type="checkbox" bind:checked={fillSchema} disabled={running} />
-        <span>Cascade admin-hierarchy columns down before export</span>
-      </label>
-      {#if fillSchema}
-        <p class="hint">Leave both templates blank to auto-detect the hierarchy structurally.</p>
-        <label class="field">
-          <span>Name template</span>
-          <input
-            type="text"
-            bind:value={fillNameField}
-            placeholder="auto-detect"
-            disabled={running}
-          />
-        </label>
-        <label class="field">
-          <span>Code template</span>
-          <input
-            type="text"
-            bind:value={fillCodeField}
-            placeholder="auto-detect"
-            disabled={running}
-          />
-        </label>
-        <label class="field">
-          <span>Depth column</span>
-          <input type="text" bind:value={fillDepthColumn} disabled={running} />
-        </label>
-        {#if fillOneBlank}
-          <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
-        {:else if !fillBothBlank && !fillTemplateValid}
-          <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
-        {/if}
+      <h2 class="step-heading">Match to how many overlay features?</h2>
+      <SegmentedControl
+        bind:value={
+          () => (matchMode === "auto" ? resolvedMode : matchMode),
+          (v) => {
+            if (!(matchMode === "auto" && v === resolvedMode)) matchMode = v ?? "auto";
+          }
+        }
+        options={[
+          { value: "one", label: matchMode === "auto" && resolvedMode === "one" ? "One (auto)" : "One" },
+          { value: "several", label: matchMode === "auto" && resolvedMode === "several" ? "Several (auto)" : "Several" },
+        ]}
+        label="Match to how many overlay features?"
+        disabled={running}
+      />
+      {#if matchMode !== "auto"}
+        <button class="link-btn auto-reset" disabled={running} onclick={() => (matchMode = "auto")}>Pick automatically</button>
       {/if}
     </section>
 
+    <AdvancedOptions bind:open={advancedOpen}>
+      {#if inputColumns && overlayColumns}
+        <CodeJoinPicker
+          inputColumns={inputColumns.all}
+          overlayColumns={overlayColumns.all}
+          bind:inputValue={inputMatchColumn}
+          bind:overlayValue={overlayMatchColumn}
+          hint="Match by a shared code column where the codes agree, falling back to overlap where they don't."
+          disabled={running}
+        />
+      {/if}
+      <label class="passthrough-field">
+        <input type="checkbox" bind:checked={passthrough} disabled={running} />
+        <span>Keep input features that overlap no overlay feature (unclipped)</span>
+      </label>
+    </AdvancedOptions>
+
+    {#snippet groupList()}
+      <ol class="groups">
+        {#each groupRows as row, i}
+          <li class={row.status}>
+            <span class="group-row">
+              {#if row.status === "done"}
+                <span class="group-dot">✓</span>
+              {:else if row.status === "error"}
+                <span class="group-dot">✕</span>
+              {:else}
+                <span class="group-dot">•</span>
+              {/if}
+              <span class="group-label">{row.label}</span>
+              <span class="group-count">{row.inputCount}</span>
+            </span>
+            {#if i === activeGroupIndex && running}
+              <ol class="stages">
+                {#each STAGE_LABELS as label, si}
+                  <li class={stageStatus(si)}>
+                    <span class="stage-dot"></span>
+                    <span class="stage-label">{label}</span>
+                  </li>
+                {/each}
+              </ol>
+            {/if}
+            {#if row.status === "error" && "error" in row}
+              <p class="group-error">{row.error}</p>
+            {/if}
+          </li>
+        {/each}
+      </ol>
+    {/snippet}
+
     {#if running || groupRows.length > 0}
       <section class="step">
-        <p class="phase-label">{phaseLabel}</p>
-
-        {#if groupRows.length > 0}
-          <p class="group-summary">
-            {doneCount}/{groupRows.length} groups done{errorCount > 0 ? ` · ${errorCount} failed` : ""}
-          </p>
-          <ol class="groups">
-            {#each groupRows as row, i}
-              <li class={row.status}>
-                <span class="group-row">
-                  {#if row.status === "done"}
-                    <span class="group-dot">✓</span>
-                  {:else if row.status === "error"}
-                    <span class="group-dot">✕</span>
-                  {:else}
-                    <span class="group-dot">•</span>
-                  {/if}
-                  <span class="group-label">{row.label}</span>
-                  <span class="group-count">{row.inputCount}</span>
-                </span>
-                {#if i === activeGroupIndex && running}
-                  <ol class="stages">
-                    {#each STAGE_LABELS as label, si}
-                      <li class={stageStatus(si)}>
-                        <span class="stage-dot"></span>
-                        <span class="stage-label">{label}</span>
-                      </li>
-                    {/each}
-                  </ol>
-                {/if}
-                {#if row.status === "error" && "error" in row}
-                  <p class="group-error">{row.error}</p>
-                {/if}
-              </li>
-            {/each}
-          </ol>
+        {#if !running && phaseLabel === "Done" && groupRows.length > 0 && errorCount === 0}
+          <details>
+            <summary class="phase-label">Done: {doneCount}/{groupRows.length} groups</summary>
+            {@render groupList()}
+          </details>
+        {:else}
+          <p class="phase-label">{phaseLabel}</p>
+          {#if groupRows.length > 0}
+            <p class="group-summary">
+              {doneCount}/{groupRows.length} groups done{errorCount > 0 ? ` · ${errorCount} failed` : ""}
+            </p>
+            {@render groupList()}
+          {/if}
         {/if}
       </section>
     {/if}
@@ -471,7 +407,7 @@
     {/if}
 
     {#if resultGeoJSON && !perFeature && assignedOverlayLabel}
-      <p class="fit-mode">Fitted into {assignedOverlayLabel}.</p>
+      <p class="fit-mode">Matched to {assignedOverlayLabel}.</p>
     {/if}
 
     {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0) || (microCount !== null && microCount > 0) || (gapCount !== null && gapCount > 0) || (clipEmptyCount !== null && clipEmptyCount > 0) || (detachedMergedCount ?? 0) + (detachedKeptCount ?? 0) > 0}
@@ -482,52 +418,46 @@
             {perFeature ? "their overlay feature" : "it"} and {clipEmptyCount === 1 ? "was" : "were"} clipped
             away.
             {#if !perFeature}
-              <button class="link-btn" disabled={running} onclick={() => (perFeature = true)}>
-                Fit each separately
+              <button class="link-btn" disabled={running} onclick={() => (matchMode = "several")}>
+                Switch to Several
               </button>
             {/if}
           </p>
         {/if}
         {#if unassignedCount !== null && unassignedCount > 0}
           <p>
-            {unassignedCount} fine unit{unassignedCount === 1 ? "" : "s"} had no overlap with any
-            coarse polygon{passthrough
-              ? `; ${passthroughCount ?? 0} ${(passthroughCount ?? 0) === 1 ? "was" : "were"} extended and included unclipped`
-              : ` and ${unassignedCount === 1 ? "was" : "were"} excluded from the result`}.
+            {unassignedCount} input feature{unassignedCount === 1 ? "" : "s"} overlap no overlay
+            feature{passthrough
+              ? `; ${passthroughCount ?? 0} ${(passthroughCount ?? 0) === 1 ? "was" : "were"} kept unclipped`
+              : ` and ${unassignedCount === 1 ? "was" : "were"} left out`}.
           </p>
         {/if}
         {#if droppedCount !== null && droppedCount > 0}
           <p>
-            {droppedCount} fine unit{droppedCount === 1 ? "" : "s"} belonged to a group whose
-            extension failed and {droppedCount === 1 ? "was" : "were"} excluded from the result.
+            {droppedCount} input feature{droppedCount === 1 ? " was" : "s were"} left out because
+            {droppedCount === 1 ? "its" : "their"} group failed.
           </p>
         {/if}
         {#if codeMismatchCount !== null && codeMismatchCount > 0}
           <p>
-            {codeMismatchCount} unit{codeMismatchCount === 1 ? "" : "s"} matched by code to a
-            different overlay than the spatial overlap pick; the code match won.
+            {codeMismatchCount} input feature{codeMismatchCount === 1 ? " was" : "s were"} matched by
+            code to a different overlay feature than overlap alone would pick.
           </p>
         {/if}
         {#if codeFallbackCount !== null && codeFallbackCount > 0}
           <p>
-            {codeFallbackCount} unit{codeFallbackCount === 1 ? "" : "s"} had no overlapping code
-            match and fell back to the spatial pick.
+            {codeFallbackCount} input feature{codeFallbackCount === 1 ? "" : "s"} had no matching
+            code and {codeFallbackCount === 1 ? "was" : "were"} matched by overlap.
           </p>
         {/if}
         {#if microCount !== null && microCount > 0}
-          <p>
-            {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance)
-            merged into a neighbouring feature or dropped.
-          </p>
+          <p><MicroNote count={microCount} /></p>
         {/if}
         {#if (detachedMergedCount ?? 0) + (detachedKeptCount ?? 0) > 0}
           <p><DetachedNote merged={detachedMergedCount ?? 0} kept={detachedKeptCount ?? 0} /></p>
         {/if}
         {#if gapCount !== null && gapCount > 0}
-          <p>
-            {gapCount} gap{gapCount === 1 ? "" : "s"} wider than the snap tolerance remain in the
-            output.
-          </p>
+          <p>{gapCount} gap{gapCount === 1 ? " remains" : "s remain"} in the result.</p>
         {/if}
         <DownloadMenu
           primaryLabel="Download issues"
@@ -661,6 +591,11 @@
     cursor: pointer;
   }
 
+  .auto-reset {
+    align-self: flex-start;
+    font-size: 0.75rem;
+  }
+
   .link-btn:disabled {
     color: var(--hdx-neutral-5);
     cursor: default;
@@ -673,31 +608,10 @@
     margin: 0;
   }
 
-  .match-cols {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
 
-  .match-field {
-    display: grid;
-    grid-template-columns: 70px 1fr;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
-  }
 
-  .match-field select {
-    width: 100%;
-    padding: 0.25rem 0.4rem;
-    font-size: 0.8rem;
-    border: 1px solid var(--hdx-neutral-2);
-    border-radius: var(--hdx-radius-sm);
-    background: var(--hdx-neutral-0);
-  }
 
-  .passthrough-field,
-  .checkbox-field {
+  .passthrough-field {
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -705,33 +619,23 @@
     color: var(--hdx-neutral-8);
   }
 
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.8rem;
-    color: var(--hdx-neutral-8);
-  }
 
-  .field input {
-    padding: 0.4rem 0.55rem;
-    border: 1px solid var(--hdx-neutral-2);
-    border-radius: var(--hdx-radius-md);
-    font-size: 0.85rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
 
-  .field-error {
-    font-size: 0.75rem;
-    color: var(--hdx-error-6);
-    margin: 0;
-  }
 
   .phase-label {
     font-size: 0.85rem;
     color: var(--hdx-neutral-8);
     margin: 0;
     font-weight: 500;
+  }
+
+  summary.phase-label {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  details > .groups {
+    margin-top: 0.5rem;
   }
 
   .group-summary {

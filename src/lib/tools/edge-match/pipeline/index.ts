@@ -9,12 +9,11 @@ import {
   CODE_MISMATCH_REASON,
   type MatchColumnOptions,
 } from "$lib/db/codeJoin";
-import { applyOptionalFill, type ApplyFillOptions } from "$lib/db/fillCompose";
 import { setCentroidLat } from "$lib/db/units";
 import { CLIP_EMPTY_REASON } from "$lib/db/assignOne";
 import { dropInternalTables } from "$lib/tools/edge-extend/pipeline/index";
 import { loadLayers } from "./load";
-import { computeAssignment } from "./assign";
+import { computeAssignment, type MatchMode } from "./assign";
 import {
   listGroups,
   PASSTHROUGH_OVERLAY_FID,
@@ -62,6 +61,7 @@ export interface EdgeMatchResult {
   detachedKeptCount: number;
   // Assign-one only: the winner overlay feature's label.
   assignedOverlayLabel: string | null;
+  mode: "one" | "several";
   inputColumns: ColumnGuess;
   overlayColumns: ColumnGuess;
   // Overlay layer outline with `fid`, a reference layer over the per-group colored result.
@@ -246,8 +246,7 @@ export async function runEdgeMatch(
   onProgress: EdgeMatchProgressFn,
   matchColumns: MatchColumnOptions = {},
   passthrough = false,
-  fillOptions?: ApplyFillOptions,
-  perFeature = false,
+  mode: MatchMode = "one",
 ): Promise<EdgeMatchResult> {
   onProgress({ phase: "loading" });
   await loadLayers(db, conn, inputFiles, overlayFiles);
@@ -260,7 +259,7 @@ export async function runEdgeMatch(
   if (inputBounds) setCentroidLat((inputBounds[1] + inputBounds[3]) / 2);
 
   onProgress({ phase: "assigning" });
-  const assignment = await computeAssignment(conn, matchColumns, passthrough, perFeature);
+  const assignment = await computeAssignment(conn, matchColumns, passthrough, mode);
   const inputGeojson = await queryToGeoJSON(
     conn,
     `SELECT ST_AsGeoJSON(i.geom) AS _geom, ga.overlay_fid AS group_id FROM input_layer_01 i
@@ -314,7 +313,6 @@ export async function runEdgeMatch(
     await dropInternalTables(conn);
 
     await buildResultsAttrTable(conn);
-    if (fillOptions) await applyOptionalFill(conn, "ge_results_attr", fillOptions);
 
     // input_layer_attr/ge_unassigned/ge_dropped/ge_issues are deliberately
     // NOT dropped here: DownloadMenu's "unassigned"/"issues" exports read
@@ -376,6 +374,7 @@ export async function runEdgeMatch(
     detachedMergedCount,
     detachedKeptCount,
     assignedOverlayLabel,
+    mode: assignment.mode,
     inputColumns,
     overlayColumns,
     overlayOutlineGeojson,
