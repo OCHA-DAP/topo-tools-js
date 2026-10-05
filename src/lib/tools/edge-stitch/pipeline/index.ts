@@ -4,7 +4,6 @@ import { hasMicroPolygons, hasNoiseFloorGap } from "$lib/db/coverage";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
-import { applyOptionalFill, type ApplyFillOptions } from "$lib/db/fillCompose";
 import { buildStitchIssues, type StitchIssueRow } from "./issues";
 
 export type { StitchIssueRow } from "./issues";
@@ -68,7 +67,6 @@ export async function runStitch(
   onProgress: ProgressFn,
   sourceTable = "layer_01",
   attrTable = "layer_attr",
-  fillOptions?: ApplyFillOptions,
 ): Promise<StitchResult> {
   onProgress(2, "Loading input");
   const bounds = await computeBounds(conn, sourceTable);
@@ -110,7 +108,6 @@ export async function runStitch(
     );
   }
 
-  if (fillOptions) await applyOptionalFill(conn, attrTable, fillOptions);
   const stitchedGeoJSON = await tableToGeoJSON(conn, "st_clean", attrTable);
 
   return {

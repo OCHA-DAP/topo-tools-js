@@ -20,11 +20,11 @@ with other tools.
 - `edge-match` MUST compute area-overlap pairs between every input feature and every
   bounding-box-nearby overlay feature, via the shared overlap measurement contract
   (`docs/reference/shared.md`).
-- By default (assign-one), `edge-match` MUST assign every input feature to the
+- In assign-one mode, `edge-match` MUST assign every input feature to the
   one overlay feature that wins `edge-clip`'s majority vote
   (`docs/reference/edge-clip.md`), including an input feature that does not
   overlap it.
-- With the per-feature option, `edge-match` MUST instead assign each input
+- In per-feature mode, `edge-match` MUST instead assign each input
   feature to the single overlay feature it shares the largest overlap area
   with (plurality, not necessarily more than half the input feature's own
   area). A tie between two candidate overlay features for the same input
@@ -113,8 +113,11 @@ with other tools.
 ## Configuration
 
 - `edge-match` MUST process exactly one input file and one overlay file per run.
-- `edge-match` MUST accept a per-feature option selecting per-feature
-  assignment, and MUST default to assign-one without it.
+- `edge-match` MUST accept a mode of `auto`, `one` (assign-one) or
+  `several` (per-feature), and MUST default to `auto`.
+- In `auto` mode, `edge-match` MUST run assign-one's majority vote and MUST
+  switch to per-feature when fewer than half the input features overlap the
+  winner. It MUST report which of the two modes it ran.
 - `edge-match` MAY accept a `matchColumn` name or a
   `overlayMatchColumn`/`inputMatchColumn` pair for the code-based
   assignment override; both are optional, and omitting them runs

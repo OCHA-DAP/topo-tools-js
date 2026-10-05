@@ -44,8 +44,7 @@ name instead of repeating them.
   | `change` | `match`, `same`, `by` (`geometry`/`identity`), `link` (`either`/`both`) |
   | `code-create` | `root`, `delim` (a character, or `none`), `width`, `source` (`replace`/`embed`/`copy`), `name`, `code` |
   | `code-update` | `root`, `delim` (absent = detect, `none`, or a character), `width`, `name-a`, `code-a`, `name-b`, `code-b`, `code-col-a`, `code-col-b`, `name-col-a`, `name-col-b`, `match`, `same`, `by-code`, `by-name`, `link` |
-  | `edge-match` | `fit` (`all`/`each`), `passthrough`, `fill`, `name`, `code`, `depth` |
-  | `edge-mosaic`, `edge-stitch` | `fill`, `name`, `code`, `depth` |
+  | `edge-match` | `match` (`auto`/`one`/`several`), `passthrough` |
   | `package`, `package-polygons`, `package-points`, `package-lines` | `name`, `code` |
   | `schema-map` | `name`, `code`, `level` |
   | `schema-fill` | `name`, `code`, `depth` |
@@ -321,25 +320,3 @@ against an already-coded OLD layer).
 - `seedCodeFromNames` MUST fill a level's code column from its name
   column, and throw when the level has no name column.
   `checkUniqueNames` MUST throw when a name repeats under one parent.
-
-## Opt-in schema fill (`$lib/db/fillCompose.ts`)
-
-Shared by `edge-stitch`, `edge-mosaic` (via `edge-stitch`'s own call), and `edge-match` for an
-optional post-processing pass over each tool's own final attribute table.
-
-- Callers MUST supply `fillSchema` (boolean), and MAY additionally supply a
-  `nameField`/`codeField` pair, each containing a `{n}` placeholder. Both
-  MUST be given together or both omitted; supplying only one MUST raise.
-- Supplying `nameField`/`codeField` without `fillSchema` enabled MUST raise.
-- `fillSchema: false` (the default) MUST leave the tool's output
-  byte-identical to a run with no schema-fill support at all.
-- `fillSchema: true` MUST cascade admin-hierarchy column families down the
-  tool's own final attribute table in place, using the same depth-pin
-  algorithm as `schema-fill` (see `docs/reference/schema-fill.md`): a
-  legitimate `NULL` at a row's own real depth MUST be left untouched, and a
-  `NULL` at a deeper level MUST be filled from the nearest non-`NULL`
-  shallower level. A pre-existing column matching the configured depth
-  column name MUST raise before any fill runs.
-- The `nameField`/`codeField` pair, when supplied, MUST select the explicit
-  target-schema path; when omitted, level and family detection MUST fall
-  back to `schema-map`'s structural level-detection engine.

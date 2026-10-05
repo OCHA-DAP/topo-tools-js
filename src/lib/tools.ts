@@ -35,7 +35,6 @@ export const tools: Tool[] = [
     demo: {
       input: "https://data.source.coop/hdx/topo-tools/nld/demo/edge/nld_admin2.parquet",
       overlay: "https://data.source.coop/hdx/topo-tools/nld/demo/edge/nld_admin1.parquet",
-      fit: "each",
     },
   },
   {

@@ -1,11 +1,10 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
-  import { boolParam, textParam, syncParam } from "$lib/utils/syncParam.svelte";
   import { loadFile } from "$lib/db/loader";
   import { PipelineError, runStitch, type StitchIssueRow } from "./pipeline/index";
-  import type { ApplyFillOptions } from "$lib/db/fillCompose";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import MicroNote from "$lib/components/MicroNote.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import SideToggle from "$lib/components/SideToggle.svelte";
@@ -30,26 +29,12 @@
   let hadResidualOverlaps = $state(false);
   let error = $state<string | null>(null);
 
-  let fillSchema = $state(false);
-  let fillNameField = $state("");
-  let fillCodeField = $state("");
-  let fillDepthColumn = $state("adm_lvl");
-  syncParam("fill", boolParam, () => fillSchema, (v) => (fillSchema = v));
-  syncParam("name", textParam, () => fillNameField, (v) => (fillNameField = v));
-  syncParam("code", textParam, () => fillCodeField, (v) => (fillCodeField = v));
-  syncParam("depth", textParam, () => fillDepthColumn, (v) => (fillDepthColumn = v));
 
   let clearMap: (() => void) | undefined;
 
   onMount(() => {
     initDuckDB();
   });
-
-  const fillOneBlank = $derived((fillNameField.trim() === "") !== (fillCodeField.trim() === ""));
-  const fillBothBlank = $derived(fillNameField.trim() === "" && fillCodeField.trim() === "");
-  const fillTemplateValid = $derived(
-    !fillOneBlank && (fillBothBlank || (fillNameField.includes("{n}") && fillCodeField.includes("{n}"))),
-  );
 
   $effect(() => {
     const f = files;
@@ -58,19 +43,6 @@
         if (!running) handleRun();
       });
     }
-  });
-
-  // Re-run picks up a schema-fill option change on already-produced output;
-  // holds off while the template pair is mid-edit (one side blank).
-  $effect(() => {
-    const _s = fillSchema;
-    const _n = fillNameField;
-    const _c = fillCodeField;
-    const _d = fillDepthColumn;
-    untrack(() => {
-      if (!resultGeoJSON || running || !fillTemplateValid) return;
-      handleRun();
-    });
   });
 
   async function handleRun() {
@@ -92,15 +64,6 @@
       stageLabel = "Loading file…";
       await loadFile(duckdbState.db!, duckdbState.conn!, files);
 
-      const fillOptions: ApplyFillOptions | undefined = fillSchema
-        ? {
-            requested: true,
-            nameField: fillBothBlank ? null : fillNameField,
-            codeField: fillBothBlank ? null : fillCodeField,
-            depthColumn: fillDepthColumn,
-          }
-        : undefined;
-
       const result = await runStitch(
         duckdbState.conn!,
         (stage, label) => {
@@ -109,7 +72,6 @@
         },
         undefined,
         undefined,
-        fillOptions,
       );
 
       resultGeoJSON = result.stitchedGeoJSON;
@@ -199,44 +161,6 @@
     </section>
 
     <section class="step">
-      <h2 class="step-heading">Schema fill (optional)</h2>
-      <label class="checkbox-field">
-        <input type="checkbox" bind:checked={fillSchema} disabled={running} />
-        <span>Cascade admin-hierarchy columns down before export</span>
-      </label>
-      {#if fillSchema}
-        <p class="hint">Leave both templates blank to auto-detect the hierarchy structurally.</p>
-        <label class="field">
-          <span>Name template</span>
-          <input
-            type="text"
-            bind:value={fillNameField}
-            placeholder="auto-detect"
-            disabled={running}
-          />
-        </label>
-        <label class="field">
-          <span>Code template</span>
-          <input
-            type="text"
-            bind:value={fillCodeField}
-            placeholder="auto-detect"
-            disabled={running}
-          />
-        </label>
-        <label class="field">
-          <span>Depth column</span>
-          <input type="text" bind:value={fillDepthColumn} disabled={running} />
-        </label>
-        {#if fillOneBlank}
-          <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
-        {:else if !fillBothBlank && !fillTemplateValid}
-          <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
-        {/if}
-      {/if}
-    </section>
-
-    <section class="step">
       {#if hadResidualOverlaps}
         <div class="warn-panel">
           Some overlaps remain after cleaning — this shouldn't normally happen. Inspect the output
@@ -256,15 +180,13 @@
       {#if resultGeoJSON && issues.length > 0}
         {#if gapCount > 0}
           <div class="issues-note">
-            {gapCount} gap{gapCount === 1 ? "" : "s"} wider than the noise floor
-            {gapCount === 1 ? "remains" : "remain"}; it may be a legitimate unfilled gap, not a
-            defect.
+            {gapCount} gap{gapCount === 1 ? " remains" : "s remain"} in the result. Some may be real gaps
+            in the data rather than defects.
           </div>
         {/if}
         {#if microCount > 0}
           <div class="issues-note">
-            {microCount} micro-polygon{microCount === 1 ? "" : "s"} (narrower than the snap tolerance)
-            merged into a neighbouring feature or dropped.
+            <MicroNote count={microCount} />
           </div>
         {/if}
         <DownloadMenu
@@ -449,42 +371,10 @@
     line-height: 1.4;
   }
 
-  .checkbox-field {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
-    color: var(--hdx-neutral-8);
-  }
 
-  .hint {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    line-height: 1.4;
-  }
 
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.8rem;
-    color: var(--hdx-neutral-8);
-  }
 
-  .field input {
-    padding: 0.4rem 0.55rem;
-    border: 1px solid var(--hdx-neutral-2);
-    border-radius: var(--hdx-radius-md);
-    font-size: 0.85rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
 
-  .field-error {
-    font-size: 0.75rem;
-    color: var(--hdx-error-6);
-    margin: 0;
-  }
 
   .privacy {
     font-size: 0.75rem;

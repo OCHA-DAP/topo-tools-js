@@ -3,9 +3,8 @@
 </script>
 
 {#if merged > 0}
-  {merged} small clip-detached piece{merged === 1 ? "" : "s"} merged into the neighbouring feature
-  sharing the longest edge{kept > 0 ? ";" : "."}
+  {merged} small piece{merged === 1 ? "" : "s"} cut off by the clip merged into a neighbour{kept > 0 ? ";" : "."}
 {/if}
 {#if kept > 0}
-  {kept} detached piece{kept === 1 ? "" : "s"} kept as drawn, see the issues download for why.
+  {kept} cut-off piece{kept === 1 ? " was" : "s were"} kept, see the issues download.
 {/if}
