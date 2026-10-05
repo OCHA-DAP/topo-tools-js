@@ -159,8 +159,8 @@
       <h1>Schema Join</h1>
       <DemoLink slug="schema-join" />
       <p class="blurb">
-        Copy a join layer's admin hierarchy columns onto each feature of the input layer, from the
-        join feature it overlaps most. Geometry is left as is. Where a feature already has a column
+        Copy a join layer's admin hierarchy columns onto each polygon of the input layer, from the
+        join polygon it overlaps most. Geometry is left as is. Where a polygon already has a column
         with different values, the join layer's values are added as a numbered sibling column.
       </p>
     </header>
@@ -205,7 +205,7 @@
             <input type="number" min="0.01" max="1" step="0.05" bind:value={minOverlap} />
           </label>
           <p class="field-hint">
-            Flag a feature when its best join feature covers less than this share of its area.
+            Flag a polygon when its best join polygon covers less than this share of its area.
           </p>
           {#if !overlapValid}
             <p class="field-error">Minimum overlap must be above 0 and at most 1.</p>

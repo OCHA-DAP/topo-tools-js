@@ -18,7 +18,7 @@ which extracted this exact operation out of `edge-match`'s and (eventually)
 2. **Clean** (`pipeline/index.ts`, via `$lib/db/coverageClean`'s
    `buildCoverageCleanEscalating`), one whole-table `ST_CoverageClean` pass
    starting at `SNAP_TOLERANCE` gap/snap, `preserveOriginal: true` so a
-   feature that collapses to empty falls back to its pre-clean geometry
+   polygon that collapses to empty falls back to its pre-clean geometry
    rather than vanishing. If the pass still leaves invalid edges, the snap
    width widens by `SNAP_TOLERANCE` and retries, up to 9 additional
    attempts, before giving up and leaving whatever the last attempt

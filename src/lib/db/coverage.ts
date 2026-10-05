@@ -44,6 +44,26 @@ function gapHolesSql(targetTable: string, sourceTable: string, geomExpr: string)
   `;
 }
 
+// Drops gap regions whose interior point lies outside every clip target: an
+// overlay hole or another overlay feature's territory, not a gap to fill.
+export async function dropGapsOutsideTargets(
+  conn: AsyncDuckDBConnection,
+  regionsTable: string,
+  targetsSql: string,
+): Promise<void> {
+  await conn.query(`--sql
+    DELETE FROM ${regionsTable} WHERE n NOT IN (
+      WITH probes AS (
+        SELECT n, ST_PointOnSurface(geom) AS p FROM ${regionsTable}
+      ),
+      pb AS (SELECT n, p, ${bboxColumnsSql("p")} FROM probes),
+      t AS (SELECT geom, ${bboxColumnsSql("geom")} FROM (${targetsSql}))
+      SELECT DISTINCT pb.n FROM pb JOIN t
+        ON ${bboxOverlapSql("pb", "t")} AND ST_Intersects(t.geom, pb.p)
+    )
+  `);
+}
+
 // Gap regions = interior rings of the union of sourceTable's polygons, written
 // to targetTable (n, geom). When the exact union throws, the union is retried
 // on a fine grid and a hole whose interior point an input polygon covers is a
@@ -118,8 +138,8 @@ export async function hasNoiseFloorGap(
   }
 }
 
-export const MICRO_MERGED_REASON = "merged into neighbouring feature";
-export const MICRO_DROPPED_REASON = "dropped: touches no feature";
+export const MICRO_MERGED_REASON = "merged into neighbouring polygon";
+export const MICRO_DROPPED_REASON = "dropped: touches no polygon";
 
 // Ported from topo-tools-py's is_micro_sql: 2*area/perimeter bounds the
 // inscribed-circle diameter from below, so CASE skips it for every wide part.

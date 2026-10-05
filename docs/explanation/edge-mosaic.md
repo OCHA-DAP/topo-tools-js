@@ -1,7 +1,7 @@
 # Mosaic
 
 Fits an input layer that is already the finished output of a prior Edge
-Extender run into a new/different overlay feature boundary, without re-running
+Extender run into a new/different overlay polygon boundary, without re-running
 Voronoi extension. A thin orchestrator chaining the same three primitives
 this app exposes standalone: assign-one (`$lib/db/assignOne.ts`, shared
 with Clip), clip (`$lib/db/clipEngine.ts`/`clipTiling.ts`, shared with
@@ -18,7 +18,7 @@ usual `layer_01`). Ported from topo-tools-py's `edge-mosaic`.
    Clip uses, at exactly the same single-input-file scope
    (`docs/adr/0026`, shared by both tools). If overlay columns were
    requested, they're joined under their own names from the winning
-   overlay feature's own attribute row onto `input_layer_attr` here, before clipping.
+   overlay polygon's own attribute row onto `input_layer_attr` here, before clipping.
 3. **Clip** (`$lib/db/clipEngine.ts`) — the same tiled clip Clip uses,
    followed by the same clip-detached merge against the optional original
    layer (`docs/explanation/edge-clip.md`). Fails the run if zero output
@@ -27,11 +27,11 @@ usual `layer_01`). Ported from topo-tools-py's `edge-mosaic`.
    `sourceTable="cl_clip"`, `attrTable="input_layer_attr"`) — one
    whole-table `ST_CoverageClean` pass over the clipped result, closing
    seams between the (already-extended, but freshly-clipped-to-a-new-
-   boundary) input feature pieces.
-5. **Assemble issues** (`pipeline/issues.ts`), combines every input feature that
+   boundary) input polygon pieces.
+5. **Assemble issues** (`pipeline/issues.ts`), combines every input polygon that
    never reached the final output (kind `clip-empty` for one clipped to
-   nothing, including every one outside the winner overlay feature, or
-   `unassigned` when no overlay feature won)
+   nothing, including every one outside the winner overlay polygon, or
+   `unassigned` when no overlay polygon won)
    with every merged or kept clip-detached piece (kind `detached-part`),
    every leftover gap `runStitch`'s own issues check finds (kind
    `gap`) and any `code-mismatch`/`code-fallback` rows from an optional
@@ -40,18 +40,18 @@ usual `layer_01`). Ported from topo-tools-py's `edge-mosaic`.
 
 ## Why assign-one, not assign-many
 
-Input features here are assumed already extended (overshooting), which is
+Input polygons here are assumed already extended (overshooting), which is
 exactly the scenario assign-one (majority vote by count) is built to
-survive and assign-many (per-input-feature plurality, what Edge Matcher uses) is
+survive and assign-many (per-input-polygon plurality, what Edge Matcher uses) is
 vulnerable to — see `docs/explanation/edge-clip.md`'s "Assign" section for the
 full reasoning, identical here.
 
 ## No re-extension
 
 Match's own per-group extension is the expensive part of that pipeline.
-Mosaic skips it entirely on the assumption the input features are already
+Mosaic skips it entirely on the assumption the input polygons are already
 extended, making it just assign + clip + stitch — useful when refitting an
-existing Edge Extender output against a different or updated overlay feature
+existing Edge Extender output against a different or updated overlay polygon
 boundary without redoing the Voronoi work.
 
 ## Warn-only, not a hard export gate

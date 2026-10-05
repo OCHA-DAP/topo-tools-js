@@ -24,14 +24,14 @@ export async function buildJoinIssues(
     issue_rows AS (
       SELECT 'no-overlap-' || o.out_fid AS key, 'no-overlap' AS kind,
              o.out_fid AS unit_a, NULL::BIGINT AS join_fid,
-             'input feature overlaps no join feature; join columns left NULL' AS reason,
+             'input polygon overlaps no join polygon; join columns left NULL' AS reason,
              NULL::DOUBLE AS area_m2, c.geom
       FROM input_layer_01 c JOIN out_rows o ON o.fid = c.fid
       WHERE c.fid NOT IN (SELECT input_fid FROM sj_assign)
       UNION ALL BY NAME
       SELECT 'low-overlap-' || o.out_fid AS key, 'low-overlap' AS kind,
              o.out_fid AS unit_a, s.join_fid,
-             printf('best join feature covers %.2f of input feature', s.overlap_share) AS reason,
+             printf('best join polygon covers %.2f of input polygon', s.overlap_share) AS reason,
              s.input_area - s.shared_area AS area_m2, c.geom
       FROM sj_share s
       JOIN input_layer_01 c ON c.fid = s.input_fid

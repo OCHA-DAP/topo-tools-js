@@ -42,16 +42,16 @@
   {:else}
     <section class="summary">
       <p>
-        <strong>{inputCount - noOverlap} of {plural(inputCount, "feature", "features")}</strong>
+        <strong>{inputCount - noOverlap} of {plural(inputCount, "polygon", "polygons")}</strong>
         joined.
       </p>
       {#if noOverlap + lowOverlap + mismatch > 0}
         <ul>
           {#if noOverlap > 0}
-            <li class="bad">{plural(noOverlap, "feature overlaps", "features overlap")} no join feature</li>
+            <li class="bad">{plural(noOverlap, "polygon overlaps", "polygons overlap")} no join polygon</li>
           {/if}
           {#if lowOverlap > 0}
-            <li class="warn">{plural(lowOverlap, "feature", "features")} below the minimum overlap</li>
+            <li class="warn">{plural(lowOverlap, "polygon", "polygons")} below the minimum overlap</li>
           {/if}
           {#if mismatch > 0}
             <li class="warn">{plural(mismatch, "value differs", "values differ")} from the join layer's</li>
@@ -73,7 +73,7 @@
           <tr>
             <th class="fit">Column</th>
             <th class={values ? "fit" : "flex"}>Source</th>
-            {#if values}<th class="flex">Selected feature</th>{/if}
+            {#if values}<th class="flex">Selected polygon</th>{/if}
           </tr>
         </thead>
         <tbody>
@@ -96,7 +96,7 @@
     <section>
       <h3>Issues ({issues.length})</h3>
       {#if issues.length === 0}
-        <p class="jt-note">Every feature joined with no conflicts.</p>
+        <p class="jt-note">Every polygon joined with no conflicts.</p>
       {:else}
         <table>
           <thead>

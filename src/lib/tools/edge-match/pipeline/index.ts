@@ -1,6 +1,11 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
-import { buildGapTable, hasMicroPolygons, hasNoiseFloorGap } from "$lib/db/coverage";
+import {
+  buildGapTable,
+  dropGapsOutsideTargets,
+  hasMicroPolygons,
+  hasNoiseFloorGap,
+} from "$lib/db/coverage";
 import { gapIssuesSql } from "$lib/db/issues";
 import { queryToGeoJSON, tableToGeoJSON } from "$lib/db/geojson";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
@@ -61,7 +66,7 @@ export interface EdgeMatchResult {
   detachedKeptCount: number;
   // Assign-one only: the winner overlay feature's label.
   assignedOverlayLabel: string | null;
-  mode: "one" | "several";
+  mode: "one" | "many";
   inputColumns: ColumnGuess;
   overlayColumns: ColumnGuess;
   // Overlay layer outline with `fid`, a reference layer over the per-group colored result.
@@ -149,9 +154,12 @@ async function appendMicroIssues(conn: AsyncDuckDBConnection): Promise<number> {
   return Number((n.toArray()[0] as { n: bigint | number }).n);
 }
 
-async function appendGapIssues(conn: AsyncDuckDBConnection): Promise<number> {
+async function appendGapIssues(conn: AsyncDuckDBConnection, hasClipTargets: boolean): Promise<number> {
   try {
     await buildGapTable(conn, "ge_gap_regions", "ge_results");
+    if (hasClipTargets) {
+      await dropGapsOutsideTargets(conn, "ge_gap_regions", "SELECT geom FROM ge_clip_targets");
+    }
     await conn.query(`--sql
       INSERT INTO ge_issues BY NAME
       SELECT key, kind, reason, area_m2, max_width_m, thinness_ratio, fixed, geom
@@ -161,6 +169,7 @@ async function appendGapIssues(conn: AsyncDuckDBConnection): Promise<number> {
     return Number((r.toArray()[0] as { n: bigint | number }).n);
   } finally {
     await conn.query("DROP TABLE IF EXISTS ge_gap_regions");
+    await conn.query("DROP TABLE IF EXISTS ge_clip_targets");
   }
 }
 
@@ -301,6 +310,20 @@ export async function runEdgeMatch(
   const assignedOverlayLabel =
     groups.find((g) => g.overlayFid === assignment.overlayFid)?.label ?? null;
 
+  let hasClipTargets = false;
+  try {
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ge_clip_targets AS
+      SELECT geom FROM overlay_layer_01
+      WHERE fid IN (
+        SELECT overlay_fid FROM ge_assignment WHERE overlay_fid <> ${PASSTHROUGH_OVERLAY_FID}
+      )
+    `);
+    hasClipTargets = true;
+  } catch (e) {
+    console.warn("clip target copy failed, reporting every result gap:", e);
+  }
+
   // A group OOM above leaves the connection poisoned for the rest of the
   // session, so attribute enrichment below may also throw. It's a
   // nice-to-have — fall back to a geometry-only export rather than losing
@@ -354,7 +377,7 @@ export async function runEdgeMatch(
   await runValidation(conn, "ge_results");
   let gapCount = 0;
   try {
-    gapCount = await appendGapIssues(conn);
+    gapCount = await appendGapIssues(conn, hasClipTargets);
   } catch (e) {
     console.warn("gap issues failed:", e);
   }

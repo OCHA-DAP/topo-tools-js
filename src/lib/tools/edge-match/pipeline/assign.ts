@@ -18,13 +18,13 @@ export interface AssignResult {
   // Assign-one only: the majority-vote winner.
   overlayFid: number | null;
   // The mode actually run; "auto" resolves to one of the other two.
-  mode: "one" | "several";
+  mode: "one" | "many";
 }
 
-export type MatchMode = "auto" | "one" | "several";
+export type MatchMode = "auto" | "one" | "many";
 
-// "one" puts the whole input onto its majority-vote overlay feature; "several"
-// assigns each input feature to its largest overlap. "auto" picks "several" when
+// "one" puts the whole input onto its majority-vote overlay feature; "many"
+// assigns each input feature to its largest overlap. "auto" picks "many" when
 // fewer than half the input features overlap the majority-vote winner.
 export async function computeAssignment(
   conn: AsyncDuckDBConnection,
@@ -33,16 +33,16 @@ export async function computeAssignment(
   mode: MatchMode = "one",
 ): Promise<AssignResult> {
   let one: Awaited<ReturnType<typeof assignOne>> | null = null;
-  let several = mode === "several";
-  if (!several) {
+  let many = mode === "many";
+  if (!many) {
     one = await assignOne(conn, matchColumns);
     if (mode === "auto" && one.overlappingCount * 2 < one.assignedCount) {
-      several = true;
+      many = true;
       one = null;
       await conn.query("DROP TABLE IF EXISTS cl_assign");
     }
   }
-  if (several) {
+  if (many) {
     await assignPerFeature(conn, matchColumns);
   } else if (one) {
     const method = one.assignmentMethod ? `'${one.assignmentMethod}'` : "NULL";
@@ -104,7 +104,7 @@ export async function computeAssignment(
     codeMismatchCount: Number(codeRow.mismatch),
     codeFallbackCount: Number(codeRow.fallback),
     overlayFid: one?.overlayFid ?? null,
-    mode: several ? "several" : "one",
+    mode: many ? "many" : "one",
   };
 }
 

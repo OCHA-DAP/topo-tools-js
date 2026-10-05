@@ -42,6 +42,7 @@ export interface AssignmentOutcomeInfo {
 
 export async function buildMosaicIssues(
   conn: AsyncDuckDBConnection,
+  overlayFid: number,
   assignment: AssignmentOutcomeInfo = {},
 ): Promise<MosaicIssuesResult> {
   await conn.query(`--sql
@@ -72,7 +73,11 @@ export async function buildMosaicIssues(
     WHERE ${codeKind ? "TRUE" : "FALSE"}
   `);
 
-  const { rows: gapRows } = await buildStitchIssues(conn, "st_clean");
+  const { rows: gapRows } = await buildStitchIssues(
+    conn,
+    "st_clean",
+    `SELECT geom FROM overlay_layer_01 WHERE fid = ${overlayFid}`,
+  );
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE ms_issues AS

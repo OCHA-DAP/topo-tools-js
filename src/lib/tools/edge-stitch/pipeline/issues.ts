@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { buildGapTable } from "$lib/db/coverage";
+import { buildGapTable, dropGapsOutsideTargets } from "$lib/db/coverage";
 import { gapIssuesSql } from "$lib/db/issues";
 
 // Issues report: any interior hole left in sourceTable wider than
@@ -32,8 +32,10 @@ export interface StitchIssuesResult {
 export async function buildStitchIssues(
   conn: AsyncDuckDBConnection,
   sourceTable: string,
+  clipTargetsSql?: string,
 ): Promise<StitchIssuesResult> {
   await buildGapTable(conn, "st_gap_regions", sourceTable);
+  if (clipTargetsSql) await dropGapsOutsideTargets(conn, "st_gap_regions", clipTargetsSql);
 
   await conn.query(`--sql
     CREATE OR REPLACE TABLE st_issues AS

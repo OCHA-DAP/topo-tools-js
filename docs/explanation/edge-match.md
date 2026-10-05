@@ -1,14 +1,14 @@
 # Edge Matcher
 
 Assigns a fine (input) layer to coarse (overlay) polygons, either all of it
-to the one overlay feature most input features overlap (assign-one, the
-"One" mode and topo-tools-py's default) or each input feature to the overlay
-feature it overlaps most (per-feature, "Several"). The default "auto" mode
+to the one overlay polygon most input polygons overlap (assign-one, the
+"One" mode and topo-tools-py's default) or each input polygon to the overlay
+polygon it overlaps most (per-polygon, "Many"). The default "auto" mode
 picks between them from the data and shows the pick on the switch, so the
 user can compare the other mode on the map
-([`0052`](../adr/0052-match-defaults-to-auto-mode.md)). Groups input features by their assigned overlay feature, then
+([`0052`](../adr/0052-match-defaults-to-auto-mode.md)). Groups input polygons by their assigned overlay polygon, then
 runs Edge Extender's pipeline independently within each group so the
-group's result meets its own overlay feature boundary exactly. Spatial by default;
+group's result meets its own overlay polygon boundary exactly. Spatial by default;
 an optional code-based assignment override is available (see below).
 
 ## Pipeline
@@ -19,39 +19,39 @@ an optional code-based assignment override is available (see below).
    Real source data commonly carries pre-existing seam imprecision that this
    pipeline's later per-group clip step has no way to fix downstream.
 2. **Assign** (`pipeline/assign.ts`), in assign-one mode runs Clip's `assignOne`
-   (`docs/explanation/edge-clip.md`), assigning every input feature, overlapping
+   (`docs/explanation/edge-clip.md`), assigning every input polygon, overlapping
    or not, to the majority-vote winner. Auto mode runs the same vote, then
-   switches to per-feature when fewer than half the input features overlap
-   the winner. In per-feature mode it
-   instead computes area-overlap pairs between every input feature and
-   nearby overlay feature (`src/lib/db/overlap.ts`, shared with the Changelog
-   tool) and assigns each input feature to the overlay feature with the
-   largest shared area (plurality, not necessarily >50%). Input features
-   left without an overlay feature go to `ge_unassigned` instead of being
+   switches to per-polygon when fewer than half the input polygons overlap
+   the winner. In per-polygon mode it
+   instead computes area-overlap pairs between every input polygon and
+   nearby overlay polygon (`src/lib/db/overlap.ts`, shared with the Changelog
+   tool) and assigns each input polygon to the overlay polygon with the
+   largest shared area (plurality, not necessarily >50%). Input polygons
+   left without an overlay polygon go to `ge_unassigned` instead of being
    silently dropped. With
-   the opt-in passthrough toggle, those same input features are also inserted
+   the opt-in passthrough toggle, those same input polygons are also inserted
    into `ge_assignment` under a sentinel `PASSTHROUGH_OVERLAY_FID` (`-1`,
    `pipeline/groups.ts`), turning them into their own pseudo-group instead
    of only being reported as excluded.
-3. **Per-group extend** (`pipeline/groups.ts`), for each non-empty overlay feature
+3. **Per-group extend** (`pipeline/groups.ts`), for each non-empty overlay polygon
    group (including the passthrough pseudo-group, when present), populates
-   `layer_01`/`layer_attr` with that group's input feature subset and runs Edge
+   `layer_01`/`layer_attr` with that group's input polygon subset and runs Edge
    Extender's pipeline unmodified (`skipOutputClean: true`, since cleaning
    per-group here would be redundant, see
    [`0004`](../adr/0004-consolidate-coverageclean-to-single-final-call.md)).
    The extended result is checked against its own pre-extension subset by
    the shared no-erosion guard (`docs/reference/shared.md`) as a hard
-   failure, then clipped against the known overlay feature geometry by the
+   failure, then clipped against the known overlay polygon geometry by the
    shared clip engine (`src/lib/db/clipEngine.ts`, the same one Clip and
    Mosaic use, as in topo-tools-py), except the passthrough group, which
-   has no real overlay feature boundary and lands in `ge_results` unclipped.
+   has no real overlay polygon boundary and lands in `ge_results` unclipped.
    Each clipped group's detached pieces are merged or kept against the
    whole pre-extension input (`input_layer_01`, see
    `docs/explanation/edge-clip.md`), accumulating rows in `ge_detached`.
-   An extended input feature whose clip comes out empty is recorded in
-   `ge_clip_empty`, which in assign-one mode is every input feature lying
-   outside the winning overlay feature. A
-   failing group's input features are recorded in `ge_dropped` (with the overlay feature
+   An extended input polygon whose clip comes out empty is recorded in
+   `ge_clip_empty`, which in assign-one mode is every input polygon lying
+   outside the winning overlay polygon. A
+   failing group's input polygons are recorded in `ge_dropped` (with the overlay polygon
    fid and error message) rather than aborting the whole batch.
 4. **Assemble** (`pipeline/index.ts`) — join clipped group results into
    `ge_results`, export it, then attempt a single gated
@@ -63,15 +63,15 @@ an optional code-based assignment override is available (see below).
 
 ## Issues export
 
-`ge_unassigned` (input features left without an overlay feature), `ge_dropped` (input features
-whose whole group's extension failed), `ge_clip_empty` (input features
+`ge_unassigned` (input polygons left without an overlay polygon), `ge_dropped` (input polygons
+whose whole group's extension failed), `ge_clip_empty` (input polygons
 clipped to nothing) and `ge_detached` (clip-detached pieces) are combined
 into one `ge_issues` table, each row tagged with a `kind` (`unassigned`,
 `dropped_group`, `clip-empty` or `detached-part`) and,
-for dropped groups, the overlay feature fid and the error that caused the drop. When
-the passthrough toggle is on and a formerly-unassigned input feature made it through
+for dropped groups, the overlay polygon fid and the error that caused the drop. When
+the passthrough toggle is on and a formerly-unassigned input polygon made it through
 its pseudo-group into `ge_results`, it's also surfaced as a `passthrough`
-row, so a user can see which of the reported unassigned input features were
+row, so a user can see which of the reported unassigned input polygons were
 actually included (unclipped) rather than dropped. This is exportable on
 demand as `match_issues` and is the only way to recover the geometry of any
 of these kinds, the UI's group list only shows dropped groups as status
@@ -82,10 +82,10 @@ text.
 Given a `matchColumn` (same column name on both layers) or a
 `overlayMatchColumn`/`inputMatchColumn` pair, `pipeline/assign.ts`'s
 `computeAssignment` also computes an exact code join, restricted to
-`(input feature, overlay feature)` pairs that already spatially overlap, alongside the
-spatial vote above (per file in assign-one mode, per input feature in
-per-feature mode). The code result wins whenever one exists, even on
-disagreement; an input feature whose code has no overlapping overlay match falls back
+`(input polygon, overlay polygon)` pairs that already spatially overlap, alongside the
+spatial vote above (per file in assign-one mode, per input polygon in
+per-polygon mode). The code result wins whenever one exists, even on
+disagreement; an input polygon whose code has no overlapping overlay match falls back
 to the spatial result. Both outcomes are recorded on `ge_assignment`
 (`assignment_method`, `spatial_agrees`) and surfaced as `ge_issues` rows
 (`kind='code-mismatch'`/`'code-fallback'`), alongside the existing
@@ -104,7 +104,7 @@ per-pair snap fallback for the WASM-only GEOS robustness failure described in
 ## Cross-group boundary seams
 
 Because each group's extension is clipped independently against its own
-overlay feature, adjacent groups' clipped edges can end up sampling the same
+overlay polygon, adjacent groups' clipped edges can end up sampling the same
 physical boundary line at different vertex densities — a real but
 zero-area-cost defect that strict vertex-exact validators (QGIS's Topology
 Checker, `ST_CoverageInvalidEdges_Agg`) flag as "gaps" even though total

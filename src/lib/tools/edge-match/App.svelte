@@ -5,8 +5,7 @@
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
-  import DetachedNote from "$lib/components/DetachedNote.svelte";
-  import MicroNote from "$lib/components/MicroNote.svelte";
+  import CleanupNote from "$lib/components/CleanupNote.svelte";
   import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
   import CodeJoinPicker from "$lib/components/CodeJoinPicker.svelte";
   import MapView from "./MapView.svelte";
@@ -15,17 +14,13 @@
   import { runEdgeMatch, type EdgeMatchPhase } from "./pipeline/index";
   import type { MatchMode } from "./pipeline/assign";
   import type { GroupResult } from "./pipeline/groups";
+  import ProgressLine from "$lib/components/ProgressLine.svelte";
   import type { ColumnGuess } from "$lib/db/columns";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
-  const STAGE_LABELS = [
-    "Load file",
-    "Extract boundary lines",
-    "Interpolate points",
-    "Build Voronoi diagram",
-    "Merge polygons",
-  ];
+  // Edge Extender stages each group runs through.
+  const STAGE_COUNT = 5;
 
   type GroupRow = GroupResult | { overlayFid: number; label: string; inputCount: number; status: "pending" | "running" };
 
@@ -36,7 +31,6 @@
   let error = $state<string | null>(null);
 
   let groupRows = $state<GroupRow[]>([]);
-  let activeGroupIndex = $state(-1);
   let activeStage = $state(0);
 
   let resultGeoJSON = $state<string | null>(null);
@@ -62,8 +56,14 @@
   let advancedOpen = $state(false);
   let matchMode = $state<MatchMode>("auto");
   // What the last run used; under "auto" this is the automatic pick.
-  let resolvedMode = $state<"one" | "several" | null>(null);
-  const perFeature = $derived(resolvedMode === "several");
+  let resolvedMode = $state<"one" | "many" | null>(null);
+  const perFeature = $derived(resolvedMode === "many");
+  const hasWarnings = $derived(
+    (unassignedCount ?? 0) + (droppedCount ?? 0) + (codeMismatchCount ?? 0) + (clipEmptyCount ?? 0) > 0,
+  );
+  const hasNotes = $derived(
+    (codeFallbackCount ?? 0) + (microCount ?? 0) + (gapCount ?? 0) + (detachedMergedCount ?? 0) + (detachedKeptCount ?? 0) > 0,
+  );
 
   // Optional code-join override (docs/adr/0045): defaults to "(none)" so the
   // first auto-run never changes behavior, even when a plausible code column
@@ -76,7 +76,7 @@
 
   syncParam(
     "match",
-    choiceParam(["auto", "one", "several"] as const),
+    choiceParam(["auto", "one", "many"] as const),
     () => matchMode,
     (v) => (matchMode = v),
   );
@@ -167,14 +167,13 @@
         phaseLabel = "Computing overlap assignment…";
         break;
       case "groups-listed":
-        phaseLabel = `Running ${event.groups.length} group${event.groups.length === 1 ? "" : "s"}…`;
+        phaseLabel = "";
         groupRows = event.groups.map((g) => ({ ...g, status: "pending" as const }));
         overlayOutlineGeoJSON = event.overlayOutlineGeojson;
         inputGeoJSON = event.inputGeojson;
         resultBounds = event.bounds;
         break;
       case "group-stage":
-        activeGroupIndex = event.groupIndex;
         activeStage = event.stage;
         activeOverlayFid = event.group.overlayFid;
         groupRows[event.groupIndex] = { ...event.group, status: "running" };
@@ -186,7 +185,6 @@
           streamGroupIds.push(event.result.overlayFid);
           streamTimer ??= setTimeout(flushStream, 500);
         }
-        if (activeGroupIndex === event.groupIndex) activeStage = 0;
         break;
     }
   }
@@ -212,7 +210,6 @@
     detachedKeptCount = null;
     assignedOverlayLabel = null;
     groupRows = [];
-    activeGroupIndex = -1;
     activeStage = 0;
     phaseLabel = "";
 
@@ -245,28 +242,29 @@
       resolvedMode = result.mode;
       inputColumns = result.inputColumns;
       overlayColumns = result.overlayColumns;
-      phaseLabel = "Done";
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       resetStream();
       activeOverlayFid = null;
       running = false;
-      activeGroupIndex = -1;
-      activeStage = 0;
+        activeStage = 0;
     }
   }
 
-  function stageStatus(idx: number): "pending" | "active" | "done" {
-    const stageNum = idx + 1;
-    if (activeStage === 0) return "pending";
-    if (stageNum < activeStage) return "done";
-    if (stageNum === activeStage) return "active";
-    return "pending";
-  }
-
-  const doneCount = $derived(groupRows.filter((g) => g.status === "done").length);
-  const errorCount = $derived(groupRows.filter((g) => g.status === "error").length);
+  const failedGroups = $derived(
+    groupRows.filter((g): g is GroupResult & { error: string } => g.status === "error" && "error" in g),
+  );
+  const cleanupCount = $derived((microCount ?? 0) + (detachedMergedCount ?? 0) + (detachedKeptCount ?? 0));
+  const finishedCount = $derived(groupRows.filter((g) => g.status === "done" || g.status === "error").length);
+  const statusLabel = $derived.by(() => {
+    if (groupRows.length === 0) return phaseLabel;
+    if (groupRows.length > 1) {
+      return `Matching ${Math.min(finishedCount + 1, groupRows.length)} of ${groupRows.length}`;
+    }
+    const step = finishedCount === 1 ? STAGE_COUNT : Math.max(activeStage, 1);
+    return `Step ${step} of ${STAGE_COUNT}`;
+  });
 </script>
 
 <div class="layout">
@@ -313,7 +311,7 @@
     </section>
 
     <section class="step">
-      <h2 class="step-heading">Match to how many overlay features?</h2>
+      <h2 class="step-heading">Input layer matches how many overlay polygons?</h2>
       <SegmentedControl
         bind:value={
           () => (matchMode === "auto" ? resolvedMode : matchMode),
@@ -323,9 +321,9 @@
         }
         options={[
           { value: "one", label: matchMode === "auto" && resolvedMode === "one" ? "One (auto)" : "One" },
-          { value: "several", label: matchMode === "auto" && resolvedMode === "several" ? "Several (auto)" : "Several" },
+          { value: "many", label: matchMode === "auto" && resolvedMode === "many" ? "Many (auto)" : "Many" },
         ]}
-        label="Match to how many overlay features?"
+        label="Input layer matches how many overlay polygons?"
         disabled={running}
       />
       {#if matchMode !== "auto"}
@@ -346,59 +344,13 @@
       {/if}
       <label class="passthrough-field">
         <input type="checkbox" bind:checked={passthrough} disabled={running} />
-        <span>Keep input features that overlap no overlay feature (unclipped)</span>
+        <span>Keep input polygons completely outside the overlay</span>
       </label>
     </AdvancedOptions>
 
-    {#snippet groupList()}
-      <ol class="groups">
-        {#each groupRows as row, i}
-          <li class={row.status}>
-            <span class="group-row">
-              {#if row.status === "done"}
-                <span class="group-dot">✓</span>
-              {:else if row.status === "error"}
-                <span class="group-dot">✕</span>
-              {:else}
-                <span class="group-dot">•</span>
-              {/if}
-              <span class="group-label">{row.label}</span>
-              <span class="group-count">{row.inputCount}</span>
-            </span>
-            {#if i === activeGroupIndex && running}
-              <ol class="stages">
-                {#each STAGE_LABELS as label, si}
-                  <li class={stageStatus(si)}>
-                    <span class="stage-dot"></span>
-                    <span class="stage-label">{label}</span>
-                  </li>
-                {/each}
-              </ol>
-            {/if}
-            {#if row.status === "error" && "error" in row}
-              <p class="group-error">{row.error}</p>
-            {/if}
-          </li>
-        {/each}
-      </ol>
-    {/snippet}
-
-    {#if running || groupRows.length > 0}
+    {#if running && statusLabel}
       <section class="step">
-        {#if !running && phaseLabel === "Done" && groupRows.length > 0 && errorCount === 0}
-          <details>
-            <summary class="phase-label">Done: {doneCount}/{groupRows.length} groups</summary>
-            {@render groupList()}
-          </details>
-        {:else}
-          <p class="phase-label">{phaseLabel}</p>
-          {#if groupRows.length > 0}
-            <p class="group-summary">
-              {doneCount}/{groupRows.length} groups done{errorCount > 0 ? ` · ${errorCount} failed` : ""}
-            </p>
-            {@render groupList()}
-          {/if}
-        {/if}
+        <ProgressLine label={statusLabel} />
       </section>
     {/if}
 
@@ -410,54 +362,62 @@
       <p class="fit-mode">Matched to {assignedOverlayLabel}.</p>
     {/if}
 
-    {#if (unassignedCount !== null && unassignedCount > 0) || (droppedCount !== null && droppedCount > 0) || (codeMismatchCount !== null && codeMismatchCount > 0) || (codeFallbackCount !== null && codeFallbackCount > 0) || (microCount !== null && microCount > 0) || (gapCount !== null && gapCount > 0) || (clipEmptyCount !== null && clipEmptyCount > 0) || (detachedMergedCount ?? 0) + (detachedKeptCount ?? 0) > 0}
+    {#if hasWarnings}
       <div class="warn-panel">
         {#if clipEmptyCount !== null && clipEmptyCount > 0}
           <p>
-            {clipEmptyCount} input feature{clipEmptyCount === 1 ? " falls" : "s fall"} outside
-            {perFeature ? "their overlay feature" : "it"} and {clipEmptyCount === 1 ? "was" : "were"} clipped
+            {clipEmptyCount} input polygon{clipEmptyCount === 1 ? " falls" : "s fall"} outside
+            {perFeature ? "their overlay polygon" : "it"} and {clipEmptyCount === 1 ? "was" : "were"} clipped
             away.
             {#if !perFeature}
-              <button class="link-btn" disabled={running} onclick={() => (matchMode = "several")}>
-                Switch to Several
+              <button class="link-btn" disabled={running} onclick={() => (matchMode = "many")}>
+                Switch to Many
               </button>
             {/if}
           </p>
         {/if}
         {#if unassignedCount !== null && unassignedCount > 0}
           <p>
-            {unassignedCount} input feature{unassignedCount === 1 ? "" : "s"} overlap no overlay
-            feature{passthrough
-              ? `; ${passthroughCount ?? 0} ${(passthroughCount ?? 0) === 1 ? "was" : "were"} kept unclipped`
+            {unassignedCount} input polygon{unassignedCount === 1 ? " is" : "s are"} completely outside the
+            overlay{passthrough
+              ? `; ${passthroughCount ?? 0} ${(passthroughCount ?? 0) === 1 ? "was" : "were"} kept`
               : ` and ${unassignedCount === 1 ? "was" : "were"} left out`}.
           </p>
         {/if}
         {#if droppedCount !== null && droppedCount > 0}
           <p>
-            {droppedCount} input feature{droppedCount === 1 ? " was" : "s were"} left out because
+            {droppedCount} input polygon{droppedCount === 1 ? " was" : "s were"} left out because
             {droppedCount === 1 ? "its" : "their"} group failed.
           </p>
+          {#each failedGroups as g}
+            <p class="group-error">{g.label}: {g.error}</p>
+          {/each}
         {/if}
         {#if codeMismatchCount !== null && codeMismatchCount > 0}
           <p>
-            {codeMismatchCount} input feature{codeMismatchCount === 1 ? " was" : "s were"} matched by
-            code to a different overlay feature than overlap alone would pick.
+            {codeMismatchCount} input polygon{codeMismatchCount === 1 ? " was" : "s were"} matched by
+            code to a different overlay polygon than overlap alone would pick.
           </p>
         {/if}
+      </div>
+    {/if}
+
+    {#if hasWarnings || hasNotes}
+      <div class="issues-notes">
         {#if codeFallbackCount !== null && codeFallbackCount > 0}
           <p>
-            {codeFallbackCount} input feature{codeFallbackCount === 1 ? "" : "s"} had no matching
+            {codeFallbackCount} input polygon{codeFallbackCount === 1 ? "" : "s"} had no matching
             code and {codeFallbackCount === 1 ? "was" : "were"} matched by overlap.
           </p>
         {/if}
-        {#if microCount !== null && microCount > 0}
-          <p><MicroNote count={microCount} /></p>
-        {/if}
-        {#if (detachedMergedCount ?? 0) + (detachedKeptCount ?? 0) > 0}
-          <p><DetachedNote merged={detachedMergedCount ?? 0} kept={detachedKeptCount ?? 0} /></p>
+        {#if cleanupCount > 0}
+          <p><CleanupNote count={cleanupCount} /></p>
         {/if}
         {#if gapCount !== null && gapCount > 0}
-          <p>{gapCount} gap{gapCount === 1 ? " remains" : "s remain"} in the result.</p>
+          <p>
+            {gapCount} gap{gapCount === 1 ? "" : "s"} in the result. Some may be real gaps in the data rather
+            than defects.
+          </p>
         {/if}
         <DownloadMenu
           primaryLabel="Download issues"
@@ -622,120 +582,9 @@
 
 
 
-  .phase-label {
-    font-size: 0.85rem;
-    color: var(--hdx-neutral-8);
-    margin: 0;
-    font-weight: 500;
-  }
-
-  summary.phase-label {
-    cursor: pointer;
-    user-select: none;
-  }
-
-  details > .groups {
-    margin-top: 0.5rem;
-  }
-
-  .group-summary {
-    font-size: 0.8rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-  }
-
-  .groups {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    max-height: 320px;
-    overflow-y: auto;
-  }
-
-  .groups > li {
-    font-size: 0.8rem;
-    color: var(--hdx-neutral-7);
-  }
-
-  .groups > li.done .group-dot {
-    color: var(--hdx-success-5);
-  }
-
-  .groups > li.running .group-dot {
-    color: var(--hdx-primary-5);
-  }
-
-  .groups > li.error .group-dot {
-    color: var(--hdx-error-5);
-  }
-
-  .group-row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .group-dot {
-    width: 12px;
-    text-align: center;
-    flex-shrink: 0;
-    font-weight: 700;
-  }
-
-  .group-label {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .group-count {
-    color: var(--hdx-neutral-7);
-    font-variant-numeric: tabular-nums;
-  }
-
   .group-error {
-    margin: 0.15rem 0 0 1.1rem;
     font-size: 0.75rem;
-    color: var(--hdx-error-5);
     word-break: break-word;
-  }
-
-  .stages {
-    list-style: none;
-    padding: 0;
-    margin: 0.35rem 0 0 1.1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .stages li {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-5);
-  }
-
-  .stages li.done {
-    color: var(--hdx-success-5);
-  }
-
-  .stages li.active {
-    color: var(--hdx-primary-5);
-    font-weight: 500;
-  }
-
-  .stage-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    flex-shrink: 0;
   }
 
   .error-panel {
@@ -761,6 +610,19 @@
   }
 
   .warn-panel p {
+    margin: 0;
+  }
+
+  .issues-notes {
+    font-size: 0.8rem;
+    color: var(--hdx-neutral-7);
+    line-height: 1.4;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .issues-notes p {
     margin: 0;
   }
 

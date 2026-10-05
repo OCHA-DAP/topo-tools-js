@@ -22,10 +22,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 ## Assignment
 
-- `schema-join` MUST assign each input feature to the single join feature it
-  shares the most area with (`assignBestOverlap`, per-input-feature
+- `schema-join` MUST assign each input polygon to the single join polygon it
+  shares the most area with (`assignBestOverlap`, per-input-polygon
   plurality, ties broken by lowest join fid), measured in EPSG:8857.
-- An input feature overlapping no join feature MUST stay in the output, with
+- An input polygon overlapping no join polygon MUST stay in the output, with
   every copied join column NULL.
 
 ## Joining
@@ -33,10 +33,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 For each join-layer hierarchy column:
 
 - absent from the input layer: `schema-join` MUST add it, filled from each
-  input feature's assigned join feature;
+  input polygon's assigned join polygon;
 - present on the input layer and equal (`IS NOT DISTINCT FROM`) on every
-  assigned input feature: `schema-join` MUST leave the input column as is;
-- present on the input layer and different on any assigned input feature:
+  assigned input polygon: `schema-join` MUST leave the input column as is;
+- present on the input layer and different on any assigned input polygon:
   `schema-join` MUST leave the input column untouched and add the join
   layer's values under the next free numbered sibling name (`adm2_name1`,
   then `adm2_name2` if `adm2_name1` is taken on either layer).
@@ -49,24 +49,24 @@ any input value.
 
 - `schema-join` MUST NOT modify geometry.
 - The joined layer (`schema_join`, suffix `_join`) MUST keep every input
-  feature. Columns MUST follow `canonicalOrder` under the templates, or
+  polygon. Columns MUST follow `canonicalOrder` under the templates, or
   `adm{n}_name`/`adm{n}_code` when templates are off; rows MUST be sorted by
   the deepest level's own code column, NULLs last, then input order.
 - The issues report (`schema_join_issues`, suffix `_issues`) MUST have
   columns `key`, `kind`, `unit_a`, `join_fid`, `reason`, `area_m2`, sorted by
   `unit_a` then `kind`, with one row per:
-  - `no-overlap`: an input feature overlapping no join feature, with
+  - `no-overlap`: an input polygon overlapping no join polygon, with
     `reason`
-    `input feature overlaps no join feature; join columns left NULL`;
-  - `low-overlap`: an input feature whose assigned join feature covers less
+    `input polygon overlaps no join polygon; join columns left NULL`;
+  - `low-overlap`: an input polygon whose assigned join polygon covers less
     than the minimum overlap of its area, with `area_m2` set to the input
-    feature's area outside that join feature and `reason`
-    `best join feature covers <share> of input feature` (share to two
+    polygon's area outside that join polygon and `reason`
+    `best join polygon covers <share> of input polygon` (share to two
     decimals);
-  - `value-mismatch`: an input feature and column where the input value and
-    its join feature's value are both non-NULL and differ, with `reason`
+  - `value-mismatch`: an input polygon and column where the input value and
+    its join polygon's value are both non-NULL and differ, with `reason`
     `<column>: input '<value>' vs join '<value>'`.
-- `unit_a` MUST hold the input feature's 1-based row number in the joined
+- `unit_a` MUST hold the input polygon's 1-based row number in the joined
   layer, not its source fid.
 - The issues download MUST be offered only when there is at least one issue.
 
@@ -83,5 +83,5 @@ any input value.
 - The joined-columns table MUST list every attribute column of the joined
   layer in output order, marking each as from the input layer (and whether it
   matches the join layer) or added from the join layer (naming the join-layer
-  column and the number of differing features for a sibling), plus the
-  selected feature's values when one is selected.
+  column and the number of differing polygons for a sibling), plus the
+  selected polygon's values when one is selected.

@@ -65,7 +65,7 @@ export const tools: Tool[] = [
     slug: "edge-clip",
     name: "Clip",
     tagline:
-      "Assign an input layer to its one best-overlapping overlay feature by majority vote, then clip every input feature to that boundary.",
+      "Assign an input layer to its one best-overlapping overlay polygon by majority vote, then clip every input polygon to that boundary.",
     iconHref: "/icons/tools/edge-clip.svg",
   },
   {
@@ -122,7 +122,7 @@ export const tools: Tool[] = [
     slug: "schema-join",
     name: "Schema Join",
     tagline:
-      "Copy a join layer's admin hierarchy columns onto each input feature by largest overlap, keeping conflicting values as numbered siblings.",
+      "Copy a join layer's admin hierarchy columns onto each input polygon by largest overlap, keeping conflicting values as numbered siblings.",
     iconHref: "/icons/tools/schema-join.svg",
     demo: {
       input: "https://data.source.coop/hdx/topo-tools/nld/demo/schema-join/nld_admin2.parquet",
