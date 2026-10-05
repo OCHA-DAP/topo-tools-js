@@ -89,7 +89,8 @@ const after = await toSlides(outro);
 </Layout>
 
 <script>
-  import { startBoundaryLoop } from "$lib/talk/boundaryMap";
+  import { loadBoundaries, startBoundaryLoop } from "$lib/talk/boundaryMap";
+  loadBoundaries().catch(() => {});
   const slides = [...document.querySelectorAll<HTMLElement>(".slide")];
   const body = document.body;
   let current = 0;

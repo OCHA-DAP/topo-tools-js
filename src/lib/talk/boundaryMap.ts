@@ -1,7 +1,7 @@
 import { loadMaplibre, loadStyle } from "$lib/utils/mapStyle";
 import type { FilterSpecification, LngLatBoundsLike, Map as MaplibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Protocol } from "pmtiles";
+import { FileSource, PMTiles, Protocol } from "pmtiles";
 import { PMTILES_LAYER, PMTILES_URL, explorerViews } from "./explorer";
 
 const CURRENT_FILL = "#4a90d9";
@@ -11,13 +11,26 @@ const FILL_OPACITY = 0.6;
 const PADDING = 40;
 
 let protocolAdded = false;
+let archive: Promise<File> | undefined;
 
 const bounds = ([xmin, ymin, xmax, ymax]: number[]): LngLatBoundsLike => [
   [xmin, ymin],
   [xmax, ymax],
 ];
 
-// Cycles explorerViews on one map. Every country is visited once up front and its tiles stay cached, so the flights only redraw.
+// One whole-file request, so tiles read from memory and a stalled range request can't blank the map.
+export const loadBoundaries = () =>
+  (archive ??= fetch(PMTILES_URL)
+    .then(async (res) => {
+      if (!res.ok) throw new Error(`${res.status} ${PMTILES_URL}`);
+      return new File([await res.blob()], PMTILES_URL);
+    })
+    .catch((e) => {
+      archive = undefined;
+      throw e;
+    }));
+
+// Cycles explorerViews on one map.
 export function startBoundaryLoop(
   container: HTMLElement,
   caption: HTMLElement,
@@ -40,12 +53,17 @@ export function startBoundaryLoop(
   };
 
   (async () => {
-    const maplibregl = await loadMaplibre();
+    const [maplibregl, style, file] = await Promise.all([
+      loadMaplibre(),
+      loadStyle(),
+      loadBoundaries(),
+    ]);
     if (!protocolAdded) {
-      maplibregl.addProtocol("pmtiles", new Protocol().tile);
+      const protocol = new Protocol();
+      protocol.add(new PMTiles(new FileSource(file)));
+      maplibregl.addProtocol("pmtiles", protocol.tile);
       protocolAdded = true;
     }
-    const style = await loadStyle();
     if (stopped) return;
     style.layers = style.layers.filter(
       (l) => l.type !== "symbol" && !("source-layer" in l && l["source-layer"] === "boundary"),
@@ -56,7 +74,6 @@ export function startBoundaryLoop(
       bounds: bounds(explorerViews[0].bbox),
       fitBoundsOptions: { padding: PADDING },
       interactive: false,
-      maxTileCacheSize: 1000,
     });
     map = m;
     await m.once("load");
@@ -76,7 +93,10 @@ export function startBoundaryLoop(
         ...base,
         id: `${id}-fill`,
         type: "fill",
-        paint: { "fill-color": source === "ocha" ? CURRENT_FILL : OLDER_FILL, "fill-opacity": 0 },
+        paint: {
+          "fill-color": ["case", ["get", "matches_ocha"], CURRENT_FILL, OLDER_FILL],
+          "fill-opacity": 0,
+        },
       });
       m.addLayer({
         ...base,
@@ -85,15 +105,8 @@ export function startBoundaryLoop(
         paint: { "line-color": LINE, "line-opacity": 0 },
       });
     }
-    m.getCanvasContainer().style.visibility = "hidden";
-    for (const bbox of new Set(explorerViews.map((v) => v.bbox)).values()) {
-      m.fitBounds(bounds(bbox), { padding: PADDING, duration: 0 });
-      await m.once("idle");
-      if (stopped) return;
-    }
     let i = 0;
     show(i, 0);
-    m.getCanvasContainer().style.visibility = "";
     timer = setInterval(() => show((i = (i + 1) % explorerViews.length), 800), intervalMs);
   })();
 
