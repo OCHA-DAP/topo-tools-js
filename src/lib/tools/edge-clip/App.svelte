@@ -304,7 +304,7 @@
           </p>
         {/if}
         {#if codeFallbackCount > 0}
-          <p class="warn-line">
+          <p class="info-line">
             {codeFallbackCount} input polygon{codeFallbackCount === 1 ? "" : "s"} had no matching code and
             {codeFallbackCount === 1 ? "was" : "were"} matched by overlap.
           </p>
