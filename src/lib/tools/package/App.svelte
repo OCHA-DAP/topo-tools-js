@@ -293,33 +293,6 @@
           zipName="{fileStem(files[0])}_package"
           exportSource={packageSources}
         />
-        {#if mode === "polygons" && selectedPolygonLevel}
-          {@const src = levelExportSource(selectedPolygonLevel.level)}
-          {#if src}
-            <DownloadMenu
-              primaryLabel="Download level {selectedPolygonLevel.level}"
-              filenameStem={fileStem(files[0])}
-              cachedGeoJSON={selectedPolygonLevel.resultGeoJSON}
-              exportSource={src}
-              variant="secondary"
-            />
-          {/if}
-        {:else}
-          <DownloadMenu
-            primaryLabel="Download points"
-            filenameStem={fileStem(files[0])}
-            cachedGeoJSON={result.points.resultGeoJSON}
-            exportSource="package_points"
-            variant="secondary"
-          />
-          <DownloadMenu
-            primaryLabel="Download lines"
-            filenameStem={fileStem(files[0])}
-            cachedGeoJSON={result.lines.resultGeoJSON}
-            exportSource="package_lines"
-            variant="secondary"
-          />
-        {/if}
       </section>
     {/if}
 
