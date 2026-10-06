@@ -200,7 +200,7 @@ export async function assembleIssues(
              ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
       FROM ${overlapRegionsTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
       ${microRegionsTable ? `UNION ALL ${microRegionsSql(microRegionsTable, "micro-polygon-")}` : ""}
-      ${notchRegionsTable ? `UNION ALL ${notchRegionsSql(notchRegionsTable)}` : ""}
+      ${notchRegionsTable ? `UNION ALL ${notchRegionsSql(notchRegionsTable, gapRegionsTable, overlapRegionsTable)}` : ""}
     ) t
   `);
   return readIssues(conn, issuesTable, failedKinds);
@@ -218,14 +218,26 @@ function microRegionsSql(regionsTable: string, keyPrefix: string): string {
       FROM ${regionsTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)`;
 }
 
-// Notch rows in assembleIssues' inner column order. Area and width stay null, as in py.
-function notchRegionsSql(regionsTable: string): string {
+// Notch rows in assembleIssues' inner column order, minus notches that touch a gap or a
+// same-pair overlap (wedge tips already reported as those). Area and width stay null, as in py.
+function notchRegionsSql(regionsTable: string, gapTable: string, overlapTable: string): string {
   return `--sql
       SELECT 'notch-' || n, 'notch', NULL::DOUBLE, NULL::DOUBLE, NULL::DOUBLE,
              score * ${degToM(NOTCH_SPACING)},
              unit_a, unit_b, FALSE, NULL::VARCHAR, geom,
              ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
-      FROM ${regionsTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)`;
+      FROM ${regionsTable} nr
+      WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+        AND NOT EXISTS (
+          SELECT 1 FROM ${gapTable} g
+          WHERE g.geom IS NOT NULL AND ST_Intersects(nr.geom, g.geom)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM ${overlapTable} o
+          WHERE least(o.fa, o.fb) = least(nr.unit_a, nr.unit_b)
+            AND greatest(o.fa, o.fb) = greatest(nr.unit_a, nr.unit_b)
+            AND ST_Intersects(nr.geom, o.geom)
+        )`;
 }
 
 // Replaces issuesTable's rows keyed keyPrefix* with regionsTable's micro rows.

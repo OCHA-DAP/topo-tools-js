@@ -26,7 +26,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   it belongs to, without fixing it.
 - `topo-detect` MUST report every notch (see `docs/reference/shared.md`) as a
   `notch`, identifying both units, with `near_length_m` set to the score
-  times `NOTCH_SPACING` in metres and area and width left null.
+  times `NOTCH_SPACING` in metres and area and width left null. A notch that
+  intersects a detected gap, or an overlap between the same two units, MUST
+  NOT be reported, and the remaining notches keep their keys. `topo-clean`'s
+  issues report applies the same rule, and closing still acts on every notch.
 - If detecting one kind of defect fails, `topo-detect` MUST still report the
   other kinds rather than failing entirely.
 - The issues report MUST list, for every defect: a unique key, its kind
