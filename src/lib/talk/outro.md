@@ -12,8 +12,9 @@ The Humanitarian Data Model's validator does the same for tabular data.
 
 ---
 
-## Try it
+## Open source
 
-- [topo-tools.org](/)
+- [github.com/OCHA-DAP/topo-tools-js](https://github.com/OCHA-DAP/topo-tools-js)
+- [github.com/OCHA-DAP/topo-tools-py](https://github.com/OCHA-DAP/topo-tools-py)
 
-Everything is open source under the MIT licence. The site links to the Python CLI docs, the Claude Code plugin and the code. Start with any tool's "Try with demo data" link, then drop in your own file.
+Both repos are MIT licensed. The Python one has the CLI and the Claude Code plugin.
