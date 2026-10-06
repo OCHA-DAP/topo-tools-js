@@ -8,6 +8,8 @@
     hoveredFid = null,
     showSide = "b" as "a" | "b",
     visibleClasses = null,
+    sideLabels = ["Version A", "Version B"],
+    classes = REL_ORDER,
     onRowHover,
     onToggleClass,
     onSetSide,
@@ -18,6 +20,9 @@
     hoveredFid?: number | null;
     showSide?: "a" | "b";
     visibleClasses?: Set<RelClass> | null;
+    sideLabels?: [string, string];
+    // Classes offered as filters, in REL_ORDER order.
+    classes?: RelClass[];
     onRowHover?: (payload: { cluster_id: number | null; a_fid: number | null; b_fid: number | null } | null) => void;
     onToggleClass?: (c: RelClass) => void;
     onSetSide?: (side: "a" | "b") => void;
@@ -191,7 +196,7 @@
     />
     {#if visibleClasses && onToggleClass}
       <div class="cw-class-filters">
-        {#each REL_ORDER as c (c)}
+        {#each classes as c (c)}
           <label class="cw-class-toggle">
             <input
               type="checkbox"
@@ -211,10 +216,10 @@
       <thead>
         <tr>
           <th>Class</th>
-          <th>Version A code</th>
-          <th>Version A name</th>
-          <th>Version B code</th>
-          <th>Version B name</th>
+          <th>{sideLabels[0]} code</th>
+          <th>{sideLabels[0]} name</th>
+          <th>{sideLabels[1]} code</th>
+          <th>{sideLabels[1]} name</th>
         </tr>
       </thead>
       <tbody onmouseover={handleTableMouseover} onmouseleave={handleTableMouseleave}>

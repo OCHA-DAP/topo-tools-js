@@ -1,12 +1,11 @@
 <script lang="ts">
+  import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
-  import { choiceParam, numberParam, syncParam } from "$lib/utils/syncParam.svelte";
+  import { choiceParam, numberParam, syncParam, textParam } from "$lib/utils/syncParam.svelte";
   import { onMount, untrack } from "svelte";
-  import CrosswalkTable from "./CrosswalkTable.svelte";
-  import SideToggle from "$lib/components/SideToggle.svelte";
-  import MapView from "./MapView.svelte";
+  import ResultView from "./ResultView.svelte";
   import {
     PipelineError,
     reclassifyOnly,
@@ -45,6 +44,21 @@
   let bCodeCol = $state<string | null>(null);
   let bNameCol = $state<string | null>(null);
 
+  // A pick equal to the auto-detected guess stays out of the URL; before load it holds the URL's value.
+  function syncColumn(key: string, cols: () => ColumnGuess | null, guess: (c: ColumnGuess) => string | null,
+    get: () => string | null, set: (v: string) => void): void {
+    syncParam(key, textParam, () => {
+      const c = cols();
+      return c && get() === guess(c) ? "" : (get() ?? "");
+    }, set);
+  }
+  syncColumn("code-a", () => colsA, (c) => c.code ?? null, () => aCodeCol, (v) => (aCodeCol = v));
+  syncColumn("name-a", () => colsA, (c) => c.name, () => aNameCol, (v) => (aNameCol = v));
+  syncColumn("code-b", () => colsB, (c) => c.code ?? null, () => bCodeCol, (v) => (bCodeCol = v));
+  syncColumn("name-b", () => colsB, (c) => c.name, () => bNameCol, (v) => (bNameCol = v));
+  const pick = (cols: ColumnGuess, prior: string | null, guess: string | null) =>
+    prior !== null && cols.all.includes(prior) ? prior : guess;
+
   // Thresholds
   let tauMatch = $state(0.8);
   let tauSame = $state(0.98);
@@ -77,20 +91,7 @@
   let tableRows = $state<TableRow[]>([]);
   let bounds = $state<[number, number, number, number] | null>(null);
 
-  // Selection / filter
   let selectedClusterId = $state<number | null>(null);
-  let hoveredClusterId = $state<number | null>(null);
-  let hoveredFid = $state<number | null>(null);
-  // The currently hovered row's both-side fids. Set by both map hover (via a
-  // tableRows lookup) and table hover. On a side toggle, hoveredFid is
-  // re-derived from this row so the same logical row stays highlighted with
-  // the correct side's fid — no flash, no stale per-side memory.
-  let hoveredRow = $state<{
-    cluster_id: number;
-    a_fid: number | null;
-    b_fid: number | null;
-  } | null>(null);
-  let visibleClasses = $state<Set<RelClass>>(new Set(REL_ORDER));
 
   // Comparison mode
   let showSide = $state<"a" | "b">("b");
@@ -125,8 +126,6 @@
     untrack(() => {
       if (loadingSide === "a") return;
       colsA = null;
-      aCodeCol = null;
-      aNameCol = null;
       loadedA = false;
       resetResults();
       loadSideThen("a");
@@ -139,8 +138,6 @@
     untrack(() => {
       if (loadingSide === "b") return;
       colsB = null;
-      bCodeCol = null;
-      bNameCol = null;
       loadedB = false;
       resetResults();
       loadSideThen("b");
@@ -176,14 +173,14 @@
       await loadSide(duckdbState.db!, duckdbState.conn!, side, files);
       const cols = await detectColumns(duckdbState.conn!, `cw_${side}_layer_attr`);
       if (side === "a") {
+        aCodeCol = pick(cols, aCodeCol, cols.code ?? null);
+        aNameCol = pick(cols, aNameCol, cols.name);
         colsA = cols;
-        aCodeCol = cols.code ?? null;
-        aNameCol = cols.name;
         loadedA = true;
       } else {
+        bCodeCol = pick(cols, bCodeCol, cols.code ?? null);
+        bNameCol = pick(cols, bNameCol, cols.name);
         colsB = cols;
-        bCodeCol = cols.code ?? null;
-        bNameCol = cols.name;
         loadedB = true;
       }
       if (loadedA && loadedB) {
@@ -381,13 +378,6 @@
     return "pending";
   }
 
-  function toggleClass(c: RelClass): void {
-    const next = new Set(visibleClasses);
-    if (next.has(c)) next.delete(c);
-    else next.add(c);
-    visibleClasses = next;
-  }
-
   function fileStem(a: File[], b: File[]): string {
     const stem = (files: File[]) => files[0]?.name.replace(/\.[^.]+$/, "") ?? "";
     const sa = stem(a);
@@ -396,59 +386,6 @@
     if (!sa || !sb || sa === sb) return sa || sb;
     return `${sa}_${sb}`;
   }
-
-  function setSelected(id: number | null): void {
-    selectedClusterId = id;
-  }
-
-  function setHoveredFromMap(payload: { cluster_id: number | null; fid: number | null }): void {
-    hoveredClusterId = payload.cluster_id;
-    hoveredFid = payload.fid;
-    if (payload.cluster_id == null || payload.fid == null) {
-      hoveredRow = null;
-      return;
-    }
-    // Look up the row whose current-side fid matches the hovered polygon, so
-    // we know the other side's fid for free. A side toggle then re-derives
-    // hoveredFid from this row instead of needing a cursor re-query.
-    let found: { cluster_id: number; a_fid: number | null; b_fid: number | null } | null = null;
-    for (const r of tableRows) {
-      if (r.cluster_id !== payload.cluster_id) continue;
-      const matches = showSide === "a" ? r.a_fid === payload.fid : r.b_fid === payload.fid;
-      if (matches) {
-        found = { cluster_id: r.cluster_id, a_fid: r.a_fid, b_fid: r.b_fid };
-        break;
-      }
-    }
-    hoveredRow = found;
-  }
-
-  function setHoveredFromRow(
-    payload: { cluster_id: number | null; a_fid: number | null; b_fid: number | null } | null,
-  ): void {
-    if (payload == null || payload.cluster_id == null) {
-      hoveredRow = null;
-      hoveredClusterId = null;
-      hoveredFid = null;
-      return;
-    }
-    hoveredRow = { cluster_id: payload.cluster_id, a_fid: payload.a_fid, b_fid: payload.b_fid };
-    hoveredClusterId = payload.cluster_id;
-    hoveredFid = showSide === "a" ? payload.a_fid : payload.b_fid;
-  }
-
-  // Re-derive hoveredFid from the hovered row when the side toggles, so the
-  // same row stays highlighted with the correct side's fid. Works for both
-  // table-row hover and map hover (which populates hoveredRow via a tableRows
-  // lookup), so toggles never flash through a stale per-side memory.
-  $effect(() => {
-    const side = showSide;
-    const row = hoveredRow;
-    if (row == null) return;
-    untrack(() => {
-      hoveredFid = side === "a" ? row.a_fid : row.b_fid;
-    });
-  });
 </script>
 
 <div class="cw-layout">
@@ -456,6 +393,7 @@
     <header>
       <a class="cw-back" href={base}>← Topology Tools</a>
       <h1>Changelog</h1>
+      <DemoLink slug="change" />
       <p class="cw-blurb">
         Compare two versions of a polygon layer (e.g. ADM2 across census rounds) and classify each
         unit as unchanged, modified, merged, split, created, or removed. Drop both versions; the
@@ -652,40 +590,16 @@
     <p class="cw-privacy">Your files never leave your device.</p>
   </aside>
 
-  <div class="cw-result">
-    <div class="cw-map-pane">
-      {#if overlayGeoJSON}
-        <SideToggle bind:side={showSide} labels={["Version A", "Version B"]} />
-      {/if}
-
-      <MapView
-        overlayGeojson={overlayGeoJSON}
-        outlineAGeojson={outlineAGeoJSON}
-        outlineBGeojson={outlineBGeoJSON}
-        {bounds}
-        processing={(loadedA && loadedB) || running}
-        {hoveredClusterId}
-        {hoveredFid}
-        {visibleClasses}
-        onClusterClick={setSelected}
-        onFeatureHover={setHoveredFromMap}
-        {showSide}
-      />
-    </div>
-    <div class="cw-table-pane">
-      <CrosswalkTable
-        rows={tableRows}
-        {selectedClusterId}
-        {hoveredClusterId}
-        {hoveredFid}
-        {showSide}
-        {visibleClasses}
-        onRowHover={setHoveredFromRow}
-        onToggleClass={toggleClass}
-        onSetSide={(side) => (showSide = side)}
-      />
-    </div>
-  </div>
+  <ResultView
+    overlayGeojson={overlayGeoJSON}
+    outlineAGeojson={outlineAGeoJSON}
+    outlineBGeojson={outlineBGeoJSON}
+    {tableRows}
+    {bounds}
+    processing={(loadedA && loadedB) || running}
+    bind:showSide
+    bind:selectedClusterId
+  />
 </div>
 
 <style>
@@ -939,30 +853,5 @@
     padding-top: 0.5rem;
     font-size: 0.7rem;
     color: var(--hdx-neutral-7);
-  }
-  .cw-result {
-    display: grid;
-    grid-template-rows: 65% 35%;
-    height: 100dvh;
-    min-width: 0;
-  }
-  .cw-map-pane {
-    min-height: 0;
-    border-bottom: 1px solid var(--hdx-neutral-1);
-    position: relative;
-  }
-
-  .cw-table-pane {
-    min-height: 0;
-  }
-  @media (min-width: 1280px) {
-    .cw-result {
-      grid-template-rows: 1fr;
-      grid-template-columns: 65% 35%;
-    }
-    .cw-map-pane {
-      border-right: 1px solid var(--hdx-neutral-1);
-      border-bottom: none;
-    }
   }
 </style>

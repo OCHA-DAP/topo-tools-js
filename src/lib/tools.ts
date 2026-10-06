@@ -43,6 +43,14 @@ export const tools: Tool[] = [
     tagline:
       "Compare two versions of a polygon layer and classify each unit as unchanged, modified, merged, split, created, or removed.",
     iconHref: "/icons/tools/change.svg",
+    demo: {
+      old: "https://data.source.coop/hdx/topo-tools/nld/demo/code/nld_admin2_2022.parquet",
+      new: "https://data.source.coop/hdx/topo-tools/nld/demo/code/nld_admin2_2023.parquet",
+      "code-a": "adm2_code",
+      "name-a": "adm2_name",
+      "code-b": "adm2_code",
+      "name-b": "adm2_name",
+    },
   },
   {
     slug: "edge-stitch",

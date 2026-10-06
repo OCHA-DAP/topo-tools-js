@@ -33,7 +33,8 @@ name instead of repeating them.
   `input`/`join`, `input`/`overlay`, `crosswalk`), and a local drop or browse
   MUST remove it. Opening a page with that parameter MUST load the URL
   automatically.
-- Every tool setting except a column picker MUST sync to a query
+- Every tool setting except a column picker (unless a tool's own
+  reference says otherwise) MUST sync to a query
   parameter: opening the page MUST apply a valid value before the first
   run, and an invalid one MUST be ignored. Every change MUST write the
   current value, and a value equal to the default MUST remove the

@@ -11,6 +11,10 @@ shares with `code-create`.
   NEW (uncoded candidate), each loaded via the shared loader and coverage-
   cleaned independently (`gatedCoverageClean` on each side's own
   finest-level geometry table, also triggered by any enclosed hole).
+- `code-update` MUST run automatically once OLD and NEW have both loaded,
+  and rerun on every change to a valid setting; it MUST NOT require an
+  explicit "Run" action. Invalid settings MUST show their error and not
+  run.
 - Each run MUST start from the loaded NEW attributes (a fresh `cu_b_attr`
   copy of `cu_b_layer_attr`), so rerunning with other settings never
   reads codes a prior run wrote.
@@ -64,6 +68,13 @@ shares with `code-create`.
   plain passthrough to `change`'s own classification engine, same names
   and defaults (`tauMatch=0.8`, `tauSame=0.98`, `linkByCode=false`,
   `linkByName=false`, `linkMode="either"`).
+- The browser tool MUST classify by geometry only: it exposes `tauMatch`
+  and `tauSame` and leaves `linkByCode`, `linkByName`, `linkMode` and the
+  identity-linking columns at their defaults. It MUST show each level's
+  classification in `change`'s map and table, one level at a time,
+  without `renamed` and `relocated` filters, with each NEW unit's assigned
+  code as its NEW code, suffixed `(overflow)` for an `overflow` outcome
+  and `(new)` for a `new` outcome on an `unchanged` or `modified` unit.
 - The identity-linking code/name columns MUST be that level's own resolved
   code/name columns on each side, unless a code or name column is given
   for that side, which MUST then be compared at every level.
