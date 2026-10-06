@@ -6,6 +6,7 @@ import {
   checkUniqueNames,
   quoteIdent,
   seedCodeFromNames,
+  widthFor,
   type CodeFormat,
 } from "$lib/db/code";
 import type { Level } from "./levels";
@@ -14,6 +15,19 @@ export const SOURCE_CODES = ["replace", "embed", "copy"] as const;
 export type SourceCodes = (typeof SOURCE_CODES)[number];
 
 const sqlStr = (s: string): string => "'" + s.replace(/'/g, "''") + "'";
+
+const INTEGER_TYPES = new Set([
+  "TINYINT",
+  "SMALLINT",
+  "INTEGER",
+  "BIGINT",
+  "HUGEINT",
+  "UTINYINT",
+  "USMALLINT",
+  "UINTEGER",
+  "UBIGINT",
+  "UHUGEINT",
+]);
 
 async function columnNames(conn: AsyncDuckDBConnection, table: string): Promise<string[]> {
   return (
@@ -59,6 +73,7 @@ async function stripParentPrefixes(
   table: string,
   levels: Map<number, Level>,
   fmt: CodeFormat,
+  integers: Set<number>,
 ): Promise<void> {
   const numbered = ascending(levels).filter((n) => n >= 1);
   // Finest first, so each parent column still holds its own source code.
@@ -77,13 +92,21 @@ async function stripParentPrefixes(
             WHERE starts_with(${codeSql}, ${prefixSql})
               AND length(${codeSql}) > length(${prefixSql})
           ) AS matched,
-          COUNT(${codeSql}) AS total
+          COUNT(${codeSql}) AS total,
+          COUNT(DISTINCT length(${codeSql}) - length(${prefixSql})) AS rest_lengths
         FROM ${quoteIdent(table)}
       `)
-    ).toArray()[0] as { matched: number | bigint; total: number | bigint };
+    ).toArray()[0] as {
+      matched: number | bigint;
+      total: number | bigint;
+      rest_lengths: number | bigint;
+    };
     const matched = Number(r.matched);
     const total = Number(r.total);
     if (matched === 0) continue;
+    // Stripping 110 and 1100 under 11 would leave 0 and 00, so keep them whole.
+    const mixed = fmt.delimiter === "" && Number(r.rest_lengths) > 1;
+    if (integers.has(n) && (matched < total || mixed)) continue;
     if (matched < total) {
       throw new Error(
         `level ${n} (${JSON.stringify(level.code)}): ${matched} of ${total} source codes start with their parent's code; they must all, or none`,
@@ -95,16 +118,25 @@ async function stripParentPrefixes(
   }
 }
 
-// Casts each code column to VARCHAR, blanks to NULL; throws on a missing code.
+// Casts code columns to VARCHAR, blanks to NULL; returns the integer levels.
 async function prepareSourceCodes(
   conn: AsyncDuckDBConnection,
   table: string,
   levels: Map<number, Level>,
-): Promise<void> {
-  const columns = new Set(await columnNames(conn, table));
+): Promise<Set<number>> {
+  const types = new Map(
+    (
+      (await conn.query(`DESCRIBE ${quoteIdent(table)}`)).toArray() as Array<{
+        column_name: string;
+        column_type: string;
+      }>
+    ).map((r) => [r.column_name, r.column_type]),
+  );
+  const integers = new Set<number>();
   for (const n of ascending(levels)) {
     const level = levels.get(n)!;
-    if (!columns.has(level.code)) continue;
+    if (!types.has(level.code)) continue;
+    if (INTEGER_TYPES.has(types.get(level.code)!)) integers.add(n);
     const qCode = quoteIdent(level.code);
     await conn.query(`ALTER TABLE ${quoteIdent(table)} ALTER ${qCode} TYPE VARCHAR`);
     await conn.query(`UPDATE ${quoteIdent(table)} SET ${qCode} = NULL WHERE trim(${qCode}) = ''`);
@@ -120,15 +152,17 @@ async function prepareSourceCodes(
       );
     }
   }
+  return integers;
 }
 
-// Throws unless every source code is one length without a delimiter.
-async function checkEmbeddable(
+// Without a delimiter, zero-pads integer codes to one width; throws if text codes are mixed.
+async function fixWidth(
   conn: AsyncDuckDBConnection,
   table: string,
   n: number,
   level: Level,
   fmt: CodeFormat,
+  integer: boolean,
 ): Promise<void> {
   if (fmt.delimiter !== "") return;
   const lengths = (
@@ -139,11 +173,17 @@ async function checkEmbeddable(
     ).toArray() as Array<{ l: number | bigint | null }>
   )
     .filter((r) => r.l !== null)
-    .map((r) => Number(r.l));
-  if (lengths.length > 1) {
+    .map((r) => Number(r.l))
+    .sort((a, b) => a - b);
+  if (lengths.length > 1 && !integer) {
     throw new Error(
-      `level ${n} (${JSON.stringify(level.code)}) source codes vary in length ${JSON.stringify(lengths.sort((a, b) => a - b))}; without a delimiter the code can't be split`,
+      `level ${n} (${JSON.stringify(level.code)}) source codes vary in length ${JSON.stringify(lengths)}; without a delimiter the code can't be split`,
     );
+  }
+  if (integer && lengths.length > 0) {
+    const width = Math.max(widthFor(fmt, n) ?? 0, lengths[lengths.length - 1]);
+    const qCode = quoteIdent(level.code);
+    await conn.query(`UPDATE ${quoteIdent(table)} SET ${qCode} = lpad(${qCode}, ${width}, '0')`);
   }
 }
 
@@ -164,7 +204,7 @@ export async function assignCreateCodes(
   const order = ascending(levels);
   const finest = order[order.length - 1];
   checkLevelCount(fmt, order.filter((n) => n >= 1).length);
-  await prepareSourceCodes(conn, table, levels);
+  const integers = await prepareSourceCodes(conn, table, levels);
   if (sourceCodes === "copy") await copySourceCodes(conn, table, levels);
   for (const n of order) {
     const level = levels.get(n)!;
@@ -174,7 +214,7 @@ export async function assignCreateCodes(
       await checkUniqueNames(conn, table, n, level.code, levels.get(n - 1)?.code ?? null);
     }
   }
-  if (sourceCodes === "embed") await stripParentPrefixes(conn, table, levels, fmt);
+  if (sourceCodes === "embed") await stripParentPrefixes(conn, table, levels, fmt, integers);
   if (levels.has(0)) {
     await conn.query(
       `UPDATE ${qTable} SET ${quoteIdent(levels.get(0)!.code)} = ${sqlStr(fmt.rootCode)}`,
@@ -187,7 +227,7 @@ export async function assignCreateCodes(
     const level = levels.get(n)!;
     const qCode = quoteIdent(level.code);
     if (sourceCodes === "embed" && !level.seeded) {
-      await checkEmbeddable(conn, table, n, level, fmt);
+      await fixWidth(conn, table, n, level, fmt, integers.has(n));
       await conn.query(
         `UPDATE ${qTable} SET ${qCode} = ${parentSql} || ${sqlStr(fmt.delimiter)} || ${qCode}::VARCHAR`,
       );

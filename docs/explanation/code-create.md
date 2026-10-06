@@ -61,7 +61,12 @@ parent's source code (or the root, at level 1) the prefix is stripped
 first, so both shapes give the same p-code and existing p-codes come out
 unchanged (py ADR 0125). Only some codes doing so is ambiguous and
 raises. Without a delimiter, a level's codes must all be one length,
-since the code couldn't be split otherwise.
+since the code couldn't be split otherwise. Integer codes (`1` to `11`,
+`101` to `1105`) are zero-padded to the larger of the min width and the
+widest code, which changes how they're written, not their value (py ADR
+0135). Their parent's code is stripped only when every code repeats it
+and the remainders share one width; otherwise they're kept whole,
+since stripping `110` and `1100` under `11` would leave `0` and `00`.
 
 A source code that is missing raises under every mode: ranking would
 merge every code-less unit under a parent into one.

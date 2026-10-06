@@ -2,6 +2,7 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { DuckDBDataProtocol } from "@duckdb/duckdb-wasm";
 import { zip as fflateZip } from "fflate";
 import { duckdbState } from "./duckdb.svelte";
+import { flaggedUnitsSql } from "./flagged";
 
 export type ExportSource =
   | "extend"
@@ -145,6 +146,8 @@ interface SourceConfig {
   // column that must drive sort but not appear in the export itself.
   tabularColumns?: string[];
   orderBy?: string;
+  // Tabular-only: a (key, geom) query whose geometry leads the Parquet export, joined on key.
+  parquetGeometry?: string;
 }
 
 const SOURCES: Record<ExportSource, SourceConfig> = {
@@ -469,6 +472,7 @@ const SOURCES: Record<ExportSource, SourceConfig> = {
     attrTable: null,
     suffix: "_code_issues",
     kind: "tabular",
+    parquetGeometry: `SELECT key, ST_Union_Agg(geom) AS geom FROM (${flaggedUnitsSql("cd_flagged")}) GROUP BY key`,
     tabularColumns: [
       "key",
       "kind",
@@ -852,10 +856,16 @@ async function exportParquet(
 ): Promise<ExportResult> {
   const { db, conn } = requireDb();
   const cfg = SOURCES[source];
-  const select =
-    cfg.kind === "tabular"
-      ? await buildTabularSelect(cfg)
-      : await buildSpatialSelect(conn, cfg, "a.geom AS geometry");
+  let select: string;
+  if (cfg.kind === "spatial") select = await buildSpatialSelect(conn, cfg, "a.geom AS geometry");
+  else if (cfg.parquetGeometry) {
+    const cols = cfg.tabularColumns!.map((c) => `r.${JSON.stringify(c)}`).join(", ");
+    select = `--sql
+      SELECT g.geom AS geometry, ${cols}
+      FROM (SELECT *, row_number() OVER () AS __rn FROM ${cfg.table}) r
+      LEFT JOIN (${cfg.parquetGeometry}) g USING (key)
+      ORDER BY r.__rn`;
+  } else select = await buildTabularSelect(cfg);
 
   const path = vfsName(format.ext);
   try {

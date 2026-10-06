@@ -59,9 +59,14 @@ shares with `code-update`.
   parent's code, then the delimiter, then its own source value. When
   every source code at a level starts with its parent's source code (or
   the root code, at level 1) and is longer than it, that prefix MUST be
-  removed first; when only some do, `embed` MUST raise. Without a
-  delimiter, a level whose source codes differ in length MUST raise.
-  Seeded levels are ranked as under `replace`.
+  removed first; when only some do, `embed` MUST raise. An integer
+  source code column is the exception: its prefix MUST be removed only
+  when every code starts with it and, without a delimiter, the
+  remainders share one width, else its codes MUST be kept whole. Without
+  a delimiter, an integer level MUST then be left-padded with zeros to
+  the larger of its min width and its widest value, never truncated, and
+  a text level whose source codes differ in length MUST raise. Seeded
+  levels are ranked as under `replace`.
 
 ## Outputs
 
