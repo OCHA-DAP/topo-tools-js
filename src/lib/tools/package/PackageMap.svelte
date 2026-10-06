@@ -12,7 +12,8 @@
   import type { FeatureCollection } from "geojson";
   import "maplibre-gl/dist/maplibre-gl.css";
   import { onDestroy, onMount } from "svelte";
-  import { byDepth, GROUP_COLOR, type LevelStyle } from "./levelStyle";
+  import { byDepth, type LevelStyle } from "./levelStyle";
+  import { GROUP_COLOR, GROUP_FILL_OPACITY } from "$lib/utils/groupColor";
 
   let {
     polygons = null,
@@ -209,7 +210,7 @@
         id: "pk-poly-fill",
         type: "fill",
         source: "pk-polygons",
-        paint: { "fill-color": ["get", GROUP_COLOR], "fill-opacity": 0.6 },
+        paint: { "fill-color": ["get", GROUP_COLOR], "fill-opacity": GROUP_FILL_OPACITY },
       });
       m.addLayer({
         id: "pk-poly-line",

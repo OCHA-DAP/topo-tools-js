@@ -1,5 +1,6 @@
 <script lang="ts">
   import type {
+    ExpressionSpecification,
     GeoJSONSource,
     Map as MaplibreMap,
   } from "maplibre-gl";
@@ -7,12 +8,14 @@
   import { onDestroy, onMount, untrack } from "svelte";
   import { createSpin } from "$lib/utils/spin";
   import { MAP_COLORS, MAP_FILL_OPACITY } from "$lib/utils/mapColors";
+  import { GROUP_FILL_OPACITY } from "$lib/utils/groupColor";
   import { loadMaplibre, loadStyle, polyFilter, lineWidth } from "$lib/utils/mapStyle";
 
   let {
     geojson = null,
     changedGeojson = null,
     originalGeojson = null,
+    originalGroupFill = undefined,
     overlayOutlineGeojson = null,
     showSide = undefined,
     bounds = null,
@@ -24,6 +27,8 @@
     // The result's units the tool reshaped; when set, the rest of the result takes the input fill.
     changedGeojson?: string | null;
     originalGeojson?: string | null;
+    // A `groupFillExpression` for the original's fill, in place of the single input color.
+    originalGroupFill?: ExpressionSpecification | string;
     // Drawn as outlines above both fills, not selectable.
     overlayOutlineGeojson?: string | null;
     // Shows only the original ("a") or only the result ("b") instead of stacking them.
@@ -105,6 +110,18 @@
     map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 40, animate: true });
   });
 
+  function originalFillPaint() {
+    return originalGroupFill === undefined
+      ? { "fill-color": MAP_COLORS.original, "fill-opacity": MAP_FILL_OPACITY }
+      : { "fill-color": originalGroupFill, "fill-opacity": GROUP_FILL_OPACITY };
+  }
+
+  $effect(() => {
+    const fill = originalGroupFill;
+    if (fill === undefined || !map || !styleReady || !map.getLayer("original-fill")) return;
+    map.setPaintProperty("original-fill", "fill-color", fill);
+  });
+
   $effect(() => {
     const orig = originalGeojson;
     if (!map || !styleReady) return;
@@ -122,7 +139,7 @@
       } else {
         map.addSource("original", { type: "geojson", data: oUrl, generateId: true });
         const before = map.getLayer("overlay-line") ? "overlay-line" : undefined;
-        map.addLayer({ id: "original-fill", type: "fill", source: "original", filter: polyFilter, paint: { "fill-color": MAP_COLORS.original, "fill-opacity": MAP_FILL_OPACITY } }, before);
+        map.addLayer({ id: "original-fill", type: "fill", source: "original", filter: polyFilter, paint: untrack(originalFillPaint) }, before);
         map.addLayer({ id: "original-line", type: "line", source: "original", paint: { "line-color": MAP_COLORS.outline, "line-width": lineWidth } }, before);
         addSelectedLayer("original", before);
         applySide();

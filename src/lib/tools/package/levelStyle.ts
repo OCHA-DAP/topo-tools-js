@@ -1,5 +1,4 @@
 import type { ExpressionSpecification } from "maplibre-gl";
-import type { FeatureCollection } from "geojson";
 
 export interface LevelStyle {
   depth: number;
@@ -13,14 +12,6 @@ export interface LevelStyle {
 
 // HDX neutral-9 to neutral-7, dark enough to read over any group fill.
 const LEVEL_COLORS = ["#1f2324", "#3f4748", "#5e6a6b"];
-
-// ColorBrewer Set3 without its grey, light enough for dark lines on top.
-const GROUP_PALETTE = [
-  "#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3", "#fdb462",
-  "#b3de69", "#fccde5", "#bc80bd", "#ccebc5", "#ffed6f",
-];
-
-export const GROUP_COLOR = "__group_color";
 
 // Coarsest depth draws darkest, widest and solid; the finest draws lightest and dotted.
 export function levelStyles(depths: number[]): LevelStyle[] {
@@ -52,20 +43,4 @@ export function byDepth(
     ...styles.flatMap((s) => [s.depth, pick(s)]),
     fallback,
   ] as unknown as ExpressionSpecification;
-}
-
-// Tags each feature with a fill color shared by every unit with the same values in `keyColumns`.
-export function colorByGroup(geojson: string, keyColumns: string[]): FeatureCollection {
-  const fc = JSON.parse(geojson) as FeatureCollection;
-  const keyOf = (p: Record<string, unknown> | null) =>
-    keyColumns.map((c) => String(p?.[c] ?? "")).join("\u0000");
-  const keys = [...new Set(fc.features.map((f) => keyOf(f.properties)))].sort();
-  const index = new Map(keys.map((k, i) => [k, i]));
-  for (const f of fc.features) {
-    f.properties = {
-      ...f.properties,
-      [GROUP_COLOR]: GROUP_PALETTE[index.get(keyOf(f.properties))! % GROUP_PALETTE.length],
-    };
-  }
-  return fc;
 }

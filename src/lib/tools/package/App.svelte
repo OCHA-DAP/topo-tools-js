@@ -16,7 +16,8 @@
   import DropZone from "$lib/components/DropZone.svelte";
   import SegmentedControl from "$lib/components/SegmentedControl.svelte";
   import PackageMap from "./PackageMap.svelte";
-  import { colorByGroup, levelStyles } from "./levelStyle";
+  import { levelStyles } from "./levelStyle";
+  import { colorByGroup } from "$lib/utils/groupColor";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
