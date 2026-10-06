@@ -4,7 +4,7 @@
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import { attributesAt, layerBounds, type Bounds } from "$lib/db/layerView";
-  import { canonicalOrder } from "$lib/db/adminColumns";
+  import { canonicalOrder, escapeRegExp } from "$lib/db/adminColumns";
   import {
     applyCrosswalk,
     checkSavedCrosswalk,
@@ -23,6 +23,8 @@
   import DemoLink from "$lib/components/DemoLink.svelte";
   import InputStep from "$lib/components/InputStep.svelte";
   import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
+  import { groupFillExpression } from "$lib/utils/groupColor";
+  import type { Feature } from "geojson";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapTableSplit from "$lib/components/MapTableSplit.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -105,7 +107,7 @@
     try {
       const conn = duckdbState.conn!;
       await loadFile(duckdbState.db!, conn, files);
-      layerGeoJSON = await tableToGeoJSON(conn, "layer_01", null);
+      layerGeoJSON = await tableToGeoJSON(conn, "layer_01", "layer_attr");
       loadedBounds = await layerBounds(conn);
       samples = await sampleValues(conn);
       loaded = true;
@@ -271,6 +273,21 @@
   const inDefaultOrder = $derived(rows.every((r, i) => r.sourceColumn === defaultOrder[i]));
 
   const issues = $derived(rowIssues(rows));
+
+  // Source columns mapped to codes above the finest level, so each unit takes its parent's fill.
+  const parentKey = $derived.by(() => {
+    const [before, after = ""] = inferredSchema.codeField.split("{n}");
+    const re = new RegExp(`^${escapeRegExp(before)}(\\d+)${escapeRegExp(after)}$`);
+    const levels = rows.flatMap((r) => {
+      const m = r.targetColumn ? re.exec(r.targetColumn) : null;
+      return m ? [{ level: Number(m[1]), source: r.sourceColumn }] : [];
+    });
+    const finest = Math.max(...levels.map((l) => l.level));
+    return levels.filter((l) => l.level < finest).map((l) => l.source).join("\u0000");
+  });
+  const layerFeatures = $derived<Feature[]>(layerGeoJSON ? JSON.parse(layerGeoJSON).features : []);
+  // Keyed on the joined column names, so edits that keep the same parents leave the fill alone.
+  const parentFill = $derived(groupFillExpression(layerFeatures, parentKey ? parentKey.split("\u0000") : []));
 </script>
 
 <div class="layout">
@@ -395,6 +412,7 @@
     {#snippet map()}
       <MapView
         originalGeojson={layerGeoJSON}
+        originalGroupFill={parentFill}
         bounds={loadedBounds}
         processing={loading || running}
         onFeatureClick={inspectAt}

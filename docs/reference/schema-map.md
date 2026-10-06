@@ -68,6 +68,10 @@ below), lets the user edit it, and applies it with `schema-refactor`
   `_crosswalk`), both reflecting the current edits.
 - The map MUST draw the loaded geometry once. Applying a crosswalk MUST NOT
   serialize geometry.
+- The map MUST fill each unit by its parent unit, keyed on the source
+  columns mapped to codes above the finest level, in Package's palette,
+  and in one color when no such column is mapped. Edits MUST recolor
+  without redrawing the geometry.
 - Clicking a feature MUST show its source value on every row. With no
   feature selected, each row MUST show up to three sorted distinct sample
   values of its column.
