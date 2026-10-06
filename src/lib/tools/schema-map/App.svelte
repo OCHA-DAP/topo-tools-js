@@ -22,6 +22,7 @@
   import PrivacyNote from "$lib/components/PrivacyNote.svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
   import InputStep from "$lib/components/InputStep.svelte";
+  import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapTableSplit from "$lib/components/MapTableSplit.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -39,13 +40,8 @@
   let selectedValues = $state<Record<string, string | null> | null>(null);
 
   let savedFiles = $state<File[]>([]);
-  let savedOpen = $state(false);
   let saved = $state.raw<Map<string, string | null> | null>(null);
   let savedError = $state<string | null>(null);
-
-  $effect(() => {
-    if (new URLSearchParams(location.search).has("crosswalk")) savedOpen = true;
-  });
 
   let nameField = $state(DEFAULT_TARGET_SCHEMA.nameField);
   let codeField = $state(DEFAULT_TARGET_SCHEMA.codeField);
@@ -275,9 +271,6 @@
   const inDefaultOrder = $derived(rows.every((r, i) => r.sourceColumn === defaultOrder[i]));
 
   const issues = $derived(rowIssues(rows));
-  const renamed = $derived(rows.filter((r) => r.targetColumn && r.targetColumn !== r.sourceColumn));
-  const kept = $derived(rows.filter((r) => r.targetColumn === r.sourceColumn));
-  const dropped = $derived(rows.filter((r) => !r.keep).map((r) => r.sourceColumn));
 </script>
 
 <div class="layout">
@@ -311,9 +304,9 @@
       {#if loadError}<div class="error-panel">{loadError}</div>{/if}
     </InputStep>
 
-    {#if loaded}
-      <section class="step">
-        <h2 class="step-heading">Target schema</h2>
+    <AdvancedOptions>
+      <div class="group">
+        <h3>Target schema</h3>
         <p class="field-hint">Naming templates for a resolved level's number. Defaults to a generic schema.</p>
         <label class="field">
           <span>Name template</span>
@@ -337,15 +330,9 @@
         {#if !levelValid}
           <p class="field-error">Finest level must be a whole number.</p>
         {/if}
-        {#if running}<p class="status">Mapping…</p>{/if}
-      </section>
-    {/if}
-
-    <details class="step" bind:open={savedOpen}>
-      <summary class="step-heading">
-        Import crosswalk <span class="optional">(optional)</span>
-      </summary>
-      <div class="step-body">
+      </div>
+      <div class="group">
+        <h3>Import crosswalk</h3>
         <p class="field-hint">Start from a crosswalk CSV instead of the inferred one.</p>
         <DropZone
           bind:files={savedFiles}
@@ -354,7 +341,9 @@
           helpText="CSV with source_column and target_column."
         />
       </div>
-    </details>
+    </AdvancedOptions>
+
+    {#if running}<p class="status">Mapping…</p>{/if}
     {#if savedError}<div class="error-panel">{savedError}</div>{/if}
     {#if savedMismatch}<div class="error-panel">{savedMismatch}</div>{/if}
 
@@ -363,32 +352,25 @@
     {/if}
 
     {#if rows.length > 0}
-      <section class="step">
-        <h2 class="step-heading">Result</h2>
-        {#if issues.size > 0}
-          <p class="field-error">
-            Fix {issues.size} target{issues.size === 1 ? "" : "s"} in the table to apply the crosswalk.
-          </p>
-        {:else}
-          <p class="summary-line">
-            {renamed.length} renamed, {kept.length} kept as is, {dropped.length} dropped.
-          </p>
-          {#if dropped.length > 0}
-            <p class="summary-line">Dropped: {dropped.join(", ")}.</p>
-          {/if}
-          {#if applied && applied.misorderedSiblings.length > 0}
+      {#if issues.size > 0}
+        <p class="field-error">
+          Fix {issues.size} target{issues.size === 1 ? "" : "s"} in the table to apply the crosswalk.
+        </p>
+      {:else if applied && (applied.misorderedSiblings.length > 0 || !applied.sortColumn)}
+        <section class="step">
+          {#if applied.misorderedSiblings.length > 0}
             <p class="summary-line warn">
               Numbered siblings of {applied.misorderedSiblings.join(", ")} are out of order; output
               columns follow the table order.
             </p>
           {/if}
-          {#if applied && !applied.sortColumn}
+          {#if !applied.sortColumn}
             <p class="summary-line">
               No target matches the code template, so rows keep their input order.
             </p>
           {/if}
-        {/if}
-      </section>
+        </section>
+      {/if}
 
       {#if applied && issues.size === 0}
         <section class="step">
@@ -510,19 +492,7 @@
     border-top: 1px solid var(--hdx-neutral-1);
   }
 
-  .step-heading {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--hdx-neutral-9);
-    margin: 0;
-  }
-
-  summary.step-heading {
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .step-body {
+  .group {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
@@ -556,12 +526,6 @@
     border-radius: var(--hdx-radius-md);
     font-size: 0.85rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-
-  .optional {
-    font-weight: 400;
-    color: var(--hdx-neutral-7);
-    font-size: 0.85rem;
   }
 
   .field-error {

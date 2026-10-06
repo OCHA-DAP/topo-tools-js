@@ -12,8 +12,9 @@ below), lets the user edit it, and applies it with `schema-refactor`
 - Schema Map MUST take exactly one polygon layer (query parameter `url`).
 - Schema Map MAY import a crosswalk CSV (query parameter `crosswalk`),
   parsed by `schema-refactor`'s crosswalk rules. Its targets MUST replace
-  the inferred ones as the starting point for editing. Its input MUST be
-  collapsed by default and open on load when `crosswalk` is set.
+  the inferred ones as the starting point for editing. Its input, the
+  target schema templates and the finest level MUST sit under Advanced
+  options, closed by default.
 - An imported crosswalk whose `source_column` set does not match the layer MUST
   be reported with `schema-refactor`'s column-mismatch error, and the
   inferred crosswalk MUST be used instead.
