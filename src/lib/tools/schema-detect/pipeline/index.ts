@@ -68,6 +68,6 @@ export async function runSchemaDetect(
       code: (r.code as string | null) ?? null,
       reason: r.reason as string,
     })),
-    map: await flaggedLayer(conn, flaggedUnitsSql(`${prefix}_flagged`)),
+    map: await flaggedLayer(conn, flaggedUnitsSql(`${prefix}_flagged`, `${prefix}_report`)),
   };
 }

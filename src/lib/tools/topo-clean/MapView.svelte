@@ -15,6 +15,7 @@
   let {
     originalGeojson = null,
     cleanedGeojson = null,
+    modifiedGeojson = null,
     issuesGeojson = null,
     bounds = null,
     focusBbox = null,
@@ -25,6 +26,8 @@
   }: {
     originalGeojson?: string | null;
     cleanedGeojson?: string | null;
+    // Cleaned units the fix changed, drawn over the Fixed side's input-colored units.
+    modifiedGeojson?: string | null;
     issuesGeojson?: string | null;
     bounds?: [number, number, number, number] | null;
     focusBbox?: [number, number, number, number] | null;
@@ -114,7 +117,7 @@
         source: "tc-cleaned",
         filter: polyFilter,
         layout: { visibility: "none" },
-        paint: { "fill-color": CLEANED_FILL, "fill-opacity": MAP_FILL_OPACITY },
+        paint: { "fill-color": ORIGINAL_FILL, "fill-opacity": MAP_FILL_OPACITY },
       });
       map!.addLayer({
         id: "tc-cleaned-line",
@@ -180,6 +183,23 @@
     }
   });
 
+  $effect(() => {
+    if (upsertSource("tc-modified", modifiedGeojson)) {
+      map!.addLayer(
+        {
+          id: "tc-modified-fill",
+          type: "fill",
+          source: "tc-modified",
+          filter: polyFilter,
+          layout: { visibility: "none" },
+          paint: { "fill-color": CLEANED_FILL, "fill-opacity": MAP_FILL_OPACITY },
+        },
+        map!.getLayer("tc-cleaned-line") ? "tc-cleaned-line" : undefined,
+      );
+      applySideVisibility(showSide);
+    }
+  });
+
   function applySideVisibility(side: "a" | "b"): void {
     if (!map) return;
     const vis = (id: string, v: boolean) => {
@@ -194,6 +214,7 @@
     vis("tc-issues-highlight", isA);
     vis("tc-cleaned-fill", !isA);
     vis("tc-cleaned-line", !isA);
+    vis("tc-modified-fill", !isA);
   }
 
   $effect(() => {

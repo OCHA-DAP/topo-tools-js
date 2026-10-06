@@ -9,14 +9,16 @@
   import { tableToGeoJSON } from "$lib/db/geojson";
   import type { TargetSchema } from "$lib/tools/schema-map/pipeline/targetSchema";
   import { onMount, untrack } from "svelte";
+  import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
+  import IssueMapView from "$lib/components/IssueMapView.svelte";
+  import type { FeatureInfo } from "$lib/components/MapPopup.svelte";
   import MapTableSplit from "$lib/components/MapTableSplit.svelte";
-  import MapView from "$lib/components/MapView.svelte";
 
-  // One-layer check tools: load, set the optional level templates, run, then a
-  // findings table beside the flagged units on the map.
+  // One-layer check tools: load and run automatically, then a findings table
+  // beside the flagged units on the map; level templates sit under Advanced options.
   let {
     slug,
     title,
@@ -24,6 +26,7 @@
     run,
     downloads,
     findings,
+    describe,
   }: {
     slug: string;
     title: string;
@@ -33,6 +36,8 @@
     findings: Snippet<
       [{ result: R | null; emptyText: string; selectedKey: string | null; select: (key: string) => void }]
     >;
+    // Hover popup content for a flagged unit's finding on the map.
+    describe?: (result: R, key: string) => FeatureInfo | null;
   } = $props();
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
@@ -48,11 +53,13 @@
   let codeField = $state("");
   syncParam("name", textParam, () => nameField, (v) => (nameField = v));
   syncParam("code", textParam, () => codeField, (v) => (codeField = v));
+  let advancedOpen = $state(false);
 
   let running = $state(false);
   let error = $state<string | null>(null);
   let result = $state<R | null>(null);
   let selectedKey = $state<string | null>(null);
+  let runPending = false;
 
   onMount(() => {
     initDuckDB();
@@ -98,7 +105,11 @@
     } finally {
       loading = false;
     }
-    if (loaded && templateValid) await handleRun();
+  }
+
+  function requestRun(): void {
+    if (running) runPending = true;
+    else handleRun();
   }
 
   async function handleRun(): Promise<void> {
@@ -113,6 +124,10 @@
       error = e instanceof Error ? e.message : String(e);
     } finally {
       running = false;
+      if (runPending) {
+        runPending = false;
+        handleRun();
+      }
     }
   }
 
@@ -130,6 +145,18 @@
     !oneBlank && (bothBlank || (nameField.includes("{n}") && codeField.includes("{n}"))),
   );
   const canRun = $derived(loaded && templateValid && !loading);
+
+  $effect(() => {
+    if (!bothBlank) advancedOpen = true;
+  });
+
+  // Reads every setting so any change reruns; the debounce absorbs typing.
+  $effect(() => {
+    const _settings = [nameField, codeField];
+    if (!canRun) return;
+    const timer = setTimeout(() => untrack(requestRun), 400);
+    return () => clearTimeout(timer);
+  });
   const viewBounds = $derived((selectedKey && result?.map.bounds.get(selectedKey)) || loadedBounds);
   const emptyText = $derived(
     !loaded ? "Load a coded layer to check it." : running ? "Checking…" : "Fix the settings to run the checks.",
@@ -165,32 +192,6 @@
       {#if loadError}<div class="error-panel">{loadError}</div>{/if}
     </section>
 
-    {#if loaded}
-      <section class="step">
-        <h2 class="step-heading">Target schema</h2>
-        <p class="field-hint">
-          Naming templates for a level's number. Leave both blank to auto-detect the hierarchy
-          structurally instead.
-        </p>
-        <label class="field">
-          <span>Name template</span>
-          <input type="text" bind:value={nameField} placeholder="auto-detect" disabled={running} />
-        </label>
-        <label class="field">
-          <span>Code template</span>
-          <input type="text" bind:value={codeField} placeholder="auto-detect" disabled={running} />
-        </label>
-        {#if oneBlank}
-          <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
-        {:else if !bothBlank && !templateValid}
-          <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
-        {/if}
-        <button class="run-btn" onclick={handleRun} disabled={!canRun || running}>
-          {running ? "Checking…" : "Run"}
-        </button>
-      </section>
-    {/if}
-
     {#if error}
       <div class="error-panel">{error}</div>
     {/if}
@@ -204,16 +205,44 @@
       </section>
     {/if}
 
+    {#if loaded}
+      <AdvancedOptions bind:open={advancedOpen}>
+        <div class="group">
+          <h3>Target schema</h3>
+          <p class="field-hint">
+            Naming templates for a level's number. Leave both blank to auto-detect the hierarchy
+            structurally instead.
+          </p>
+          <label class="field">
+            <span>Name template</span>
+            <input type="text" bind:value={nameField} placeholder="auto-detect" />
+          </label>
+          <label class="field">
+            <span>Code template</span>
+            <input type="text" bind:value={codeField} placeholder="auto-detect" />
+          </label>
+          {#if oneBlank}
+            <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
+          {:else if !bothBlank && !templateValid}
+            <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
+          {/if}
+        </div>
+      </AdvancedOptions>
+    {/if}
+
     <p class="privacy">Your files never leave your device.</p>
   </aside>
 
   <MapTableSplit>
     {#snippet map()}
-      <MapView
-        geojson={result?.map.geojson ?? null}
+      <IssueMapView
+        issuesGeojson={result?.map.geojson ?? null}
         originalGeojson={originalGeoJSON}
         bounds={viewBounds}
+        {selectedKey}
         processing={loading || running}
+        onIssueClick={(key) => (selectedKey = key)}
+        describe={describe && result ? (key) => describe(result!, key) : undefined}
       />
     {/snippet}
     {#snippet table()}
@@ -327,24 +356,10 @@
     margin: 0;
   }
 
-  .run-btn {
-    background: var(--hdx-primary-5);
-    color: var(--hdx-neutral-0);
-    border: none;
-    border-radius: var(--hdx-radius-md);
-    padding: 0.6rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .run-btn:hover:not(:disabled) {
-    background: var(--hdx-primary-9);
-  }
-
-  .run-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
   }
 
   @keyframes pulse {

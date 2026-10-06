@@ -72,7 +72,8 @@ shares with `code-create`.
   and `tauSame` and leaves `linkByCode`, `linkByName`, `linkMode` and the
   identity-linking columns at their defaults. It MUST show each level's
   classification in `change`'s map and table, one level at a time,
-  without `renamed` and `relocated` filters, with each NEW unit's assigned
+  without `renamed`, `relocated` and `unchanged` filters, drawing
+  `unchanged` units as in `change`, with each NEW unit's assigned
   code as its NEW code, suffixed `(overflow)` for an `overflow` outcome
   and `(new)` for a `new` outcome on an `unchanged` or `modified` unit.
 - The identity-linking code/name columns MUST be that level's own resolved

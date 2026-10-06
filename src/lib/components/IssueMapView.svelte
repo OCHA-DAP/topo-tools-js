@@ -6,11 +6,13 @@
     FilterSpecification,
     GeoJSONSource,
     Map as MaplibreMap,
+    LngLatLike,
     MapMouseEvent,
   } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import { onDestroy, onMount } from "svelte";
   import { MAP_COLORS, MAP_FILL_OPACITY } from "$lib/utils/mapColors";
+  import MapPopup, { type FeatureInfo } from "./MapPopup.svelte";
 
   let {
     originalGeojson = null,
@@ -20,6 +22,7 @@
     selectedKey = null,
     processing = false,
     onIssueClick,
+    describe,
   }: {
     originalGeojson?: string | null;
     issuesGeojson?: string | null;
@@ -28,6 +31,8 @@
     selectedKey?: string | null;
     processing?: boolean;
     onIssueClick?: (key: string | null) => void;
+    // Hover popup content for an issue; no popup when unset.
+    describe?: (key: string) => FeatureInfo | null;
   } = $props();
 
   const ORIGINAL_FILL = MAP_COLORS.original;
@@ -37,6 +42,8 @@
 
   let container: HTMLDivElement | undefined;
   let map: MaplibreMap | undefined;
+  let hovered = $state<FeatureInfo[]>([]);
+  let hoverLngLat = $state<LngLatLike | null>(null);
   let styleReady = $state(false);
   const urls = new Map<string, string>();
   const { start: startSpin, stop: stopSpin } = createSpin(() => map);
@@ -45,7 +52,7 @@
     if (processing) stopSpin();
   });
 
-  const issueColor: ExpressionSpecification = [
+  const kindColor: ExpressionSpecification = [
     "match",
     ["get", "kind"],
     "overlap",
@@ -58,6 +65,16 @@
     MAP_COLORS.notch,
     MAP_COLORS.fallback,
   ] as unknown as ExpressionSpecification;
+  // A `severity` property (check findings) takes precedence over `kind` (topology issues).
+  const issueColor: ExpressionSpecification = [
+    "match",
+    ["get", "severity"],
+    "error",
+    MAP_COLORS.overlap,
+    "warn",
+    MAP_COLORS.gap,
+    kindColor,
+  ] as unknown as ExpressionSpecification;
 
   function setData(id: string, data: string): string {
     const prev = urls.get(id);
@@ -68,9 +85,13 @@
   }
 
   function upsertSource(id: string, data: string | null): boolean {
-    if (!map || !styleReady || !data) return false;
-    const url = setData(id, data);
+    if (!map || !styleReady) return false;
     const src = map.getSource(id) as GeoJSONSource | undefined;
+    if (!data) {
+      src?.setData({ type: "FeatureCollection", features: [] });
+      return false;
+    }
+    const url = setData(id, data);
     if (src) {
       src.setData(url);
       return false;
@@ -129,6 +150,12 @@
       });
       map!.on("mouseleave", "dt-issues-fill", () => {
         if (map) map.getCanvas().style.cursor = "";
+        hovered = [];
+      });
+      map!.on("mousemove", "dt-issues-fill", (e) => {
+        const keys = [...new Set((e.features ?? []).map((f) => String(f.properties?.key)))];
+        hovered = describe ? keys.map(describe).filter((i): i is FeatureInfo => i !== null) : [];
+        hoverLngLat = e.lngLat;
       });
     }
   });
@@ -224,6 +251,7 @@
 </script>
 
 <div bind:this={container} class="dt-map"></div>
+<MapPopup getMap={() => map} items={hovered} lngLat={hoverLngLat} />
 
 <style>
   .dt-map {
@@ -231,4 +259,5 @@
     height: 100%;
     min-height: 400px;
   }
+
 </style>

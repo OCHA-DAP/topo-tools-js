@@ -3,14 +3,16 @@
     ExpressionSpecification,
     FilterSpecification,
     GeoJSONSource,
+    LngLatLike,
     Map as MaplibreMap,
     MapMouseEvent,
   } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { createSpin } from "$lib/utils/spin";
   import { loadMaplibre, loadStyle, polyFilter, lineWidth } from "$lib/utils/mapStyle";
   import { REL_COLORS, REL_ORDER } from "./pipeline";
+  import MapPopup, { type FeatureInfo } from "$lib/components/MapPopup.svelte";
   import { MAP_COLORS, MAP_FILL_OPACITY } from "$lib/utils/mapColors";
 
   let {
@@ -22,9 +24,11 @@
     hoveredClusterId = null,
     hoveredFid = null,
     visibleClasses = null,
+    baseClasses = [],
     showSide = "b" as "a" | "b",
     onClusterClick,
     onFeatureHover,
+    describe,
   }: {
     overlayGeojson?: string | null;
     outlineAGeojson?: string | null;
@@ -34,9 +38,13 @@
     hoveredClusterId?: number | null;
     hoveredFid?: number | null;
     visibleClasses?: Set<string> | null;
+    // Always drawn in the base fill like other tools' input layer, and never hovered or clicked.
+    baseClasses?: string[];
     showSide?: "a" | "b";
     onClusterClick?: (id: number | null) => void;
     onFeatureHover?: (payload: { cluster_id: number | null; fid: number | null }) => void;
+    // Hover popup content for the unit under the cursor; no popup when unset.
+    describe?: (clusterId: number, fid: number) => FeatureInfo[];
   } = $props();
 
   let container: HTMLDivElement | undefined;
@@ -45,6 +53,16 @@
   let outlineAUrl: string | undefined;
   let outlineBUrl: string | undefined;
   let styleReady = false;
+  let hovered = $state<FeatureInfo[]>([]);
+  let hoverLngLat = $state<LngLatLike | null>(null);
+
+  function hover(cid: number | null, fid: number | null, lngLat: LngLatLike | null, cls?: string): void {
+    if (cls != null && baseClasses.includes(cls)) [cid, fid, lngLat] = [null, null, null];
+    if (map) map.getCanvas().style.cursor = cid == null ? "" : "pointer";
+    hovered = describe && cid != null && fid != null ? describe(cid, fid) : [];
+    hoverLngLat = lngLat;
+    onFeatureHover?.({ cluster_id: cid, fid });
+  }
   let sidePending: number | undefined;
   const { start: startSpin, stop: stopSpin } = createSpin(() => map);
 
@@ -53,7 +71,7 @@
   });
 
   function fillColorExpr(): ExpressionSpecification {
-    const stops = REL_ORDER.flatMap((c) => [c, REL_COLORS[c]]);
+    const stops = REL_ORDER.flatMap((c) => [c, baseClasses.includes(c) ? MAP_COLORS.original : REL_COLORS[c]]);
     return ["match", ["get", "relationship_class"], ...stops, "#cccccc"] as unknown as ExpressionSpecification;
   }
 
@@ -84,7 +102,8 @@
   function buildFillFilter(): FilterSpecification {
     const conditions: FilterSpecification[] = [polyFilter];
     if (visibleClasses != null) {
-      conditions.push(["match", ["get", "relationship_class"], Array.from(visibleClasses), true, false] as FilterSpecification);
+      const shown = [...visibleClasses, ...baseClasses];
+      conditions.push(["match", ["get", "relationship_class"], shown, true, false] as FilterSpecification);
     }
     return conditions.length === 1 ? conditions[0] : (["all", ...conditions] as FilterSpecification);
   }
@@ -176,7 +195,7 @@
         id: "cw-overlay-fill",
         type: "fill",
         source: "cw-overlay",
-        filter: polyFilter,
+        filter: untrack(buildFillFilter),
         paint: {
           "fill-color": fillColorExpr(),
           "fill-opacity": fillOpacityExpr(),
@@ -223,6 +242,7 @@
         id: `cw-outline-${side}-fill`,
         type: "fill",
         source: id,
+        filter: untrack(buildFillFilter),
         layout: { visibility: "none" },
         paint: {
           "fill-color": fillColorExpr(),
@@ -261,15 +281,13 @@
       paint: { "line-color": MAP_COLORS.outline, "line-width": 2.5 },
     });
     map.on("mousemove", `cw-outline-${side}-fill`, (e) => {
-      if (map) map.getCanvas().style.cursor = "pointer";
       const props = e.features?.[0]?.properties;
       const cid = props?.cluster_id == null ? null : Number(props.cluster_id);
       const fid = props?.fid == null ? null : Number(props.fid);
-      onFeatureHover?.({ cluster_id: cid, fid });
+      hover(cid, fid, e.lngLat, props?.relationship_class);
     });
     map.on("mouseleave", `cw-outline-${side}-fill`, () => {
-      if (map) map.getCanvas().style.cursor = "";
-      onFeatureHover?.({ cluster_id: null, fid: null });
+      hover(null, null, null);
     });
     // Apply current showSide visibility since the effect won't re-fire for newly added layers.
     applySideVisibility(showSide);
@@ -303,7 +321,8 @@
       onClusterClick(null);
       return;
     }
-    const cid = feats[0].properties?.cluster_id;
+    const props = feats[0].properties;
+    const cid = baseClasses.includes(props?.relationship_class) ? null : props?.cluster_id;
     onClusterClick(cid == null ? null : Number(cid));
   }
 
@@ -326,16 +345,14 @@
       map?.on("wheel", stopSpin);
       map?.on("click", handleMapClick);
       map?.on("mousemove", "cw-overlay-fill", (e) => {
-        if (map) map.getCanvas().style.cursor = "pointer";
         const props = e.features?.[0]?.properties;
         const cid = props?.cluster_id == null ? null : Number(props.cluster_id);
         const sideFid = showSide === "a" ? props?.a_fid : props?.b_fid;
         const fid = sideFid == null ? null : Number(sideFid);
-        onFeatureHover?.({ cluster_id: cid, fid });
+        hover(cid, fid, e.lngLat, props?.relationship_class);
       });
       map?.on("mouseleave", "cw-overlay-fill", () => {
-        if (map) map.getCanvas().style.cursor = "";
-        onFeatureHover?.({ cluster_id: null, fid: null });
+        hover(null, null, null);
       });
     });
   });
@@ -350,6 +367,7 @@
 </script>
 
 <div bind:this={container} class="cw-map"></div>
+<MapPopup getMap={() => map} items={hovered} lngLat={hoverLngLat} />
 
 <style>
   .cw-map {

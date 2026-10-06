@@ -1,5 +1,5 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { tableToGeoJSON } from "$lib/db/geojson";
+import { changedGeoJSON, tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
 import { buildNotchRegions } from "$lib/db/issues";
 import { buildClean, buildInput, buildNotched, countRows, inputHasViolations } from "./clean";
@@ -62,6 +62,7 @@ export interface AnalysisResult {
 
 export interface CleanResult extends AnalysisResult {
   cleanedGeoJSON: string;
+  modifiedGeoJSON: string;
   collapsedCount: number;
   fixedKeys: Set<string>;
   // Independent validation of the exact table that gets exported (tc_clean),
@@ -71,6 +72,7 @@ export interface CleanResult extends AnalysisResult {
 
 export interface RecleanResult {
   cleanedGeoJSON: string;
+  modifiedGeoJSON: string;
   collapsedCount: number;
   fixedKeys: Set<string>;
   issues: IssueRow[];
@@ -130,6 +132,7 @@ export async function recleanOnly(
 
   return {
     cleanedGeoJSON: await tableToGeoJSON(conn, "tc_clean", "layer_attr"),
+    modifiedGeoJSON: await changedGeoJSON(conn, "tc_clean", "layer_01"),
     collapsedCount: Math.max(0, totalCount - kept),
     fixedKeys,
     issues: cachedIssues,
@@ -192,6 +195,7 @@ export async function runFromLoaded(
   };
 
   let cleanedGeoJSON: string;
+  let modified: string;
   let collapsedCount: number;
   let fixedKeys: Set<string>;
   let exportCheck: ExportCheck;
@@ -205,6 +209,7 @@ export async function runFromLoaded(
     fixedKeys = await checkFixedIssues(conn, cachedIssues);
     exportCheck = await verifyExport(conn);
     cleanedGeoJSON = await tableToGeoJSON(conn, "tc_clean", "layer_attr");
+    modified = await changedGeoJSON(conn, "tc_clean", "layer_01");
     collapsedCount = Math.max(0, totalCount - kept);
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 4, analysis);
@@ -213,6 +218,7 @@ export async function runFromLoaded(
   return {
     originalGeoJSON,
     cleanedGeoJSON,
+    modifiedGeoJSON: modified,
     issues: cachedIssues,
     issuesGeoJSON: cachedIssuesGeoJSON,
     bounds,

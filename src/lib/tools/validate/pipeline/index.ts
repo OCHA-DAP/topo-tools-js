@@ -48,12 +48,13 @@ export interface ValidateResult {
 
 const lit = (v: string | null): string => (v === null ? "NULL" : "'" + v.replace(/'/g, "''") + "'");
 
-// Each flagged unit or topology region, keyed `stage:kind` like its summary row.
+// Each flagged unit or topology region, keyed `stage:kind` like its summary row; the map colors
+// topology regions by kind and units by severity.
 function stageUnitsSql(stage: Stage): string {
-  if (stage === "topo") return `SELECT 'topo:' || kind AS key, geom FROM dt_issues`;
+  if (stage === "topo") return `SELECT 'topo:' || kind AS key, NULL::VARCHAR AS severity, kind, geom FROM dt_issues`;
   const p = REPORTS[stage].table.replace(/_report$/, "");
   return `--sql
-    SELECT DISTINCT '${stage}:' || r.kind AS key, g.geom
+    SELECT DISTINCT '${stage}:' || r.kind AS key, r.severity, NULL::VARCHAR AS kind, g.geom
     FROM ${p}_flagged f JOIN ${p}_report r USING (key) JOIN layer_01 g USING (fid)
   `;
 }

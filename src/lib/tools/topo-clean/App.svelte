@@ -120,6 +120,7 @@
   let analyzed = $state(false);
   let originalGeoJSON = $state<string | null>(null);
   let cleanedGeoJSON = $state<string | null>(null);
+  let modifiedGeoJSON = $state<string | null>(null);
   let issuesGeoJSON = $state<string | null>(null);
   let issues = $state<IssueRow[]>([]);
   let fixedKeys = $state<Set<string>>(new Set());
@@ -167,6 +168,7 @@
     analyzed = false;
     originalGeoJSON = null;
     cleanedGeoJSON = null;
+    modifiedGeoJSON = null;
     issuesGeoJSON = null;
     issues = [];
     fixedKeys = new Set();
@@ -228,6 +230,7 @@
       analyzed = true;
       originalGeoJSON = result.originalGeoJSON;
       cleanedGeoJSON = result.cleanedGeoJSON;
+      modifiedGeoJSON = result.modifiedGeoJSON;
       issuesGeoJSON = result.issuesGeoJSON;
       issues = result.issues;
       fixedKeys = result.fixedKeys;
@@ -276,6 +279,7 @@
     try {
       const result = await recleanOnly(duckdbState.conn!, { mode, gapWidthM });
       cleanedGeoJSON = result.cleanedGeoJSON;
+      modifiedGeoJSON = result.modifiedGeoJSON;
       collapsedCount = result.collapsedCount;
       fixedKeys = result.fixedKeys;
       issues = result.issues;
@@ -520,6 +524,7 @@
       <MapView
         originalGeojson={originalGeoJSON}
         cleanedGeojson={cleanedGeoJSON}
+        modifiedGeojson={modifiedGeoJSON}
         issuesGeojson={issuesGeoJSON}
         {bounds}
         {focusBbox}

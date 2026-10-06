@@ -84,3 +84,18 @@ export async function queryToGeoJSON(conn: AsyncDuckDBConnection, sql: string): 
     typeof v === "bigint" ? Number(v) : v,
   );
 }
+
+// `result`'s units whose geometry differs from the same fid in `input`, for the map; cheap checks run before ST_Equals.
+export function changedGeoJSON(conn: AsyncDuckDBConnection, result: string, input: string): Promise<string> {
+  return queryToGeoJSON(
+    conn,
+    `--sql
+    SELECT ST_AsGeoJSON(c.geom) AS _geom
+    FROM ${result} c LEFT JOIN ${input} o USING (fid)
+    WHERE c.geom IS NOT NULL AND (o.fid IS NULL OR (
+      ST_AsWKB(c.geom) <> ST_AsWKB(o.geom)
+      AND (ST_NPoints(c.geom) <> ST_NPoints(o.geom) OR NOT ST_Equals(c.geom, o.geom))
+    ))
+  `,
+  );
+}

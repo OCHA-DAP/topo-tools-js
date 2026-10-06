@@ -1,7 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { gatedCoverageClean, hasCoverageViolations } from "$lib/db/coverageClean";
 import { checkNoErosion, buildGapTable, hasMicroPolygons } from "$lib/db/coverage";
-import { tableToGeoJSON } from "$lib/db/geojson";
+import { changedGeoJSON, tableToGeoJSON } from "$lib/db/geojson";
 import { stageCleanInput } from "./clean";
 import { computeEffectiveDistance } from "./distance";
 import { stageLines } from "./lines";
@@ -63,6 +63,7 @@ export async function dropInternalTables(conn: AsyncDuckDBConnection): Promise<v
 
 export interface PipelineResult {
   geojson: string;
+  changedGeoJSON: string;
   bounds: [number, number, number, number] | null;
 }
 
@@ -242,6 +243,7 @@ export async function runPipeline(
   }
 
   const geojson = await tableToGeoJSON(conn, "layer_05", "layer_attr");
+  const changed = await changedGeoJSON(conn, "layer_05", "layer_01");
 
-  return { geojson, bounds };
+  return { geojson, changedGeoJSON: changed, bounds };
 }
