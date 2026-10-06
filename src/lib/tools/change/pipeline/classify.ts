@@ -15,8 +15,6 @@ export type RelClass =
 // Single source of truth for order/colors — shared by the table toolbar, map
 // fill expression, and legend.
 export const REL_ORDER: RelClass[] = [
-  "unchanged",
-  "renamed",
   "modified",
   "relocated",
   "merge",
@@ -24,6 +22,8 @@ export const REL_ORDER: RelClass[] = [
   "complex",
   "created",
   "removed",
+  "renamed",
+  "unchanged",
 ];
 
 export const REL_COLORS: Record<RelClass, string> = {

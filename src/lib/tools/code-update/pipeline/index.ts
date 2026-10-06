@@ -2,6 +2,13 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { quoteIdent } from "$lib/db/code";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import type { ClassifyOptions } from "$lib/tools/change/pipeline/classify";
+import {
+  buildOutlineGeoJSON,
+  buildOverlayGeoJSON,
+  computeBounds as computeOverlayBounds,
+  stageRender,
+} from "$lib/tools/change/pipeline/render";
+import { stageTable, type TableRow } from "$lib/tools/change/pipeline/table";
 import type { TargetSchema } from "$lib/tools/schema-map/pipeline/targetSchema";
 import { assignLevel, type ChangeRow } from "./assign";
 import { classifyLevel } from "./classify";
@@ -33,11 +40,22 @@ export interface CodeUpdateOptions {
   linkMode: "either" | "both";
 }
 
+// One level's classification, in the shape `change`'s map and table take.
+export interface LevelView {
+  level: number;
+  overlayGeoJSON: string;
+  outlineAGeoJSON: string;
+  outlineBGeoJSON: string;
+  tableRows: TableRow[];
+  bounds: [number, number, number, number] | null;
+}
+
 export interface CodeUpdateResult {
   resultGeoJSON: string;
   bounds: [number, number, number, number] | null;
   levelCount: number;
   changelog: ChangeRow[];
+  levelViews: LevelView[];
 }
 
 async function computeBounds(
@@ -71,6 +89,7 @@ const PER_LEVEL_TABLES = (n: number): string[] => [
   "cw_pairs_classified",
   "cw_polygon_class",
   "cw_changelog",
+  "cw_overlay_render",
   `cu_reparent_${n}_pairs`,
   `cu_reparent_${n}_assign`,
 ];
@@ -108,6 +127,7 @@ export async function runCodeUpdate(
   const newCodeByFid = new Map<number, Map<number, string>>();
   const rawValByFid = new Map<number, Map<number, string>>();
   const changelog: ChangeRow[] = [];
+  const levelViews: LevelView[] = [];
 
   const levels = [...sideA.columns.keys()].sort((a, b) => a - b);
   let prevLevel: number | null = null;
@@ -132,6 +152,16 @@ export async function runCodeUpdate(
       classifyOpts,
     );
 
+    await stageRender(conn);
+    const [overlayGeoJSON, outlineAGeoJSON, outlineBGeoJSON, tableRows, levelBounds] = await Promise.all([
+      buildOverlayGeoJSON(conn),
+      buildOutlineGeoJSON(conn, "a"),
+      buildOutlineGeoJSON(conn, "b"),
+      stageTable(conn),
+      computeOverlayBounds(conn),
+    ]);
+    levelViews.push({ level: n, overlayGeoJSON, outlineAGeoJSON, outlineBGeoJSON, tableRows, bounds: levelBounds });
+
     if (prevLevel !== null) await reparentLevel(conn, n, prevLevel);
 
     await assignLevel(conn, n, prevLevel, sideA, sideB, fmt, newCodeByFid, changelog);
@@ -150,5 +180,5 @@ export async function runCodeUpdate(
 
   const resultGeoJSON = await tableToGeoJSON(conn, "cu_b_layer_01", "cu_b_attr");
   const bounds = await computeBounds(conn, "cu_b_layer_01");
-  return { resultGeoJSON, bounds, levelCount: levels.length, changelog };
+  return { resultGeoJSON, bounds, levelCount: levels.length, changelog, levelViews };
 }

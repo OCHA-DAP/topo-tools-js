@@ -1,21 +1,28 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import {
-    boolParam,
-    choiceParam,
     numberParam,
     textParam,
     syncParam,
     type ParamCodec,
   } from "$lib/utils/syncParam.svelte";
-  import { tableToGeoJSON } from "$lib/db/geojson";
+  import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
-  import MapView from "$lib/components/MapView.svelte";
+  import ProgressLine from "$lib/components/ProgressLine.svelte";
+  import SegmentedControl from "$lib/components/SegmentedControl.svelte";
+  import ResultView from "$lib/tools/change/ResultView.svelte";
+  import { REL_ORDER } from "$lib/tools/change/pipeline";
   import { onMount, untrack } from "svelte";
   import { loadSide } from "./pipeline/load";
-  import { parseMinWidth, runCodeUpdate, type ChangeRow, type TargetSchema } from "./pipeline/index";
+  import {
+    parseMinWidth,
+    runCodeUpdate,
+    type ChangeRow,
+    type LevelView,
+    type TargetSchema,
+  } from "./pipeline/index";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -25,17 +32,15 @@
   let loadedA = $state(false);
   let loadedB = $state(false);
   let loadError = $state<string | null>(null);
-  let originalGeoJSON = $state<string | null>(null);
+  let dropOpen = $state(true);
+  let advancedOpen = $state(false);
+  let showSide = $state<"a" | "b">("b");
   let loadedBounds = $state<[number, number, number, number] | null>(null);
 
   let rootCode = $state("");
   let delimMode = $state<"auto" | "none" | "char">("auto");
   let delimChar = $state("");
   let minWidth = $state("");
-  let codeColA = $state("");
-  let codeColB = $state("");
-  let nameColA = $state("");
-  let nameColB = $state("");
   let nameFieldA = $state("");
   let codeFieldA = $state("");
   let nameFieldB = $state("");
@@ -43,9 +48,6 @@
 
   let tauMatch = $state(0.8);
   let tauSame = $state(0.98);
-  let linkByCode = $state(false);
-  let linkByName = $state(false);
-  let linkMode = $state<"either" | "both">("either");
   syncParam("root", textParam, () => rootCode, (v) => (rootCode = v));
   // Absent is auto-detect, "none" is no delimiter, anything else the character itself.
   const delimParam: ParamCodec<string | null> = {
@@ -58,19 +60,20 @@
     if (v) delimChar = v;
   });
   syncParam("width", textParam, () => minWidth, (v) => (minWidth = v));
-  syncParam("code-col-a", textParam, () => codeColA, (v) => (codeColA = v));
-  syncParam("code-col-b", textParam, () => codeColB, (v) => (codeColB = v));
-  syncParam("name-col-a", textParam, () => nameColA, (v) => (nameColA = v));
-  syncParam("name-col-b", textParam, () => nameColB, (v) => (nameColB = v));
   syncParam("name-a", textParam, () => nameFieldA, (v) => (nameFieldA = v));
   syncParam("code-a", textParam, () => codeFieldA, (v) => (codeFieldA = v));
   syncParam("name-b", textParam, () => nameFieldB, (v) => (nameFieldB = v));
   syncParam("code-b", textParam, () => codeFieldB, (v) => (codeFieldB = v));
   syncParam("match", numberParam, () => tauMatch, (v) => (tauMatch = v));
   syncParam("same", numberParam, () => tauSame, (v) => (tauSame = v));
-  syncParam("by-code", boolParam, () => linkByCode, (v) => (linkByCode = v));
-  syncParam("by-name", boolParam, () => linkByName, (v) => (linkByName = v));
-  syncParam("link", choiceParam(["either", "both"] as const), () => linkMode, (v) => (linkMode = v));
+
+  const advancedSet = $derived(
+    [rootCode, minWidth, nameFieldA, codeFieldA, nameFieldB, codeFieldB].some((v) => v.trim() !== "") ||
+      delimMode !== "auto",
+  );
+  $effect(() => {
+    if (advancedSet) advancedOpen = true;
+  });
 
   let running = $state(false);
   let error = $state<string | null>(null);
@@ -79,8 +82,11 @@
   let resultBounds = $state<[number, number, number, number] | null>(null);
   let levelCount = $state(0);
   let changelog = $state<ChangeRow[]>([]);
+  let levelViews = $state<LevelView[]>([]);
+  let selectedLevel = $state<number | null>(null);
+  let selectedClusterId = $state<number | null>(null);
 
-  let clearMap: (() => void) | undefined;
+  let runPending = false;
 
   onMount(() => {
     initDuckDB();
@@ -105,6 +111,11 @@
     resultBounds = null;
     levelCount = 0;
     changelog = [];
+    levelViews = [];
+    selectedLevel = null;
+    selectedClusterId = null;
+    showSide = "b";
+    dropOpen = true;
   }
 
   $effect(() => {
@@ -132,17 +143,13 @@
   });
 
   async function loadSideThen(side: "a" | "b"): Promise<void> {
-    clearMap?.();
     loadError = null;
     loadingSide = side;
     try {
       const files = side === "a" ? filesA : filesB;
       await loadSide(duckdbState.db!, duckdbState.conn!, side, files);
       if (side === "a") loadedA = true;
-      else {
-        originalGeoJSON = await tableToGeoJSON(duckdbState.conn!, "cu_b_layer_01", null);
-        loadedB = true;
-      }
+      else loadedB = true;
       if (loadedA && loadedB) loadedBounds = await computeLoadedBounds();
     } catch (e) {
       loadError = e instanceof Error ? e.message : String(e);
@@ -155,10 +162,15 @@
     return nameField.trim() === "" && codeField.trim() === "" ? null : { nameField, codeField };
   }
 
+  function requestRun(): void {
+    if (running) runPending = true;
+    else handleRun();
+  }
+
   async function handleRun(): Promise<void> {
     error = null;
     running = true;
-    resetRun();
+    const firstRun = !ran;
 
     try {
       const result = await runCodeUpdate(duckdbState.conn!, {
@@ -167,25 +179,33 @@
         rootCode: rootCode.trim() === "" ? null : rootCode.trim(),
         delimiter,
         minWidth: minWidth.trim() === "" ? null : minWidth,
-        codeColumnA: linkByCode && codeColA.trim() !== "" ? codeColA.trim() : null,
-        codeColumnB: linkByCode && codeColB.trim() !== "" ? codeColB.trim() : null,
-        nameColumnA: linkByName && nameColA.trim() !== "" ? nameColA.trim() : null,
-        nameColumnB: linkByName && nameColB.trim() !== "" ? nameColB.trim() : null,
+        codeColumnA: null,
+        codeColumnB: null,
+        nameColumnA: null,
+        nameColumnB: null,
         tauMatch,
         tauSame,
-        linkByCode,
-        linkByName,
-        linkMode,
+        linkByCode: false,
+        linkByName: false,
+        linkMode: "either",
       });
       resultGeoJSON = result.resultGeoJSON;
       resultBounds = result.bounds;
       levelCount = result.levelCount;
       changelog = result.changelog;
+      levelViews = result.levelViews;
+      if (!levelViews.some((v) => v.level === selectedLevel)) selectedLevel = levelViews.at(-1)?.level ?? null;
       ran = true;
+      if (firstRun) dropOpen = false;
     } catch (e) {
+      resetRun();
       error = e instanceof Error ? e.message : String(e);
     } finally {
       running = false;
+      if (runPending) {
+        runPending = false;
+        handleRun();
+      }
     }
   }
 
@@ -222,6 +242,38 @@
   );
   const canRun = $derived(loadedA && loadedB && templatesValid && formatOverrideValid && !loadingSide);
 
+  // Reads every setting so any change reruns; the debounce absorbs slider drags and typing.
+  $effect(() => {
+    const _settings = [rootCode, delimiter, minWidth, nameFieldA, codeFieldA, nameFieldB, codeFieldB, tauMatch, tauSame];
+    if (!canRun) return;
+    const timer = setTimeout(() => untrack(requestRun), 400);
+    return () => clearTimeout(timer);
+  });
+
+  // Geometry-only classification never yields these two.
+  const classes = REL_ORDER.filter((c) => c !== "renamed" && c !== "relocated");
+
+  const levelView = $derived(levelViews.find((v) => v.level === selectedLevel) ?? null);
+
+  // NEW code shows the assigned code, flagged only where the class doesn't predict it.
+  const tableRows = $derived.by(() => {
+    const byFid = new Map<number, ChangeRow>();
+    for (const row of changelog) {
+      if (row.level === selectedLevel && row.bFid != null && row.newCode != null) byFid.set(row.bFid, row);
+    }
+    const keepers = new Set(["unchanged", "renamed", "modified"]);
+    const assigned = (row: ChangeRow | undefined): string | null => {
+      if (!row?.newCode) return null;
+      if (row.codeOutcome === "overflow") return `${row.newCode} (overflow)`;
+      if (row.codeOutcome === "new" && keepers.has(row.relationshipClass)) return `${row.newCode} (new)`;
+      return row.newCode;
+    };
+    return (levelView?.tableRows ?? []).map((r) => ({
+      ...r,
+      b_code: r.b_fid != null ? assigned(byFid.get(r.b_fid)) : null,
+    }));
+  });
+
   const outcomeSummary = $derived.by(() => {
     const counts: Record<string, number> = { retained: 0, new: 0, retired: 0, overflow: 0 };
     for (const row of changelog) counts[row.codeOutcome] = (counts[row.codeOutcome] ?? 0) + 1;
@@ -249,108 +301,59 @@
       </div>
     {/if}
 
-    <section class="step">
-      <h2 class="step-heading">Layers</h2>
-      <div class="dropzones">
-        <div>
-          <label class="zone-label">OLD (already coded)</label>
-          <DropZone
-            bind:files={filesA}
-            urlParam="old"
-            disabled={running || loadingSide === "a"}
-            helpText="Polygon layer with an existing hierarchical code."
-          />
+    <details class="step" bind:open={dropOpen}>
+      <summary class="step-heading">Drop both layers</summary>
+      <div class="drop-body">
+        <div class="dropzones">
+          <div>
+            <label class="zone-label">OLD (already coded)</label>
+            <DropZone
+              bind:files={filesA}
+              urlParam="old"
+              disabled={running || loadingSide === "a"}
+              helpText="Polygon layer with an existing hierarchical code."
+            />
+          </div>
+          <div>
+            <label class="zone-label">NEW (uncoded candidate)</label>
+            <DropZone
+              bind:files={filesB}
+              urlParam="new"
+              disabled={running || loadingSide === "b"}
+              helpText="Polygon layer to reconcile against OLD, same coverage area."
+            />
+          </div>
         </div>
-        <div>
-          <label class="zone-label">NEW (uncoded candidate)</label>
-          <DropZone
-            bind:files={filesB}
-            urlParam="new"
-            disabled={running || loadingSide === "b"}
-            helpText="Polygon layer to reconcile against OLD, same coverage area."
-          />
-        </div>
+        {#if loadingSide === "a"}<p class="status">Loading OLD...</p>{/if}
+        {#if loadingSide === "b"}<p class="status">Loading NEW...</p>{/if}
+        {#if loadError}<div class="error-panel">{loadError}</div>{/if}
       </div>
-      {#if loadingSide === "a"}<p class="status">Loading OLD...</p>{/if}
-      {#if loadingSide === "b"}<p class="status">Loading NEW...</p>{/if}
-      {#if loadError}<div class="error-panel">{loadError}</div>{/if}
-    </section>
+    </details>
+
+    {#if running}
+      <ProgressLine label="Reconciling..." />
+    {/if}
+    {#if error}
+      <div class="error-panel">{error}</div>
+    {/if}
 
     {#if loadedA && loadedB}
-      <section class="step">
-        <h2 class="step-heading">Code format override</h2>
-        <p class="field-hint">Anything left blank or on auto is detected from OLD's own codes.</p>
-        <label class="field">
-          <span>Root code</span>
-          <input type="text" bind:value={rootCode} placeholder="auto-detect" disabled={running} />
-        </label>
-        <label class="field">
-          <span>Delimiter</span>
-          <select bind:value={delimMode} disabled={running}>
-            <option value="auto">Auto-detect</option>
-            <option value="none">None</option>
-            <option value="char">Character</option>
-          </select>
-        </label>
-        {#if delimMode === "char"}
-          <label class="field">
-            <span>Delimiter character</span>
-            <input type="text" maxlength="1" bind:value={delimChar} disabled={running} />
-          </label>
-        {/if}
-        <label class="field">
-          <span>Min width</span>
-          <input
-            type="text"
-            bind:value={minWidth}
-            placeholder="auto-detect (or 3, 2,2,4, auto)"
-            disabled={running}
+      {#if levelViews.length > 1}
+        <section class="step">
+          <h2 class="step-heading">Level</h2>
+          <SegmentedControl
+            bind:value={() => (selectedLevel === null ? null : String(selectedLevel)), (v) => (selectedLevel = Number(v))}
+            options={levelViews.map((v) => ({ value: String(v.level), label: `Level ${v.level}` }))}
+            label="Level"
           />
-        </label>
-        {#if minWidthError}<p class="field-error">{minWidthError}</p>{/if}
-        {#if delimMode === "char" && [...delimChar].length !== 1}
-          <p class="field-error">Enter one delimiter character.</p>
-        {/if}
-      </section>
-
-      <section class="step">
-        <h2 class="step-heading">Target schema</h2>
-        <p class="field-hint">
-          Naming templates for a resolved level's number. Leave both blank per side to auto-detect
-          the hierarchy structurally instead.
-        </p>
-        <fieldset class="fieldset">
-          <legend>OLD</legend>
-          <label class="field">
-            <span>Name template</span>
-            <input type="text" bind:value={nameFieldA} placeholder="auto-detect" disabled={running} />
-          </label>
-          <label class="field">
-            <span>Code template</span>
-            <input type="text" bind:value={codeFieldA} placeholder="auto-detect" disabled={running} />
-          </label>
-        </fieldset>
-        <fieldset class="fieldset">
-          <legend>NEW</legend>
-          <label class="field">
-            <span>Name template</span>
-            <input type="text" bind:value={nameFieldB} placeholder="auto-detect" disabled={running} />
-          </label>
-          <label class="field">
-            <span>Code template</span>
-            <input type="text" bind:value={codeFieldB} placeholder="auto-detect" disabled={running} />
-          </label>
-        </fieldset>
-        {#if !templatesValid}
-          <p class="field-error">Both templates must be set per side, or both left blank, and contain "{"{n}"}".</p>
-        {/if}
-      </section>
+        </section>
+      {/if}
 
       <section class="step">
         <h2 class="step-heading">Thresholds</h2>
         <label class="slider">
           <span>Matched: {Math.round(tauSame * 100)}%</span>
-          <input type="range" min="0" max="1" step="0.01" bind:value={tauSame} disabled={running} />
+          <input type="range" min="0" max="1" step="0.01" bind:value={tauSame} />
           <p class="field-hint">
             How much a 1:1 matched pair must overlap (IoU) to classify as <em>unchanged</em> rather
             than <em>modified</em>.
@@ -358,119 +361,114 @@
         </label>
         <label class="slider">
           <span>Related: {Math.round(tauMatch * 100)}%</span>
-          <input type="range" min="0" max="1" step="0.01" bind:value={tauMatch} disabled={running} />
+          <input type="range" min="0" max="1" step="0.01" bind:value={tauMatch} />
           <p class="field-hint">How much of either polygon must overlap the other to be considered related.</p>
         </label>
-        <label class="checkbox">
-          <input type="checkbox" bind:checked={linkByCode} disabled={running} />
-          <span>Link by code (each level's own hierarchy code column)</span>
-        </label>
-        {#if linkByCode}
+      </section>
+
+      {#if ran}
+        <section class="step">
+          <h2 class="step-heading">Download</h2>
+          <p class="summary-line">
+            {levelCount} level{levelCount === 1 ? "" : "s"} reconciled. {outcomeSummary.retained} retained,
+            {outcomeSummary.new} new, {outcomeSummary.retired} retired, {outcomeSummary.overflow} overflow.
+          </p>
+          <DownloadMenu
+            primaryLabel="Download GeoJSON"
+            filenameStem={fileStem(filesA, filesB)}
+            cachedGeoJSON={resultGeoJSON}
+            exportSource="code_update"
+          />
+          <DownloadMenu
+            primaryLabel="Download Changelog CSV"
+            filenameStem={fileStem(filesA, filesB)}
+            exportSource="code_update_changelog"
+          />
+        </section>
+      {/if}
+
+      <AdvancedOptions bind:open={advancedOpen}>
+        <div class="group">
+          <h3>Code format</h3>
+          <p class="field-hint">Anything left blank or on auto is detected from OLD's own codes.</p>
           <label class="field">
-            <span>Code column to compare, OLD</span>
-            <input type="text" bind:value={codeColA} placeholder="each level's own" disabled={running} />
+            <span>Root code</span>
+            <input type="text" bind:value={rootCode} placeholder="auto-detect" />
           </label>
           <label class="field">
-            <span>Code column to compare, NEW</span>
-            <input type="text" bind:value={codeColB} placeholder="each level's own" disabled={running} />
-          </label>
-        {/if}
-        <label class="checkbox">
-          <input type="checkbox" bind:checked={linkByName} disabled={running} />
-          <span>Link by name (each level's own name column)</span>
-        </label>
-        {#if linkByName}
-          <label class="field">
-            <span>Name column to compare, OLD</span>
-            <input type="text" bind:value={nameColA} placeholder="each level's own" disabled={running} />
-          </label>
-          <label class="field">
-            <span>Name column to compare, NEW</span>
-            <input type="text" bind:value={nameColB} placeholder="each level's own" disabled={running} />
-          </label>
-        {/if}
-        {#if linkByCode && linkByName}
-          <label class="field">
-            <span>Link mode</span>
-            <select bind:value={linkMode} disabled={running}>
-              <option value="either">Either matches</option>
-              <option value="both">Both must match</option>
+            <span>Delimiter</span>
+            <select bind:value={delimMode}>
+              <option value="auto">Auto-detect</option>
+              <option value="none">None</option>
+              <option value="char">Character</option>
             </select>
           </label>
-        {/if}
-        <button class="run-btn" onclick={handleRun} disabled={!canRun || running}>
-          {running ? "Reconciling..." : "Run"}
-        </button>
-      </section>
-    {/if}
-
-    {#if error}
-      <div class="error-panel">{error}</div>
-    {/if}
-
-    {#if ran}
-      <section class="step">
-        <h2 class="step-heading">Result</h2>
-        <p class="summary-line">
-          {levelCount} level{levelCount === 1 ? "" : "s"} reconciled. {outcomeSummary.retained} retained,
-          {outcomeSummary.new} new, {outcomeSummary.retired} retired, {outcomeSummary.overflow} overflow.
-        </p>
-        <div class="changelog-scroll">
-          <table class="changelog-table">
-            <thead>
-              <tr>
-                <th>Lvl</th>
-                <th>Old</th>
-                <th>New</th>
-                <th>Class</th>
-                <th>Outcome</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each changelog as row, i (row.level + "/" + row.clusterId + "/" + i)}
-                <tr title={row.reason}>
-                  <td>{row.level}</td>
-                  <td>{row.oldCode ?? "(none)"}</td>
-                  <td>{row.newCode ?? "(none)"}</td>
-                  <td>{row.relationshipClass}</td>
-                  <td>{row.codeOutcome}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          {#if delimMode === "char"}
+            <label class="field">
+              <span>Delimiter character</span>
+              <input type="text" maxlength="1" bind:value={delimChar} />
+            </label>
+          {/if}
+          <label class="field">
+            <span>Min width</span>
+            <input type="text" bind:value={minWidth} placeholder="auto-detect (or 3, 2,2,4, auto)" />
+          </label>
+          {#if minWidthError}<p class="field-error">{minWidthError}</p>{/if}
+          {#if delimMode === "char" && [...delimChar].length !== 1}
+            <p class="field-error">Enter one delimiter character.</p>
+          {/if}
         </div>
-      </section>
 
-      <section class="step">
-        <DownloadMenu
-          primaryLabel="Download GeoJSON"
-          filenameStem={fileStem(filesA, filesB)}
-          cachedGeoJSON={resultGeoJSON}
-          exportSource="code_update"
-        />
-        <DownloadMenu
-          primaryLabel="Download Changelog CSV"
-          filenameStem={fileStem(filesA, filesB)}
-          exportSource="code_update_changelog"
-        />
-      </section>
+        <div class="group">
+          <h3>Target schema</h3>
+          <p class="field-hint">
+            Naming templates for a resolved level's number. Leave both blank per side to auto-detect
+            the hierarchy structurally instead.
+          </p>
+          <fieldset class="fieldset">
+            <legend>OLD</legend>
+            <label class="field">
+              <span>Name template</span>
+              <input type="text" bind:value={nameFieldA} placeholder="auto-detect" />
+            </label>
+            <label class="field">
+              <span>Code template</span>
+              <input type="text" bind:value={codeFieldA} placeholder="auto-detect" />
+            </label>
+          </fieldset>
+          <fieldset class="fieldset">
+            <legend>NEW</legend>
+            <label class="field">
+              <span>Name template</span>
+              <input type="text" bind:value={nameFieldB} placeholder="auto-detect" />
+            </label>
+            <label class="field">
+              <span>Code template</span>
+              <input type="text" bind:value={codeFieldB} placeholder="auto-detect" />
+            </label>
+          </fieldset>
+          {#if !templatesValid}
+            <p class="field-error">Both templates must be set per side, or both left blank, and contain "{"{n}"}".</p>
+          {/if}
+        </div>
+      </AdvancedOptions>
     {/if}
 
     <p class="privacy">Your files never leave your device.</p>
   </aside>
 
-  <div class="map-container">
-    <MapView
-      geojson={resultGeoJSON}
-      originalGeojson={originalGeoJSON}
-      showSide={resultGeoJSON ? "b" : undefined}
-      bounds={resultBounds ?? loadedBounds}
-      processing={loadingSide !== null || running}
-      registerClear={(fn: () => void) => {
-        clearMap = fn;
-      }}
-    />
-  </div>
+  <ResultView
+    overlayGeojson={levelView?.overlayGeoJSON ?? null}
+    outlineAGeojson={levelView?.outlineAGeoJSON ?? null}
+    outlineBGeojson={levelView?.outlineBGeoJSON ?? null}
+    {tableRows}
+    bounds={levelView?.bounds ?? loadedBounds}
+    processing={loadingSide !== null || running}
+    sideLabels={["OLD", "NEW"]}
+    {classes}
+    bind:showSide
+    bind:selectedClusterId
+  />
 </div>
 
 <style>
@@ -546,6 +544,22 @@
     font-weight: 600;
     color: var(--hdx-neutral-9);
     margin: 0;
+  }
+
+  summary.step-heading {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .drop-body,
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .drop-body {
+    margin-top: 0.6rem;
   }
 
   .dropzones {
@@ -626,34 +640,6 @@
     width: 100%;
   }
 
-  .checkbox {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
-    color: var(--hdx-neutral-8);
-  }
-
-  .run-btn {
-    background: var(--hdx-primary-5);
-    color: var(--hdx-neutral-0);
-    border: none;
-    border-radius: var(--hdx-radius-md);
-    padding: 0.6rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .run-btn:hover:not(:disabled) {
-    background: var(--hdx-primary-9);
-  }
-
-  .run-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   @keyframes pulse {
     0%,
     100% {
@@ -681,45 +667,15 @@
     margin: 0;
   }
 
-  .changelog-scroll {
-    max-height: 260px;
-    overflow-y: auto;
-    border: 1px solid var(--hdx-neutral-1);
-    border-radius: var(--hdx-radius-md);
-  }
 
-  .changelog-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.75rem;
-  }
 
-  .changelog-table thead th {
-    position: sticky;
-    top: 0;
-    background: var(--hdx-neutral-01);
-    text-align: left;
-    font-weight: 600;
-    color: var(--hdx-neutral-7);
-    padding: 0.35rem 0.5rem;
-    border-bottom: 1px solid var(--hdx-neutral-1);
-  }
 
-  .changelog-table td {
-    padding: 0.3rem 0.5rem;
-    border-bottom: 1px solid var(--hdx-neutral-05);
-    color: var(--hdx-neutral-8);
-  }
+
 
   .privacy {
     font-size: 0.75rem;
     color: var(--hdx-neutral-7);
     margin: 0;
     margin-top: auto;
-  }
-
-  .map-container {
-    height: 100%;
-    overflow: hidden;
   }
 </style>
