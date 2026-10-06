@@ -76,6 +76,9 @@ function renameCollidingOgcFid(text: string): string {
   return renamedAny ? lines.join("\n") : text;
 }
 
+// Geometry column names a WKB BLOB may carry (GeoParquet, GDAL keep_wkb).
+const WKB_NAMES = ["geometry", "geom", "wkb_geometry", "the_geom"];
+
 // Normalized geometry expression: fid + MakeValid + Force2D + optional Transform.
 // ST_Read tags geometry with source CRS; single-arg ST_Transform infers it.
 // read_parquet tags geometry with the GeoParquet CRS; untagged GEOMETRY is taken as EPSG:4326.
@@ -231,13 +234,31 @@ export async function loadFile(
   try {
     await createRaw(readFn);
   } catch (err) {
-    if (!group.parquet || !/stoi|no conversion/i.test(String(err))) throw err;
-    // registerFileBuffer transfers (detaches) the first buffer, so re-read the file.
-    const buffer = removeGeoMetaKey(new Uint8Array(await group.parquet.arrayBuffer()));
-    const strippedName = `${prefix}${uid}_nogeo_${group.parquet.name}`;
-    await db.registerFileBuffer(strippedName, buffer);
-    registered.push(strippedName);
-    await createRaw(`read_parquet('${strippedName.replace(/'/g, "''")}')`);
+    if (!/stoi|no conversion/i.test(String(err))) throw err;
+    if (group.parquet) {
+      // registerFileBuffer transfers (detaches) the first buffer, so re-read the file.
+      const buffer = removeGeoMetaKey(new Uint8Array(await group.parquet.arrayBuffer()));
+      const strippedName = `${prefix}${uid}_nogeo_${group.parquet.name}`;
+      await db.registerFileBuffer(strippedName, buffer);
+      registered.push(strippedName);
+      await createRaw(`read_parquet('${strippedName.replace(/'/g, "''")}')`);
+    } else {
+      // WASM spatial can't parse some CRS identifiers (OGC:CRS84); raw WKB skips the CRS.
+      const wkbRead = `ST_Read(${sqlPath}${gpkgOpts}, keep_wkb := true)`;
+      const wkbCols = (
+        (await conn.query(`DESCRIBE SELECT * FROM ${wkbRead}`)).toArray() as Array<{
+          column_name: string;
+          column_type: string;
+        }>
+      )
+        .filter((r) => r.column_type === "BLOB" && WKB_NAMES.includes(r.column_name.toLowerCase()))
+        .map(
+          (r) =>
+            `ST_GeomFromWKB(${JSON.stringify(r.column_name)}) AS ${JSON.stringify(r.column_name)}`,
+        );
+      if (wkbCols.length === 0) throw err;
+      await createRaw(`(SELECT * REPLACE (${wkbCols.join(", ")}) FROM ${wkbRead})`);
+    }
   }
 
   // Detect geometry column and bbox / *_bbox covering columns to exclude
@@ -249,7 +270,6 @@ export async function loadFile(
 
   // After removeGeoMetaKey, a GeoParquet geometry column may appear as BLOB (WKB).
   // Fall back to name-based detection for parquet when no tagged GEOMETRY column exists.
-  const WKB_NAMES = ["geometry", "geom", "wkb_geometry", "the_geom"];
   const geomRow =
     schema.find((r) => r.column_type.startsWith("GEOMETRY")) ??
     (isParquet
