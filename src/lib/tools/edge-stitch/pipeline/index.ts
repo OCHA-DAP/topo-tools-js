@@ -2,7 +2,7 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { buildCoverageCleanEscalating, hasCoverageViolations } from "$lib/db/coverageClean";
 import { hasMicroPolygons, hasNoiseFloorGap } from "$lib/db/coverage";
 import { SNAP_TOLERANCE } from "$lib/db/constants";
-import { tableToGeoJSON } from "$lib/db/geojson";
+import { changedGeoJSON, tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
 import { buildStitchIssues, type StitchIssueRow } from "./issues";
 
@@ -23,6 +23,7 @@ export class PipelineError extends Error {
 export interface StitchResult {
   originalGeoJSON: string;
   stitchedGeoJSON: string;
+  changedGeoJSON: string;
   bounds: [number, number, number, number] | null;
   issues: StitchIssueRow[];
   issuesGeoJSON: string;
@@ -67,6 +68,8 @@ export async function runStitch(
   onProgress: ProgressFn,
   sourceTable = "layer_01",
   attrTable = "layer_attr",
+  // The table whose geometry `changedGeoJSON` compares the stitched units against.
+  compareTable = sourceTable,
 ): Promise<StitchResult> {
   onProgress(2, "Loading input");
   const bounds = await computeBounds(conn, sourceTable);
@@ -109,10 +112,12 @@ export async function runStitch(
   }
 
   const stitchedGeoJSON = await tableToGeoJSON(conn, "st_clean", attrTable);
+  const changed = await changedGeoJSON(conn, "st_clean", compareTable);
 
   return {
     originalGeoJSON,
     stitchedGeoJSON,
+    changedGeoJSON: changed,
     bounds,
     issues: rows,
     issuesGeoJSON: geojson,

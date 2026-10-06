@@ -1,6 +1,7 @@
 <script lang="ts">
   import IssueTable from "$lib/components/IssueTable.svelte";
   import type { NameIssueRow } from "./pipeline/index";
+  import { visible } from "./visible";
 
   let {
     issues,
@@ -17,17 +18,6 @@
   } = $props();
 
   const fixed = $derived(issues?.filter((i) => i.fixed).length ?? 0);
-
-  // Spaces and invisible characters a reviewer can't see are shown as markers.
-  function visible(s: string | null): string {
-    if (s === null) return "";
-    return s
-      .replace(/[\u0000-\u001f\u007f-\u00a0\u00ad\u2000-\u200f\u2028-\u202f\u205f-\u206f\ufeff]/g, (c) =>
-        c === " " ? c : `⟨U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}⟩`,
-      )
-      .replace(/^ | $/g, "␣")
-      .replace(/ {2,}/g, (m) => "␣".repeat(m.length));
-  }
 </script>
 
 <IssueTable
@@ -45,7 +35,13 @@
   {/snippet}
   {#snippet cells(issue)}
     <td class="fit value">{issue.codeA ?? issue.nameColumn ?? ""}</td>
-    <td class="flex value">
+    <td
+      class="flex value"
+      title={issue.codeA === null
+        ? issue.reason
+        : visible(issue.nameA) +
+          (issue.nameB !== null && issue.nameB !== issue.nameA ? ` / ${visible(issue.nameB)}` : "")}
+    >
       {#if issue.codeA === null}
         <span class="muted">{issue.reason}</span>
       {:else}
@@ -53,7 +49,7 @@
           <span class="muted"> / {visible(issue.nameB)}</span>{/if}
       {/if}
     </td>
-    <td class="flex value">
+    <td class="flex value" title={clean && !issue.fixed ? issue.reason : visible(issue.suggested) || undefined}>
       {#if clean && !issue.fixed}
         <span class="muted">left for review</span>
       {:else}

@@ -6,7 +6,10 @@
   import { loadFile } from "$lib/db/loader";
   import { onMount, untrack } from "svelte";
   import IssuesTable from "./IssuesTable.svelte";
-  import MapView from "./MapView.svelte";
+  import MapView from "$lib/components/IssueMapView.svelte";
+  import type { FeatureInfo } from "$lib/components/MapPopup.svelte";
+  import { MAP_COLORS } from "$lib/utils/mapColors";
+  import { fmtArea, fmtLength } from "$lib/utils/format";
   import { PipelineError, runDetect, type IssueKind, type IssueRow } from "./pipeline/index";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
@@ -90,6 +93,26 @@
     if (!row) return;
     selectedKey = key;
     focusBbox = row.bbox.slice() as [number, number, number, number]; // fresh array → always re-zooms
+  }
+
+  const KIND_TONE: Record<IssueKind, string> = {
+    overlap: MAP_COLORS.overlap,
+    gap: MAP_COLORS.gap,
+    "micro-polygon": MAP_COLORS.micro,
+    notch: MAP_COLORS.notch,
+  };
+
+  function describe(key: string): FeatureInfo | null {
+    const r = issues.find((x) => x.key === key);
+    if (!r) return null;
+    const fields: FeatureInfo["fields"] = [
+      ["Max width", fmtLength(r.maxWidthM)],
+      ["Area", fmtArea(r.areaM2)],
+    ];
+    if (r.thinnessRatio !== null) fields.push(["Thinness", r.thinnessRatio.toFixed(3)]);
+    if (r.nearLengthM !== null) fields.push(["Near length", fmtLength(r.nearLengthM)]);
+    if (r.units.length > 0) fields.push(["Units", r.units.join(", ")]);
+    return { title: r.kind, tone: KIND_TONE[r.kind], fields };
   }
 
   function onMapIssueClick(key: string | null): void {
@@ -196,6 +219,7 @@
         {selectedKey}
         processing={running}
         onIssueClick={onMapIssueClick}
+        {describe}
       />
     </div>
     {#if done}

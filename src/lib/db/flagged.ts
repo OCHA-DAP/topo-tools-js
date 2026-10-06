@@ -33,14 +33,14 @@ export async function buildFlagged(
   );
 }
 
-// The map layer and per-key bounds for `sql`, any query yielding (key, geom).
+// The map layer and per-key bounds for `sql`, any query yielding (key, geom); other columns become feature properties.
 export async function flaggedLayer(
   conn: AsyncDuckDBConnection,
   sql: string,
 ): Promise<FlaggedLayer> {
   const geojson = await queryToGeoJSON(
     conn,
-    `SELECT ST_AsGeoJSON(geom) AS _geom, key FROM (${sql}) WHERE geom IS NOT NULL`,
+    `SELECT ST_AsGeoJSON(geom) AS _geom, * EXCLUDE (geom) FROM (${sql}) WHERE geom IS NOT NULL`,
   );
   const rows = (
     await conn.query(`--sql
@@ -55,6 +55,8 @@ export async function flaggedLayer(
   };
 }
 
-// The (key, geom) query for a `buildFlagged` table over layer_01.
-export const flaggedUnitsSql = (flagged: string): string =>
-  `SELECT f.key, g.geom FROM ${flagged} f JOIN layer_01 g USING (fid)`;
+// The (key, geom) query for a `buildFlagged` table over layer_01, plus each finding's severity given its report.
+export const flaggedUnitsSql = (flagged: string, report?: string): string =>
+  report
+    ? `SELECT f.key, r.severity, g.geom FROM ${flagged} f JOIN ${report} r USING (key) JOIN layer_01 g USING (fid)`
+    : `SELECT f.key, g.geom FROM ${flagged} f JOIN layer_01 g USING (fid)`;

@@ -46,7 +46,7 @@ export async function nameResult(
   await buildFlagged(conn, `${prefix}_flagged`, `${prefix}_report`, attrTable, codeColumns);
   return {
     issues,
-    map: await flaggedLayer(conn, flaggedUnitsSql(`${prefix}_flagged`)),
+    map: await flaggedLayer(conn, flaggedUnitsSql(`${prefix}_flagged`, `${prefix}_report`)),
   };
 }
 

@@ -4,13 +4,14 @@
     Map as MaplibreMap,
   } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { createSpin } from "$lib/utils/spin";
   import { MAP_COLORS, MAP_FILL_OPACITY } from "$lib/utils/mapColors";
   import { loadMaplibre, loadStyle, polyFilter, lineWidth } from "$lib/utils/mapStyle";
 
   let {
     geojson = null,
+    changedGeojson = null,
     originalGeojson = null,
     overlayOutlineGeojson = null,
     showSide = undefined,
@@ -20,6 +21,8 @@
     onFeatureClick = undefined,
   }: {
     geojson?: string | null;
+    // The result's units the tool reshaped; when set, the rest of the result takes the input fill.
+    changedGeojson?: string | null;
     originalGeojson?: string | null;
     // Drawn as outlines above both fills, not selectable.
     overlayOutlineGeojson?: string | null;
@@ -37,6 +40,7 @@
   let blobUrl: string | undefined;
   let origBlobUrl: string | undefined;
   let overlayBlobUrl: string | undefined;
+  let changedBlobUrl: string | undefined;
   const { start: startSpin, stop: stopSpin } = createSpin(() => map);
   let selected: { source: string; id: string | number } | undefined;
 
@@ -62,7 +66,7 @@
     );
   }
 
-  function removeSide(source: "original" | "result" | "overlay") {
+  function removeSide(source: "original" | "result" | "overlay" | "changed") {
     if (!map) return;
     if (selected?.source === source) selected = undefined;
     for (const suffix of ["fill", "line", "selected"]) {
@@ -77,7 +81,7 @@
 
   function applySide() {
     if (!map) return;
-    const sides = { original: showSide !== "b", result: showSide !== "a" };
+    const sides = { original: showSide !== "b", result: showSide !== "a", changed: showSide !== "a" };
     for (const [source, visible] of Object.entries(sides)) {
       for (const suffix of ["fill", "line", "selected"]) {
         const id = `${source}-${suffix}`;
@@ -146,7 +150,9 @@
         (map.getSource("result") as GeoJSONSource).setData(rUrl);
       } else {
         map.addSource("result", { type: "geojson", data: rUrl, generateId: true });
-        map.addLayer({ id: "result-fill", type: "fill", source: "result", filter: polyFilter, paint: { "fill-color": MAP_COLORS.result, "fill-opacity": MAP_FILL_OPACITY } }, before);
+        const fill = untrack(() => changedGeojson) ? MAP_COLORS.original : MAP_COLORS.result;
+        map.addLayer({ id: "result-fill", type: "fill", source: "result", filter: polyFilter, paint: { "fill-color": fill, "fill-opacity": MAP_FILL_OPACITY } }, map.getLayer("changed-fill") ? "changed-fill" : before);
+        if (map.getLayer("changed-fill")) map.moveLayer("changed-fill", before);
         map.addLayer({ id: "result-line", type: "line", source: "result", paint: { "line-color": MAP_COLORS.outline, "line-width": lineWidth } }, before);
         addSelectedLayer("result", before);
         applySide();
@@ -154,6 +160,26 @@
     }
 
     apply();
+  });
+
+  $effect(() => {
+    const changed = changedGeojson;
+    if (!map || !styleReady) return;
+    if (map.getLayer("result-fill")) {
+      map.setPaintProperty("result-fill", "fill-color", changed ? MAP_COLORS.original : MAP_COLORS.result);
+    }
+    if (!changed) return removeSide("changed");
+
+    if (changedBlobUrl) URL.revokeObjectURL(changedBlobUrl);
+    changedBlobUrl = URL.createObjectURL(new Blob([changed], { type: "application/json" }));
+    if (map.getSource("changed")) {
+      (map.getSource("changed") as GeoJSONSource).setData(changedBlobUrl);
+    } else {
+      map.addSource("changed", { type: "geojson", data: changedBlobUrl });
+      const before = ["result-line", "original-fill", "overlay-line"].find((l) => map?.getLayer(l));
+      map.addLayer({ id: "changed-fill", type: "fill", source: "changed", filter: polyFilter, paint: { "fill-color": MAP_COLORS.result, "fill-opacity": MAP_FILL_OPACITY } }, before);
+      applySide();
+    }
   });
 
   $effect(() => {
@@ -224,6 +250,7 @@
     if (blobUrl) URL.revokeObjectURL(blobUrl);
     if (origBlobUrl) URL.revokeObjectURL(origBlobUrl);
     if (overlayBlobUrl) URL.revokeObjectURL(overlayBlobUrl);
+    if (changedBlobUrl) URL.revokeObjectURL(changedBlobUrl);
   });
 </script>
 

@@ -24,6 +24,7 @@
   let errorStage = $state(0); // stage number that failed, 0=none
   let stageLabel = $state("");
   let resultGeoJSON = $state<string | null>(null);
+  let changedGeoJSON = $state<string | null>(null);
   let showSide = $state<"a" | "b">("b");
   let originalGeoJSON = $state<string | null>(null);
   let resultBounds = $state<[number, number, number, number] | null>(null);
@@ -56,6 +57,7 @@
     error = null;
     running = true;
     resultGeoJSON = null;
+    changedGeoJSON = null;
     originalGeoJSON = null;
     resultBounds = null;
     currentStage = 0;
@@ -86,6 +88,7 @@
       });
 
       resultGeoJSON = result.geojson;
+      changedGeoJSON = result.changedGeoJSON;
       showSide = "b";
       resultBounds = result.bounds ?? resultBounds;
       currentStage = 6;
@@ -187,6 +190,7 @@
     <MapView
       showSide={resultGeoJSON ? showSide : undefined}
       geojson={resultGeoJSON}
+      changedGeojson={changedGeoJSON}
       originalGeojson={originalGeoJSON}
       bounds={resultBounds}
       processing={running}

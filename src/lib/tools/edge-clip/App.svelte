@@ -32,6 +32,7 @@
   let error = $state<string | null>(null);
 
   let resultGeoJSON = $state<string | null>(null);
+  let changedGeoJSON = $state<string | null>(null);
   let showSide = $state<"a" | "b">("b");
   let originalGeoJSON = $state<string | null>(null);
   let overlayOutlineGeoJSON = $state<string | null>(null);
@@ -104,6 +105,7 @@
     error = null;
     running = true;
     resultGeoJSON = null;
+    changedGeoJSON = null;
     originalGeoJSON = null;
     overlayOutlineGeoJSON = null;
     resultBounds = null;
@@ -135,6 +137,7 @@
       );
 
       resultGeoJSON = result.clippedGeoJSON;
+      changedGeoJSON = result.changedGeoJSON;
       showSide = "b";
       originalGeoJSON = result.inputGeoJSON;
       overlayOutlineGeoJSON = result.overlayOutlineGeoJSON;
@@ -340,6 +343,7 @@
     <MapView
       showSide={resultGeoJSON ? showSide : undefined}
       geojson={resultGeoJSON}
+      changedGeojson={changedGeoJSON}
       originalGeojson={originalGeoJSON}
       overlayOutlineGeojson={overlayOutlineGeoJSON}
       bounds={resultBounds}

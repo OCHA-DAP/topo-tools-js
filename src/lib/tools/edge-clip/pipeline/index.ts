@@ -3,7 +3,7 @@ import { assignOne } from "$lib/db/assignOne";
 import { carryOverlayColumns } from "$lib/db/carryColumns";
 import { clipEngine, mergeClipDetached } from "$lib/db/clipEngine";
 import { mergeMicroPolygons } from "$lib/db/coverage";
-import { tableToGeoJSON } from "$lib/db/geojson";
+import { changedGeoJSON, tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
 import { detectColumns, type ColumnGuess } from "$lib/db/columns";
 import type { MatchColumnOptions } from "$lib/db/codeJoin";
@@ -30,6 +30,7 @@ export interface ClipResult {
   inputGeoJSON: string;
   overlayOutlineGeoJSON: string;
   clippedGeoJSON: string;
+  changedGeoJSON: string;
   bounds: [number, number, number, number] | null;
   overlayFid: number;
   assignedCount: number;
@@ -133,6 +134,7 @@ export async function runClip(
   }
 
   const clippedGeoJSON = await tableToGeoJSON(conn, "cl_clip", "input_layer_attr");
+  const changed = await changedGeoJSON(conn, "cl_clip", "input_layer_01");
 
   const { rows: issues, geojson: issuesGeoJSON } = await buildClipIssues(conn, {
     assignmentMethod: assign.assignmentMethod,
@@ -143,6 +145,7 @@ export async function runClip(
     inputGeoJSON,
     overlayOutlineGeoJSON,
     clippedGeoJSON,
+    changedGeoJSON: changed,
     bounds,
     overlayFid: assign.overlayFid,
     detachedMergedCount: detached.merged,

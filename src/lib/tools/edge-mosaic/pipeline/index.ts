@@ -30,6 +30,7 @@ export interface MosaicResult {
   inputGeoJSON: string;
   overlayOutlineGeoJSON: string;
   mosaicGeoJSON: string;
+  changedGeoJSON: string;
   bounds: [number, number, number, number] | null;
   overlayFid: number;
   issues: MosaicIssueRow[];
@@ -140,6 +141,7 @@ export async function runMosaic(
       },
       "cl_clip",
       "input_layer_attr",
+      "input_layer_01",
     );
   } catch (e) {
     throw new PipelineError(e instanceof Error ? e.message : String(e), 4);
@@ -155,6 +157,7 @@ export async function runMosaic(
     inputGeoJSON,
     overlayOutlineGeoJSON,
     mosaicGeoJSON: stitch.stitchedGeoJSON,
+    changedGeoJSON: stitch.changedGeoJSON,
     bounds,
     overlayFid: assign.overlayFid,
     detachedMergedCount: detached.merged,
