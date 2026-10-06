@@ -1,6 +1,8 @@
 <script lang="ts">
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import { loadFile } from "$lib/db/loader";
@@ -355,8 +357,7 @@
       <div class="tc-error"><strong>Initialisation error:</strong> {duckdbState.initError}</div>
     {/if}
 
-    <section class="tc-step">
-      <h2 class="tc-step-heading">Drop a polygon layer</h2>
+    <InputStep title="Layer" collapsed={cleanedGeoJSON !== null} detail={files[0]?.name ?? ""}>
       <DropZone
         bind:files
         urlParam="url"
@@ -365,7 +366,7 @@
       />
       {#if loading}<p class="tc-status">Loading…</p>{/if}
       {#if loadError}<div class="tc-error">{loadError}</div>{/if}
-    </section>
+    </InputStep>
 
     {#if analyzed}
       <section class="tc-step">
@@ -513,7 +514,7 @@
       </section>
     {/if}
 
-    <p class="tc-privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <div class="tc-result">
@@ -738,12 +739,6 @@
     width: 12px;
     text-align: center;
     font-weight: 700;
-  }
-  .tc-privacy {
-    margin: 0;
-    padding-top: 0.5rem;
-    font-size: 0.7rem;
-    color: var(--hdx-neutral-7);
   }
   .tc-result {
     display: grid;

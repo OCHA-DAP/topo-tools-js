@@ -13,7 +13,10 @@
   } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
+  import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapTableSplit from "$lib/components/MapTableSplit.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -39,7 +42,6 @@
   syncParam("name", textParam, () => nameField, (v) => (nameField = v));
   syncParam("code", textParam, () => codeField, (v) => (codeField = v));
   syncParam("overlap", numberParam, () => minOverlap, (v) => (minOverlap = v));
-  let settingsOpen = $state(false);
 
   let running = $state(false);
   let error = $state<string | null>(null);
@@ -146,10 +148,6 @@
   const templateValid = $derived(nameField.includes("{n}") && codeField.includes("{n}"));
   const overlapValid = $derived(minOverlap > 0 && minOverlap <= 1);
   const settingsValid = $derived(overlapValid && (!useTemplates || templateValid));
-
-  $effect(() => {
-    if (!settingsValid) settingsOpen = true;
-  });
 </script>
 
 <div class="layout">
@@ -172,18 +170,15 @@
       </div>
     {/if}
 
-    <section class="step">
-      <h2 class="step-heading">Input layer</h2>
+    <InputStep title="Layers" collapsed={result !== null} detail={[inputFiles[0]?.name, joinFiles[0]?.name].filter(Boolean).join(", ")}>
+      <h3>Input layer</h3>
       <DropZone
         bind:files={inputFiles}
         urlParam="input"
         disabled={loading}
         helpText="The layer to add columns to, e.g. admin 2."
       />
-    </section>
-
-    <section class="step">
-      <h2 class="step-heading">Join layer</h2>
+      <h3>Join layer</h3>
       <DropZone
         bind:files={joinFiles}
         urlParam="join"
@@ -192,14 +187,11 @@
       />
       {#if loading}<p class="status">Loading and matching…</p>{/if}
       {#if loadError}<div class="error-panel">{loadError}</div>{/if}
-    </section>
+    </InputStep>
 
     {#if loaded}
-      <details class="step" bind:open={settingsOpen}>
-        <summary class="step-heading">
-          Settings <span class="optional">(optional)</span>
-        </summary>
-        <div class="step-body">
+      <AdvancedOptions>
+        <div class="group">
           <label class="field">
             <span>Minimum overlap</span>
             <input type="number" min="0.01" max="1" step="0.05" bind:value={minOverlap} />
@@ -231,7 +223,7 @@
             {/if}
           {/if}
         </div>
-      </details>
+      </AdvancedOptions>
     {/if}
 
     {#if error}
@@ -256,7 +248,7 @@
       </section>
     {/if}
 
-    <p class="privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <MapTableSplit>
@@ -357,13 +349,6 @@
     border-top: 1px solid var(--hdx-neutral-1);
   }
 
-  .step-heading {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--hdx-neutral-9);
-    margin: 0;
-  }
-
   .status {
     font-size: 0.85rem;
     color: var(--hdx-neutral-7);
@@ -397,21 +382,10 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 
-  summary.step-heading {
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .step-body {
+  .group {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-  }
-
-  .optional {
-    font-weight: 400;
-    color: var(--hdx-neutral-7);
-    font-size: 0.85rem;
   }
 
   .toggle {
@@ -448,10 +422,4 @@
     word-break: break-word;
   }
 
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
-  }
 </style>

@@ -4,7 +4,9 @@
   import { PipelineError, runStitch, type StitchIssueRow } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
   import CleanupNote from "$lib/components/CleanupNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import SideToggle from "$lib/components/SideToggle.svelte";
@@ -29,7 +31,6 @@
   const microCount = $derived(issues.filter((i) => i.kind === "micro-polygon").length);
   let hadResidualOverlaps = $state(false);
   let error = $state<string | null>(null);
-
 
   let clearMap: (() => void) | undefined;
 
@@ -132,36 +133,36 @@
       </div>
     {/if}
 
-    <section class="step">
+    <InputStep title="Layer" collapsed={resultGeoJSON !== null} detail={files[0]?.name ?? ""}>
       <DropZone
         bind:files
         urlParam="url"
         disabled={running}
         helpText="Already-tiled polygon layer in WGS84. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />
+    </InputStep>
 
-      {#if running || errorStage > 0}
-        <ol class="stages">
-          {#each STAGE_LABELS as label, i}
-            {@const status = stageStatus(i)}
-            <li class={status}>
-              {#if status === "error"}
-                <span class="stage-x">✕</span>
-              {:else}
-                <span class="stage-dot"></span>
-              {/if}
-              <span class="stage-label"
-                >{i + 1 === currentStage && stageLabel ? stageLabel : label}</span
-              >
-            </li>
-          {/each}
-        </ol>
-      {/if}
+    {#if running || errorStage > 0}
+      <ol class="stages">
+        {#each STAGE_LABELS as label, i}
+          {@const status = stageStatus(i)}
+          <li class={status}>
+            {#if status === "error"}
+              <span class="stage-x">✕</span>
+            {:else}
+              <span class="stage-dot"></span>
+            {/if}
+            <span class="stage-label"
+              >{i + 1 === currentStage && stageLabel ? stageLabel : label}</span
+            >
+          </li>
+        {/each}
+      </ol>
+    {/if}
 
-      {#if error}
-        <div class="error-panel">{error}</div>
-      {/if}
-    </section>
+    {#if error}
+      <div class="error-panel">{error}</div>
+    {/if}
 
     <section class="step">
       {#if hadResidualOverlaps}
@@ -169,15 +170,6 @@
           Some overlaps remain after cleaning — this shouldn't normally happen. Inspect the output
           before relying on it.
         </div>
-      {/if}
-
-      {#if resultGeoJSON}
-        <DownloadMenu
-          primaryLabel="Download GeoJSON"
-          filenameStem={fileStem(files[0])}
-          cachedGeoJSON={resultGeoJSON}
-          exportSource="stitch"
-        />
       {/if}
 
       {#if resultGeoJSON && issues.length > 0}
@@ -192,6 +184,17 @@
             <CleanupNote count={microCount} />
           </div>
         {/if}
+      {/if}
+
+      {#if resultGeoJSON}
+        <DownloadMenu
+          primaryLabel="Download GeoJSON"
+          filenameStem={fileStem(files[0])}
+          cachedGeoJSON={resultGeoJSON}
+          exportSource="stitch"
+        />
+      {/if}
+      {#if resultGeoJSON && issues.length > 0}
         <DownloadMenu
           primaryLabel="Download Issues"
           filenameStem={fileStem(files[0])}
@@ -202,7 +205,7 @@
       {/if}
     </section>
 
-    <p class="privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <div class="map-container">
@@ -373,18 +376,6 @@
     font-size: 0.8rem;
     color: var(--hdx-neutral-7);
     line-height: 1.4;
-  }
-
-
-
-
-
-
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
   }
 
   .map-container {

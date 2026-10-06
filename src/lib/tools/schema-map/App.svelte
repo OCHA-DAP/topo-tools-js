@@ -19,7 +19,9 @@
   } from "./pipeline/editor";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapTableSplit from "$lib/components/MapTableSplit.svelte";
   import MapView from "$lib/components/MapView.svelte";
@@ -298,7 +300,7 @@
       </div>
     {/if}
 
-    <section class="step">
+    <InputStep title="Layer" collapsed={rows.length > 0} detail={files[0]?.name ?? ""}>
       <DropZone
         bind:files
         urlParam="url"
@@ -307,7 +309,7 @@
       />
       {#if loading}<p class="status">Loading file…</p>{/if}
       {#if loadError}<div class="error-panel">{loadError}</div>{/if}
-    </section>
+    </InputStep>
 
     {#if loaded}
       <section class="step">
@@ -404,7 +406,7 @@
       {/if}
     {/if}
 
-    <p class="privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <MapTableSplit>
@@ -599,10 +601,4 @@
     color: var(--hdx-warning-6);
   }
 
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
-  }
 </style>

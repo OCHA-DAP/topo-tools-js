@@ -1,15 +1,22 @@
 <script lang="ts">
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import { textParam, syncParam } from "$lib/utils/syncParam.svelte";
+  import { serialRunner } from "$lib/utils/serialRunner";
   import { loadFile } from "$lib/db/loader";
   import { tableToGeoJSON } from "$lib/db/geojson";
   import type { ExportSource } from "$lib/db/export";
+  import { DEFAULT_DEPTH_COLUMN } from "$lib/tools/schema-fill/pipeline/index";
   import { runPackage, type PackageResult, type TargetSchema } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
+  import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
-  import MapView from "$lib/components/MapView.svelte";
+  import SegmentedControl from "$lib/components/SegmentedControl.svelte";
+  import PackageMap from "./PackageMap.svelte";
+  import { colorByGroup, levelStyles } from "./levelStyle";
 
   const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
@@ -27,13 +34,9 @@
 
   let running = $state(false);
   let error = $state<string | null>(null);
-  let ran = $state(false);
   let result = $state<PackageResult | null>(null);
-
-  type View = { kind: "polygons"; levelIndex: number } | { kind: "points" } | { kind: "lines" };
-  let view = $state<View>({ kind: "polygons", levelIndex: 0 });
-
-  let clearMap: (() => void) | undefined;
+  let levelIndex = $state(-1);
+  let mode = $state<"polygons" | "features">("polygons");
 
   onMount(() => {
     initDuckDB();
@@ -61,21 +64,15 @@
     });
   });
 
-  function resetRun(): void {
-    ran = false;
-    error = null;
-    result = null;
-    view = { kind: "polygons", levelIndex: 0 };
-  }
-
   async function handleLoad(): Promise<void> {
-    clearMap?.();
     loadError = null;
     loading = true;
     loaded = false;
     originalGeoJSON = null;
     loadedBounds = null;
-    resetRun();
+    error = null;
+    result = null;
+    levelIndex = -1;
 
     try {
       await loadFile(duckdbState.db!, duckdbState.conn!, files);
@@ -94,18 +91,18 @@
     running = true;
     result = null;
 
-    const schema: TargetSchema | null =
-      nameField.trim() === "" && codeField.trim() === "" ? null : { nameField, codeField };
+    const schema: TargetSchema | null = bothBlank ? null : { nameField, codeField };
     try {
       result = await runPackage(duckdbState.conn!, schema);
-      view = { kind: "polygons", levelIndex: 0 };
-      ran = true;
+      const n = result.polygons.levels.length;
+      if (levelIndex < 0 || levelIndex >= n) levelIndex = n - 1;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       running = false;
     }
   }
+  const requestRun = serialRunner(handleRun);
 
   function fileStem(file: File): string {
     return file.name.replace(/\.[^.]+$/, "");
@@ -121,28 +118,52 @@
   const templateValid = $derived(
     !oneBlank && (bothBlank || (nameField.includes("{n}") && codeField.includes("{n}"))),
   );
+  const canRun = $derived(loaded && templateValid && !loading);
 
-  const selectedPolygonLevel = $derived(
-    result && view.kind === "polygons" ? result.polygons.levels[view.levelIndex] : undefined,
+  // Reads every setting so any change reruns; the debounce absorbs typing.
+  $effect(() => {
+    const _settings = [nameField, codeField];
+    if (!canRun) return;
+    const timer = setTimeout(() => untrack(requestRun), 400);
+    return () => clearTimeout(timer);
+  });
+
+  const polygonLevels = $derived(result?.polygons.levels ?? []);
+  const packageSources = $derived<ExportSource[]>([
+    ...polygonLevels.flatMap((l) => levelExportSource(l.level) ?? []),
+    "package_points",
+    "package_lines",
+  ]);
+  const selectedPolygonLevel = $derived(polygonLevels[levelIndex]);
+  // Each unit is filled by its parent level's group; the coarsest level has one fill.
+  const polygonFill = $derived.by(() => {
+    if (selectedPolygonLevel) {
+      const parentKey = polygonLevels[levelIndex - 1]?.groupBy ?? [];
+      return colorByGroup(selectedPolygonLevel.resultGeoJSON, parentKey);
+    }
+    return originalGeoJSON ? colorByGroup(originalGeoJSON, []) : null;
+  });
+  const levelList = $derived(
+    result
+      ? levelStyles([...polygonLevels.map((l) => l.level), ...result.points.levels])
+      : [],
   );
-  const activeGeoJSON = $derived(
-    !result
-      ? null
-      : view.kind === "polygons"
-        ? (selectedPolygonLevel?.resultGeoJSON ?? null)
-        : view.kind === "points"
-          ? result.points.resultGeoJSON
-          : result.lines.resultGeoJSON,
-  );
-  const activeBounds = $derived(
-    !result
-      ? null
-      : view.kind === "polygons"
-        ? (selectedPolygonLevel?.bounds ?? null)
-        : view.kind === "points"
-          ? result.points.bounds
-          : result.lines.bounds,
-  );
+  // Exterior lines bound the coarsest level, so they share its style.
+  const styles = $derived.by(() => {
+    if (!result || levelList.length === 0) return levelList;
+    const exterior = Math.min(...result.lines.levels) - 1;
+    return levelList.some((s) => s.depth === exterior)
+      ? levelList
+      : [{ ...levelList[0], depth: exterior }, ...levelList];
+  });
+  const labelField = $derived.by(() => {
+    if (!result) return null;
+    const props = (JSON.parse(result.points.resultGeoJSON).features[0]?.properties ?? {}) as Record<
+      string,
+      unknown
+    >;
+    return Object.keys(props).find((k) => /(^|_)name$/i.test(k)) ?? null;
+  });
 </script>
 
 <div class="layout">
@@ -164,8 +185,7 @@
       </div>
     {/if}
 
-    <section class="step">
-      <h2 class="step-heading">Layer</h2>
+    <InputStep title="Layer" collapsed={result !== null} detail={files[0]?.name ?? ""}>
       <DropZone
         bind:files
         urlParam="url"
@@ -174,118 +194,150 @@
       />
       {#if loading}<p class="status">Loading file…</p>{/if}
       {#if loadError}<div class="error-panel">{loadError}</div>{/if}
-    </section>
+    </InputStep>
 
     {#if loaded}
-      <section class="step">
-        <h2 class="step-heading">Target schema</h2>
-        <p class="field-hint">
-          Naming templates for a resolved level's number. Leave both blank to auto-detect the
-          hierarchy structurally instead.
-        </p>
-        <label class="field">
-          <span>Name template</span>
-          <input type="text" bind:value={nameField} placeholder="auto-detect" disabled={running} />
-        </label>
-        <label class="field">
-          <span>Code template</span>
-          <input type="text" bind:value={codeField} placeholder="auto-detect" disabled={running} />
-        </label>
-        {#if oneBlank}
-          <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
-        {:else if !bothBlank && !templateValid}
-          <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
-        {/if}
-        <button class="run-btn" onclick={handleRun} disabled={running || !templateValid}>
-          {running ? "Packaging…" : "Run"}
-        </button>
-      </section>
+      <AdvancedOptions>
+        <div class="group">
+          <h3>Target schema</h3>
+          <p class="field-hint">
+            Naming templates for a resolved level's number. Leave both blank to auto-detect the
+            hierarchy structurally instead.
+          </p>
+          <label class="field">
+            <span>Name template</span>
+            <input type="text" bind:value={nameField} placeholder="auto-detect" />
+          </label>
+          <label class="field">
+            <span>Code template</span>
+            <input type="text" bind:value={codeField} placeholder="auto-detect" />
+          </label>
+          {#if oneBlank}
+            <p class="field-error">Both templates must be set, or both left blank to auto-detect.</p>
+          {:else if !bothBlank && !templateValid}
+            <p class="field-error">Both templates must contain a "{"{n}"}" placeholder.</p>
+          {/if}
+        </div>
+      </AdvancedOptions>
     {/if}
 
+    {#if running}<p class="status">Packaging…</p>{/if}
     {#if error}
       <div class="error-panel">{error}</div>
     {/if}
 
-    {#if ran && result}
+    {#if result}
       <section class="step">
-        <h2 class="step-heading">Polygons</h2>
-        <div class="level-list">
-          {#each result.polygons.levels as lvl, i (lvl.level)}
-            <button
-              type="button"
-              class="level-btn"
-              class:active={view.kind === "polygons" && view.levelIndex === i}
-              onclick={() => (view = { kind: "polygons", levelIndex: i })}
-            >
-              Level {lvl.level}{lvl.exportable ? "" : " (finest)"}
-            </button>
-          {/each}
-        </div>
-        {#if selectedPolygonLevel}
-          {@const gaps = selectedPolygonLevel.issues.filter((i) => i.kind === "gap").length}
-          {@const micro = selectedPolygonLevel.issues.length - gaps}
-          <p class="summary-line">
-            {selectedPolygonLevel.keptColumns.length} kept, {selectedPolygonLevel.summedColumns
-              .length} summed, {selectedPolygonLevel.droppedColumns.length} dropped.
-            {gaps} gap issue{gaps === 1 ? "" : "s"}{micro > 0
-              ? `, ${micro} micro-polygon${micro === 1 ? "" : "s"} merged or dropped`
-              : ""}.
-          </p>
-          {#if selectedPolygonLevel.exportable}
-            {@const src = levelExportSource(selectedPolygonLevel.level)}
-            {#if src}
-              <DownloadMenu
-                primaryLabel="Download level {selectedPolygonLevel.level}"
-                filenameStem={fileStem(files[0])}
-                cachedGeoJSON={selectedPolygonLevel.resultGeoJSON}
-                exportSource={src}
-              />
-            {/if}
-          {:else}
-            <p class="field-hint">Identical to the source layer; download it directly instead.</p>
+        <h2 class="step-heading">Output</h2>
+        <SegmentedControl
+          bind:value={mode}
+          label="Output"
+          options={[
+            { value: "polygons", label: "Polygons" },
+            { value: "features", label: "Labels and lines" },
+          ]}
+        />
+        {#if mode === "polygons"}
+          <SegmentedControl
+            bind:value={() => String(levelIndex), (v) => (levelIndex = Number(v))}
+            label="Polygon level"
+            options={polygonLevels.map((lvl, i) => ({ value: String(i), label: `Level ${lvl.level}` }))}
+          />
+          <p class="field-hint">Each unit is filled by its parent level's unit, so siblings share a color.</p>
+          {#if selectedPolygonLevel}
+            {@const gaps = selectedPolygonLevel.issues.filter((i) => i.kind === "gap").length}
+            {@const micro = selectedPolygonLevel.issues.length - gaps}
+            <p class="summary-line">
+              {selectedPolygonLevel.keptColumns.length} kept, {selectedPolygonLevel.summedColumns
+                .length} summed, {selectedPolygonLevel.droppedColumns.length} dropped.
+              {gaps} gap issue{gaps === 1 ? "" : "s"}{micro > 0
+                ? `, ${micro} micro-polygon${micro === 1 ? "" : "s"} merged or dropped`
+                : ""}.
+            </p>
           {/if}
+        {:else}
+          <ul class="legend">
+            {#each levelList as s, i (s.depth)}
+              <li>
+                <svg width="56" height="16" aria-hidden="true">
+                  <line
+                    x1="2"
+                    y1="8"
+                    x2="26"
+                    y2="8"
+                    stroke={s.color}
+                    stroke-width={s.width}
+                    stroke-linecap="round"
+                    stroke-dasharray={s.dash ? s.dash.map((d) => d * s.width).join(" ") : undefined}
+                  />
+                  <text
+                    x="32"
+                    y="12"
+                    fill={s.color}
+                    font-size={s.textSize}
+                    font-weight={s.bold ? 700 : 400}>Aa</text
+                  >
+                </svg>
+                <span class:bold={s.bold}>Level {s.depth}{i === 0 ? " (outline)" : ""}</span>
+              </li>
+            {/each}
+          </ul>
         {/if}
       </section>
 
       <section class="step">
-        <h2 class="step-heading">Points</h2>
-        <button type="button" class="level-btn" class:active={view.kind === "points"} onclick={() => (view = { kind: "points" })}>
-          Combined ({result.points.levels.join(", ")})
-        </button>
+        <h2 class="step-heading">Download</h2>
         <DownloadMenu
-          primaryLabel="Download points"
+          primaryLabel="Download package"
           filenameStem={fileStem(files[0])}
-          cachedGeoJSON={result.points.resultGeoJSON}
-          exportSource="package_points"
+          zipName="{fileStem(files[0])}_package"
+          exportSource={packageSources}
         />
-      </section>
-
-      <section class="step">
-        <h2 class="step-heading">Lines</h2>
-        <button type="button" class="level-btn" class:active={view.kind === "lines"} onclick={() => (view = { kind: "lines" })}>
-          Combined ({result.lines.levels.join(", ")})
-        </button>
-        <DownloadMenu
-          primaryLabel="Download lines"
-          filenameStem={fileStem(files[0])}
-          cachedGeoJSON={result.lines.resultGeoJSON}
-          exportSource="package_lines"
-        />
+        {#if mode === "polygons" && selectedPolygonLevel}
+          {@const src = levelExportSource(selectedPolygonLevel.level)}
+          {#if src}
+            <DownloadMenu
+              primaryLabel="Download level {selectedPolygonLevel.level}"
+              filenameStem={fileStem(files[0])}
+              cachedGeoJSON={selectedPolygonLevel.resultGeoJSON}
+              exportSource={src}
+              variant="secondary"
+            />
+          {/if}
+        {:else}
+          <DownloadMenu
+            primaryLabel="Download points"
+            filenameStem={fileStem(files[0])}
+            cachedGeoJSON={result.points.resultGeoJSON}
+            exportSource="package_points"
+            variant="secondary"
+          />
+          <DownloadMenu
+            primaryLabel="Download lines"
+            filenameStem={fileStem(files[0])}
+            cachedGeoJSON={result.lines.resultGeoJSON}
+            exportSource="package_lines"
+            variant="secondary"
+          />
+        {/if}
       </section>
     {/if}
 
-    <p class="privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <div class="map-container">
-    <MapView
-      geojson={activeGeoJSON}
-      originalGeojson={originalGeoJSON}
-      bounds={activeBounds ?? loadedBounds}
+    <PackageMap
+      polygons={polygonFill}
+      polygonLevel={selectedPolygonLevel?.level ?? null}
+      lines={result?.lines.resultGeoJSON ?? null}
+      points={result?.points.resultGeoJSON ?? null}
+      {styles}
+      depthColumn={DEFAULT_DEPTH_COLUMN}
+      {labelField}
+      {mode}
+      bounds={loadedBounds}
       processing={loading || running}
-      registerClear={(fn: () => void) => {
-        clearMap = fn;
-      }}
     />
   </div>
 </div>
@@ -401,26 +453,6 @@
     margin: 0;
   }
 
-  .run-btn {
-    background: var(--hdx-primary-5);
-    color: var(--hdx-neutral-0);
-    border: none;
-    border-radius: var(--hdx-radius-md);
-    padding: 0.6rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .run-btn:hover:not(:disabled) {
-    background: var(--hdx-primary-9);
-  }
-
-  .run-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   @keyframes pulse {
     0%,
     100% {
@@ -441,30 +473,31 @@
     word-break: break-word;
   }
 
-  .level-list {
+  .legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-  }
-
-  .level-btn {
-    background: var(--hdx-neutral-0);
-    color: var(--hdx-neutral-8);
-    border: 1px solid var(--hdx-neutral-2);
-    border-radius: 999px;
-    padding: 0.3rem 0.7rem;
+    flex-direction: column;
+    gap: 0.25rem;
     font-size: 0.8rem;
-    cursor: pointer;
+    color: var(--hdx-neutral-8);
   }
 
-  .level-btn:hover {
-    background: var(--hdx-neutral-05);
+  .legend li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
-  .level-btn.active {
-    background: var(--hdx-primary-5);
-    color: var(--hdx-neutral-0);
-    border-color: var(--hdx-primary-5);
+  .legend .bold {
+    font-weight: 600;
+  }
+
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
   }
 
   .summary-line {
@@ -472,13 +505,6 @@
     color: var(--hdx-neutral-7);
     line-height: 1.4;
     margin: 0;
-  }
-
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
   }
 
   .map-container {

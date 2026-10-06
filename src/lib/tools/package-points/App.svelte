@@ -6,6 +6,8 @@
   import { runPackagePoints, type TargetSchema } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
 
@@ -142,8 +144,7 @@
       </div>
     {/if}
 
-    <section class="step">
-      <h2 class="step-heading">Layer</h2>
+    <InputStep title="Layer" collapsed={ran} detail={files[0]?.name ?? ""}>
       <DropZone
         bind:files
         urlParam="url"
@@ -152,7 +153,7 @@
       />
       {#if loading}<p class="status">Loading file…</p>{/if}
       {#if loadError}<div class="error-panel">{loadError}</div>{/if}
-    </section>
+    </InputStep>
 
     {#if loaded}
       <section class="step">
@@ -204,7 +205,7 @@
       </section>
     {/if}
 
-    <p class="privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <div class="map-container">
@@ -376,13 +377,6 @@
     color: var(--hdx-neutral-7);
     line-height: 1.4;
     margin: 0;
-  }
-
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
   }
 
   .map-container {

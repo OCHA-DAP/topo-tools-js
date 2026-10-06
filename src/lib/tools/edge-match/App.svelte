@@ -4,6 +4,8 @@
   import { onMount, untrack } from "svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import CleanupNote from "$lib/components/CleanupNote.svelte";
   import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
@@ -53,7 +55,6 @@
   let detachedKeptCount = $state<number | null>(null);
   let assignedOverlayLabel = $state<string | null>(null);
   let passthrough = $state(false);
-  let advancedOpen = $state(false);
   let matchMode = $state<MatchMode>("auto");
   // What the last run used; under "auto" this is the automatic pick.
   let resolvedMode = $state<"one" | "many" | null>(null);
@@ -81,10 +82,6 @@
     (v) => (matchMode = v),
   );
   syncParam("passthrough", boolParam, () => passthrough, (v) => (passthrough = v));
-  $effect(() => {
-    if (passthrough) advancedOpen = true;
-  });
-
   onMount(() => {
     initDuckDB();
   });
@@ -290,25 +287,22 @@
       </div>
     {/if}
 
-    <section class="step">
-      <h2 class="step-heading">Input layer</h2>
+    <InputStep title="Layers" collapsed={resultGeoJSON !== null} detail={[inputFiles[0]?.name, overlayFiles[0]?.name].filter(Boolean).join(", ")}>
+      <h3>Input layer</h3>
       <DropZone
         bind:files={inputFiles}
         urlParam="input"
         disabled={running}
         helpText="The layer to match and extend, any polygon set at any admin level. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />
-    </section>
-
-    <section class="step">
-      <h2 class="step-heading">Overlay layer</h2>
+      <h3>Overlay layer</h3>
       <DropZone
         bind:files={overlayFiles}
         urlParam="overlay"
         disabled={running}
         helpText="The boundary to match and clip against, one level up or many."
       />
-    </section>
+    </InputStep>
 
     <section class="step">
       <h2 class="step-heading">Input layer matches how many overlay polygons?</h2>
@@ -331,7 +325,7 @@
       {/if}
     </section>
 
-    <AdvancedOptions bind:open={advancedOpen}>
+    <AdvancedOptions>
       {#if inputColumns && overlayColumns}
         <CodeJoinPicker
           inputColumns={inputColumns.all}
@@ -438,7 +432,7 @@
       </section>
     {/if}
 
-    <p class="privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <div class="map-container">
@@ -568,9 +562,6 @@
     margin: 0;
   }
 
-
-
-
   .passthrough-field {
     display: flex;
     align-items: center;
@@ -578,9 +569,6 @@
     font-size: 0.8rem;
     color: var(--hdx-neutral-8);
   }
-
-
-
 
   .group-error {
     font-size: 0.75rem;
@@ -624,13 +612,6 @@
 
   .issues-notes p {
     margin: 0;
-  }
-
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
   }
 
   .map-container {

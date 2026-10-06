@@ -10,6 +10,15 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention.
   connection.
 - `package` MUST NOT expose a per-sub-tool step option; each sub-tool
   runs its own full pipeline.
+- The browser tool MUST run on load and on every valid template change,
+  debounced, with the target schema templates under Advanced options.
+- The browser tool MUST show either polygons or lines with point labels,
+  never both. Polygons MUST be filled one level at a time, coloring each
+  unit by its parent level's unit (the coarsest level in one color).
+  Lines and labels MUST be styled by depth: coarser levels darker, wider
+  or larger, finer lines dashed then dotted, exterior lines in the
+  coarsest level's style. Points MUST render as name labels only, centered
+  on the point, coarser labels winning collisions.
 
 ## Configuration
 

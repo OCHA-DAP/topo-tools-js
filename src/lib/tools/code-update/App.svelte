@@ -9,6 +9,8 @@
   import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import ProgressLine from "$lib/components/ProgressLine.svelte";
   import SegmentedControl from "$lib/components/SegmentedControl.svelte";
@@ -32,8 +34,6 @@
   let loadedA = $state(false);
   let loadedB = $state(false);
   let loadError = $state<string | null>(null);
-  let dropOpen = $state(true);
-  let advancedOpen = $state(false);
   let showSide = $state<"a" | "b">("b");
   let loadedBounds = $state<[number, number, number, number] | null>(null);
 
@@ -66,14 +66,6 @@
   syncParam("code-b", textParam, () => codeFieldB, (v) => (codeFieldB = v));
   syncParam("match", numberParam, () => tauMatch, (v) => (tauMatch = v));
   syncParam("same", numberParam, () => tauSame, (v) => (tauSame = v));
-
-  const advancedSet = $derived(
-    [rootCode, minWidth, nameFieldA, codeFieldA, nameFieldB, codeFieldB].some((v) => v.trim() !== "") ||
-      delimMode !== "auto",
-  );
-  $effect(() => {
-    if (advancedSet) advancedOpen = true;
-  });
 
   let running = $state(false);
   let error = $state<string | null>(null);
@@ -115,7 +107,6 @@
     selectedLevel = null;
     selectedClusterId = null;
     showSide = "b";
-    dropOpen = true;
   }
 
   $effect(() => {
@@ -170,7 +161,6 @@
   async function handleRun(): Promise<void> {
     error = null;
     running = true;
-    const firstRun = !ran;
 
     try {
       const result = await runCodeUpdate(duckdbState.conn!, {
@@ -196,7 +186,6 @@
       levelViews = result.levelViews;
       if (!levelViews.some((v) => v.level === selectedLevel)) selectedLevel = levelViews.at(-1)?.level ?? null;
       ran = true;
-      if (firstRun) dropOpen = false;
     } catch (e) {
       resetRun();
       error = e instanceof Error ? e.message : String(e);
@@ -301,54 +290,33 @@
       </div>
     {/if}
 
-    <details class="step" bind:open={dropOpen}>
-      <summary class="step-heading">Drop both layers</summary>
-      <div class="drop-body">
-        <div class="dropzones">
-          <div>
-            <label class="zone-label">OLD (already coded)</label>
-            <DropZone
-              bind:files={filesA}
-              urlParam="old"
-              disabled={running || loadingSide === "a"}
-              helpText="Polygon layer with an existing hierarchical code."
-            />
-          </div>
-          <div>
-            <label class="zone-label">NEW (uncoded candidate)</label>
-            <DropZone
-              bind:files={filesB}
-              urlParam="new"
-              disabled={running || loadingSide === "b"}
-              helpText="Polygon layer to reconcile against OLD, same coverage area."
-            />
-          </div>
+    <InputStep title="Layers" collapsed={ran} detail={[filesA[0]?.name, filesB[0]?.name].filter(Boolean).join(", ")}>
+      <div class="dropzones">
+        <div>
+          <label class="zone-label">OLD (already coded)</label>
+          <DropZone
+            bind:files={filesA}
+            urlParam="old"
+            disabled={running || loadingSide === "a"}
+            helpText="Polygon layer with an existing hierarchical code."
+          />
         </div>
-        {#if loadingSide === "a"}<p class="status">Loading OLD...</p>{/if}
-        {#if loadingSide === "b"}<p class="status">Loading NEW...</p>{/if}
-        {#if loadError}<div class="error-panel">{loadError}</div>{/if}
+        <div>
+          <label class="zone-label">NEW (uncoded candidate)</label>
+          <DropZone
+            bind:files={filesB}
+            urlParam="new"
+            disabled={running || loadingSide === "b"}
+            helpText="Polygon layer to reconcile against OLD, same coverage area."
+          />
+        </div>
       </div>
-    </details>
-
-    {#if running}
-      <ProgressLine label="Reconciling..." />
-    {/if}
-    {#if error}
-      <div class="error-panel">{error}</div>
-    {/if}
+      {#if loadingSide === "a"}<p class="status">Loading OLD...</p>{/if}
+      {#if loadingSide === "b"}<p class="status">Loading NEW...</p>{/if}
+      {#if loadError}<div class="error-panel">{loadError}</div>{/if}
+    </InputStep>
 
     {#if loadedA && loadedB}
-      {#if levelViews.length > 1}
-        <section class="step">
-          <h2 class="step-heading">Level</h2>
-          <SegmentedControl
-            bind:value={() => (selectedLevel === null ? null : String(selectedLevel)), (v) => (selectedLevel = Number(v))}
-            options={levelViews.map((v) => ({ value: String(v.level), label: `Level ${v.level}` }))}
-            label="Level"
-          />
-        </section>
-      {/if}
-
       <section class="step">
         <h2 class="step-heading">Thresholds</h2>
         <label class="slider">
@@ -366,28 +334,7 @@
         </label>
       </section>
 
-      {#if ran}
-        <section class="step">
-          <h2 class="step-heading">Download</h2>
-          <p class="summary-line">
-            {levelCount} level{levelCount === 1 ? "" : "s"} reconciled. {outcomeSummary.retained} retained,
-            {outcomeSummary.new} new, {outcomeSummary.retired} retired, {outcomeSummary.overflow} overflow.
-          </p>
-          <DownloadMenu
-            primaryLabel="Download GeoJSON"
-            filenameStem={fileStem(filesA, filesB)}
-            cachedGeoJSON={resultGeoJSON}
-            exportSource="code_update"
-          />
-          <DownloadMenu
-            primaryLabel="Download Changelog CSV"
-            filenameStem={fileStem(filesA, filesB)}
-            exportSource="code_update_changelog"
-          />
-        </section>
-      {/if}
-
-      <AdvancedOptions bind:open={advancedOpen}>
+      <AdvancedOptions>
         <div class="group">
           <h3>Code format</h3>
           <p class="field-hint">Anything left blank or on auto is detected from OLD's own codes.</p>
@@ -454,7 +401,48 @@
       </AdvancedOptions>
     {/if}
 
-    <p class="privacy">Your files never leave your device.</p>
+    {#if running}
+      <ProgressLine label="Reconciling..." />
+    {/if}
+    {#if error}
+      <div class="error-panel">{error}</div>
+    {/if}
+
+    {#if loadedA && loadedB}
+      {#if levelViews.length > 1}
+        <section class="step">
+          <h2 class="step-heading">Level</h2>
+          <SegmentedControl
+            bind:value={() => (selectedLevel === null ? null : String(selectedLevel)), (v) => (selectedLevel = Number(v))}
+            options={levelViews.map((v) => ({ value: String(v.level), label: `Level ${v.level}` }))}
+            label="Level"
+          />
+        </section>
+      {/if}
+
+      {#if ran}
+        <section class="step">
+          <h2 class="step-heading">Download</h2>
+          <p class="summary-line">
+            {levelCount} level{levelCount === 1 ? "" : "s"} reconciled. {outcomeSummary.retained} retained,
+            {outcomeSummary.new} new, {outcomeSummary.retired} retired, {outcomeSummary.overflow} overflow.
+          </p>
+          <DownloadMenu
+            primaryLabel="Download GeoJSON"
+            filenameStem={fileStem(filesA, filesB)}
+            cachedGeoJSON={resultGeoJSON}
+            exportSource="code_update"
+          />
+          <DownloadMenu
+            primaryLabel="Download Changelog CSV"
+            filenameStem={fileStem(filesA, filesB)}
+            exportSource="code_update_changelog"
+          />
+        </section>
+      {/if}
+    {/if}
+
+    <PrivacyNote />
   </aside>
 
   <ResultView
@@ -546,20 +534,10 @@
     margin: 0;
   }
 
-  summary.step-heading {
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .drop-body,
   .group {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-  }
-
-  .drop-body {
-    margin-top: 0.6rem;
   }
 
   .dropzones {
@@ -667,15 +645,4 @@
     margin: 0;
   }
 
-
-
-
-
-
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
-  }
 </style>

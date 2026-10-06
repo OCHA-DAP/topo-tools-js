@@ -20,6 +20,7 @@ export type { PolygonIssueRow } from "./issues";
 
 export interface PackagePolygonsLevelResult {
   level: number;
+  groupBy: string[];
   exportable: boolean;
   resultGeoJSON: string;
   bounds: [number, number, number, number] | null;
@@ -162,6 +163,7 @@ export async function runPackagePolygons(
 
     levels.push({
       level: plan.level,
+      groupBy: plan.groupBy,
       exportable,
       resultGeoJSON,
       bounds,

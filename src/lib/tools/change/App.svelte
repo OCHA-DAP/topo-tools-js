@@ -1,6 +1,8 @@
 <script lang="ts">
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import { choiceParam, numberParam, syncParam, textParam } from "$lib/utils/syncParam.svelte";
@@ -34,7 +36,7 @@
   let loadedB = $state(false);
   let loadingSide = $state<"a" | "b" | null>(null);
   let loadError = $state<string | null>(null);
-  let dropOpen = $state(true);
+  let ran = $state(false);
 
   // Auto-detected columns + user selections
   let colsA = $state<ColumnGuess | null>(null);
@@ -158,7 +160,7 @@
     loadError = null;
     showSide = "b";
     reclassifyPending = false;
-    dropOpen = true;
+    ran = false;
     if (reclassifyTimer) {
       clearTimeout(reclassifyTimer);
       reclassifyTimer = undefined;
@@ -240,7 +242,7 @@
       bounds = result.bounds;
       currentStage = 7;
       stageLabel = "Done";
-      dropOpen = false;
+      ran = true;
       exposeDebugHook();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -408,52 +410,31 @@
       </div>
     {/if}
 
-    <details class="cw-step" bind:open={dropOpen}>
-      <summary class="cw-step-heading">Drop both layers</summary>
-      <div class="cw-drop-body">
-        <div class="cw-dropzones">
-          <div data-testid="dropzone-a">
-            <label class="cw-zone-label">Version A</label>
-            <DropZone
-              bind:files={filesA}
-              urlParam="old"
-              disabled={running || loadingSide === "a"}
-              helpText="Older version. Polygon layer in any supported format."
-            />
-          </div>
-          <div data-testid="dropzone-b">
-            <label class="cw-zone-label">Version B</label>
-            <DropZone
-              bind:files={filesB}
-              urlParam="new"
-              disabled={running || loadingSide === "b"}
-              helpText="Newer version. Same coverage area."
-            />
-          </div>
+    <InputStep title="Layers" collapsed={ran} detail={[filesA[0]?.name, filesB[0]?.name].filter(Boolean).join(", ")}>
+      <div class="cw-dropzones">
+        <div data-testid="dropzone-a">
+          <label class="cw-zone-label">Version A</label>
+          <DropZone
+            bind:files={filesA}
+            urlParam="old"
+            disabled={running || loadingSide === "a"}
+            helpText="Older version. Polygon layer in any supported format."
+          />
         </div>
-        {#if loadingSide === "a"}<p class="cw-status">Loading Version A…</p>{/if}
-        {#if loadingSide === "b"}<p class="cw-status">Loading Version B…</p>{/if}
-        {#if loadError}<div class="cw-error">{loadError}</div>{/if}
-        {#if running || errorStage > 0}
-          <ol class="cw-stages">
-            {#each STAGE_LABELS as label, i}
-              {@const status = stageStatus(i)}
-              <li class={status}>
-                {#if status === "error"}
-                  <span class="cw-stage-x">✕</span>
-                {:else}
-                  <span class="cw-stage-dot"></span>
-                {/if}
-                <span class="cw-stage-label">
-                  {i + 1 === currentStage && stageLabel ? stageLabel : label}
-                </span>
-              </li>
-            {/each}
-          </ol>
-        {/if}
-        {#if error}<div class="cw-error">{error}</div>{/if}
+        <div data-testid="dropzone-b">
+          <label class="cw-zone-label">Version B</label>
+          <DropZone
+            bind:files={filesB}
+            urlParam="new"
+            disabled={running || loadingSide === "b"}
+            helpText="Newer version. Same coverage area."
+          />
+        </div>
       </div>
-    </details>
+      {#if loadingSide === "a"}<p class="cw-status">Loading Version A…</p>{/if}
+      {#if loadingSide === "b"}<p class="cw-status">Loading Version B…</p>{/if}
+      {#if loadError}<div class="cw-error">{loadError}</div>{/if}
+    </InputStep>
 
     {#if overlayGeoJSON || errorStage > 0}
     <section class="cw-step">
@@ -574,6 +555,25 @@
     </section>
     {/if}
 
+    {#if running || errorStage > 0}
+      <ol class="cw-stages">
+        {#each STAGE_LABELS as label, i}
+          {@const status = stageStatus(i)}
+          <li class={status}>
+            {#if status === "error"}
+              <span class="cw-stage-x">✕</span>
+            {:else}
+              <span class="cw-stage-dot"></span>
+            {/if}
+            <span class="cw-stage-label">
+              {i + 1 === currentStage && stageLabel ? stageLabel : label}
+            </span>
+          </li>
+        {/each}
+      </ol>
+    {/if}
+    {#if error}<div class="cw-error">{error}</div>{/if}
+
     {#if overlayGeoJSON}
       <section class="cw-step">
         <h2 class="cw-step-heading">Download</h2>
@@ -587,7 +587,7 @@
       </section>
     {/if}
 
-    <p class="cw-privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <ResultView
@@ -663,23 +663,11 @@
     padding-top: 0.75rem;
     border-top: 1px solid var(--hdx-neutral-1);
   }
-  .cw-drop-body {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
   .cw-step-heading {
     font-size: 1rem;
     font-weight: 600;
     color: var(--hdx-neutral-9);
     margin: 0;
-  }
-  summary.cw-step-heading {
-    cursor: pointer;
-    user-select: none;
-  }
-  summary.cw-step-heading:hover {
-    color: var(--hdx-neutral-8);
   }
   .cw-dropzones {
     display: flex;
@@ -847,11 +835,5 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-  }
-  .cw-privacy {
-    margin: 0;
-    padding-top: 0.5rem;
-    font-size: 0.7rem;
-    color: var(--hdx-neutral-7);
   }
 </style>
