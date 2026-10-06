@@ -157,6 +157,20 @@ name instead of repeating them.
 - `schema-join` and `schema-map` MUST NOT apply this rule, since they
   never modify geometry.
 
+## Notches (`$lib/db/notches.ts`)
+
+- A notch is a pair of units whose unshared boundary segments (segments no
+  other unit has) run within `NOTCH_SPACING / 8` of each other along at
+  least `NOTCH_MIN_SCORE` spacings, summed over both units. Detection MUST
+  match topo-tools-py's `detect_notches` unit pairs and scores.
+- Closing a notch MUST move each flagged segment's endpoint exactly onto
+  the other unit, inside a window `NOTCH_WINDOW_MARGIN` around the notch,
+  only when the gap is at most `NOTCH_MAX_GAP_RATIO` of the segment's
+  length. A gap those moves enclose between the two units, with no other
+  unit inside it, MUST merge into the unit sharing more of its border.
+- A closing failure MUST be caught and logged, leaving the table untouched
+  (`tryCloseNotches`).
+
 ## Clip-detached pieces (`$lib/db/coverage.ts::mergeDetachedParts`)
 
 Shared by `edge-clip`, `edge-mosaic` and `edge-match`'s per-group clip, run on

@@ -1,6 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { SNAP_TOLERANCE } from "./constants";
+import { NOTCH_SPACING, SNAP_TOLERANCE } from "./constants";
 import { buildGapTable, buildOverlapTable, emptyRegions, isMicroSql } from "./coverage";
+import { detectNotches } from "./notches";
 import { degSqToM2, degToM } from "./units";
 
 // Shared gap/overlap issues-table assembly, used by topo-clean (against
@@ -16,11 +17,12 @@ export interface IssueRow {
   areaM2: number; // approximate, for display/sorting
   maxWidthM: number; // Maximum Inscribed Circle diameter, approximate
   thinnessRatio: number | null; // Polsby-Popper compactness; gap rows only, null for overlaps
-  units: number[]; // fids involved (overlaps: two units; micro-polygons: one; gaps: none)
+  nearLengthM: number | null; // notch rows only: length of the two units' edges running close
+  units: number[]; // fids involved (overlaps, notches: two units; micro-polygons: one; gaps: none)
   bbox: [number, number, number, number];
 }
 
-export type IssueKind = "gap" | "overlap" | "micro-polygon";
+export type IssueKind = "gap" | "overlap" | "micro-polygon" | "notch";
 
 export interface IssuesResult {
   rows: IssueRow[];
@@ -103,6 +105,27 @@ export async function buildMicroRegions(
   }
 }
 
+// Every notch in sourceTable, as detectNotches' (n, unit_a, unit_b, score, geom).
+// Returns false when detection threw.
+export async function buildNotchRegions(
+  conn: AsyncDuckDBConnection,
+  targetTable: string,
+  sourceTable: string,
+): Promise<boolean> {
+  try {
+    await detectNotches(conn, sourceTable, targetTable);
+    return true;
+  } catch (e) {
+    console.warn("notch detection failed; skipping notches:", e);
+    await conn.query(`--sql
+      CREATE OR REPLACE TABLE ${targetTable} AS
+      SELECT NULL::BIGINT AS n, NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b,
+             NULL::DOUBLE AS score, NULL::GEOMETRY AS geom WHERE FALSE
+    `);
+    return false;
+  }
+}
+
 // Gap issue rows for regionsTable's holes wider than the noise floor, as
 // topo-tools-py's gap_issues_sql.
 export function gapIssuesSql(regionsTable: string): string {
@@ -127,6 +150,7 @@ export interface AssembleIssuesTables {
   gapRegionsTable: string;
   overlapRegionsTable: string;
   microRegionsTable?: string;
+  notchRegionsTable?: string;
 }
 
 // Union a gap-regions table and an overlap-regions table (built by
@@ -134,7 +158,13 @@ export interface AssembleIssuesTables {
 // row list + map GeoJSON from it.
 export async function assembleIssues(
   conn: AsyncDuckDBConnection,
-  { issuesTable, gapRegionsTable, overlapRegionsTable, microRegionsTable }: AssembleIssuesTables,
+  {
+    issuesTable,
+    gapRegionsTable,
+    overlapRegionsTable,
+    microRegionsTable,
+    notchRegionsTable,
+  }: AssembleIssuesTables,
   failedKinds: Set<IssueKind>,
 ): Promise<IssuesResult> {
   // Linear scalings (degSqToM2(x) = x * areaFactor, degToM(x) = x * widthFactor) —
@@ -147,7 +177,7 @@ export async function assembleIssues(
     SELECT key, kind, area_deg, mic_radius_deg,
            area_deg * ${areaFactor} AS area_m2,
            mic_radius_deg * 2 * ${widthFactor} AS max_width_m,
-           thinness_ratio,
+           thinness_ratio, near_length_m,
            fixed, reason,
            NULL::DOUBLE AS filled_area_m2,
            NULL::DOUBLE AS unit_a_area_change_m2,
@@ -157,6 +187,7 @@ export async function assembleIssues(
       SELECT 'gap-' || n AS key, 'gap' AS kind, ST_Area(geom) AS area_deg,
              (ST_MaximumInscribedCircle(geom)).radius AS mic_radius_deg,
              4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2) AS thinness_ratio,
+             NULL::DOUBLE AS near_length_m,
              NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b,
              FALSE AS fixed, NULL::VARCHAR AS reason, geom,
              ST_XMin(geom) AS xmin, ST_YMin(geom) AS ymin, ST_XMax(geom) AS xmax, ST_YMax(geom) AS ymax
@@ -164,11 +195,12 @@ export async function assembleIssues(
       UNION ALL
       SELECT 'overlap-' || n, 'overlap', ST_Area(geom),
              (ST_MaximumInscribedCircle(geom)).radius,
-             NULL::DOUBLE,
+             NULL::DOUBLE, NULL::DOUBLE,
              fa, fb, FALSE, NULL::VARCHAR, geom,
              ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
       FROM ${overlapRegionsTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
       ${microRegionsTable ? `UNION ALL ${microRegionsSql(microRegionsTable, "micro-polygon-")}` : ""}
+      ${notchRegionsTable ? `UNION ALL ${notchRegionsSql(notchRegionsTable)}` : ""}
     ) t
   `);
   return readIssues(conn, issuesTable, failedKinds);
@@ -180,8 +212,18 @@ function microRegionsSql(regionsTable: string, keyPrefix: string): string {
   return `--sql
       SELECT '${keyPrefix}' || n, 'micro-polygon', ST_Area(geom),
              (ST_MaximumInscribedCircle(geom)).radius,
-             NULL::DOUBLE,
+             NULL::DOUBLE, NULL::DOUBLE,
              unit_a, unit_b, fixed, reason, geom,
+             ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
+      FROM ${regionsTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)`;
+}
+
+// Notch rows in assembleIssues' inner column order. Area and width stay null, as in py.
+function notchRegionsSql(regionsTable: string): string {
+  return `--sql
+      SELECT 'notch-' || n, 'notch', NULL::DOUBLE, NULL::DOUBLE, NULL::DOUBLE,
+             score * ${degToM(NOTCH_SPACING)},
+             unit_a, unit_b, FALSE, NULL::VARCHAR, geom,
              ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)
       FROM ${regionsTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)`;
 }
@@ -202,9 +244,10 @@ export async function replaceMicroIssues(
     SELECT key, kind, area_deg, mic_radius_deg,
            area_deg * ${areaFactor} AS area_m2,
            mic_radius_deg * 2 * ${widthFactor} AS max_width_m,
-           thinness_ratio, fixed, reason, unit_a, unit_b, geom, xmin, ymin, xmax, ymax
+           thinness_ratio, near_length_m, fixed, reason, unit_a, unit_b,
+           geom, xmin, ymin, xmax, ymax
     FROM (${microRegionsSql(regionsTable, keyPrefix)}) t(
-      key, kind, area_deg, mic_radius_deg, thinness_ratio,
+      key, kind, area_deg, mic_radius_deg, thinness_ratio, near_length_m,
       unit_a, unit_b, fixed, reason, geom, xmin, ymin, xmax, ymax)
   `);
 }
@@ -216,7 +259,8 @@ export async function readIssues(
   failedKinds: Set<IssueKind>,
 ): Promise<IssuesResult> {
   const meta = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, unit_b, xmin, ymin, xmax, ymax
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, near_length_m, unit_a, unit_b,
+           xmin, ymin, xmax, ymax
     FROM ${issuesTable}
     ORDER BY
       CASE kind WHEN 'overlap' THEN 0 ELSE 1 END,
@@ -229,6 +273,7 @@ export async function readIssues(
       area_m2: number | null;
       max_width_m: number | null;
       thinness_ratio: number | null;
+      near_length_m: number | null;
       unit_a: bigint | number | null;
       unit_b: bigint | number | null;
       xmin: number;
@@ -242,6 +287,7 @@ export async function readIssues(
     areaM2: r.area_m2 ?? NaN,
     maxWidthM: r.max_width_m ?? NaN,
     thinnessRatio: r.thinness_ratio,
+    nearLengthM: r.near_length_m,
     units: [r.unit_a, r.unit_b]
       .filter((u): u is bigint | number => u !== null)
       .map((u) => Number(u)),
@@ -249,8 +295,8 @@ export async function readIssues(
   }));
 
   const gj = await conn.query(`--sql
-    SELECT key, kind, area_m2, max_width_m, thinness_ratio, unit_a, unit_b, reason,
-           ST_AsGeoJSON(geom) AS _geom
+    SELECT key, kind, area_m2, max_width_m, thinness_ratio, near_length_m, unit_a, unit_b,
+           reason, ST_AsGeoJSON(geom) AS _geom
     FROM ${issuesTable} WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
   `);
   const features = (
@@ -260,6 +306,7 @@ export async function readIssues(
       area_m2: number | null;
       max_width_m: number | null;
       thinness_ratio: number | null;
+      near_length_m: number | null;
       unit_a: bigint | number | null;
       unit_b: bigint | number | null;
       reason: string | null;
@@ -274,6 +321,7 @@ export async function readIssues(
       area_m2: r.area_m2,
       max_width_m: r.max_width_m,
       thinness_ratio: r.thinness_ratio,
+      near_length_m: r.near_length_m,
       // BIGINT columns surface as JS `bigint`, which JSON.stringify can't serialize.
       unit_a: r.unit_a === null ? null : Number(r.unit_a),
       unit_b: r.unit_b === null ? null : Number(r.unit_b),

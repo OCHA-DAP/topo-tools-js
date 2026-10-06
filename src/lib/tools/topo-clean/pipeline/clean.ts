@@ -5,6 +5,7 @@ import {
   runCoverageClean,
 } from "$lib/db/coverageClean";
 import { mergeMicroPolygons } from "$lib/db/coverage";
+import { tryCloseNotches } from "$lib/db/notches";
 import { validateCleanOutput } from "./validate";
 
 // The topo-clean pipeline. Reads the loader-owned `layer_01` (fid, geom)
@@ -12,18 +13,33 @@ import { validateCleanOutput } from "./validate";
 // whole coverage via the shared src/lib/db/coverageClean.ts helpers (also used
 // by Edge Extender's input-clean gate and merge finalization).
 
-// Build the frozen input list ONCE per load (tc_input), from layer_01 with
+// The table the clean starts from: layer_01, or a copy of it with its notches
+// closed (tc_notched) when tc_notch_regions has any, as topo-tools-py's _03_clean.py.
+export async function buildNotched(conn: AsyncDuckDBConnection): Promise<string> {
+  const r = await conn.query("SELECT count(*) AS n FROM tc_notch_regions");
+  if (Number((r.toArray()[0] as { n: bigint | number }).n) === 0) return "layer_01";
+  await conn.query("CREATE OR REPLACE TABLE tc_notched AS SELECT * FROM layer_01");
+  await tryCloseNotches(conn, "tc_notched");
+  return "tc_notched";
+}
+
+// Build the frozen input list ONCE per load (tc_input), from sourceTable with
 // micro-polygons merged (tc_merged), as topo-tools-py's coverage_clean does.
-export async function buildInput(conn: AsyncDuckDBConnection): Promise<number> {
-  await mergeMicroPolygons(conn, "layer_01", "tc_merged", "tc_micro");
+export async function buildInput(
+  conn: AsyncDuckDBConnection,
+  sourceTable: string,
+): Promise<number> {
+  await mergeMicroPolygons(conn, sourceTable, "tc_merged", "tc_micro");
   return buildCoverageCleanInput(conn, "tc_merged", "tc_input");
 }
 
-// True if layer_01 has any overlaps/unmatched edges. Static per load (layer_01
-// never changes), so callers should compute this once and cache it rather
-// than re-running it on every reclean — see index.ts's cachedHasViolations.
-export async function inputHasViolations(conn: AsyncDuckDBConnection): Promise<boolean> {
-  return hasCoverageViolations(conn, "layer_01");
+// True if table has any overlaps/unmatched edges. Static per load, so callers
+// should compute this once and cache it; see index.ts's cachedHasViolations.
+export async function inputHasViolations(
+  conn: AsyncDuckDBConnection,
+  table: string,
+): Promise<boolean> {
+  return hasCoverageViolations(conn, table);
 }
 
 // `gapDeg` is already in degrees (see units.ts); 0 = no gap filling.

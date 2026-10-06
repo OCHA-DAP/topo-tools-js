@@ -50,6 +50,10 @@ async function collapsedUnrelatedCount(
       WHERE g.geom IS NOT NULL AND NOT ST_IsEmpty(g.geom) AND ST_Intersects(i.geom, g.geom)
       UNION
       SELECT unit_a AS fid FROM tc_micro
+      UNION
+      SELECT unit_a AS fid FROM tc_notch_regions
+      UNION
+      SELECT unit_b AS fid FROM tc_notch_regions
     )
     SELECT COUNT(*) AS n
     FROM layer_01 i

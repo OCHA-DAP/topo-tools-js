@@ -10,7 +10,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   other clean pass first, so the detection stage sees the original,
   unmodified geometry.
 
-## Detecting gaps, overlaps and micro-polygons
+## Detecting gaps, overlaps, micro-polygons and notches
 
 - `topo-detect` MUST report every fully-enclosed hole in the combined shape of
   all input polygons as a gap, regardless of its size. An open,
@@ -24,10 +24,13 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `topo-detect` MUST report every micro-polygon part (see
   `docs/reference/shared.md`) as a `micro-polygon`, identifying the unit
   it belongs to, without fixing it.
+- `topo-detect` MUST report every notch (see `docs/reference/shared.md`) as a
+  `notch`, identifying both units, with `near_length_m` set to the score
+  times `NOTCH_SPACING` in metres and area and width left null.
 - If detecting one kind of defect fails, `topo-detect` MUST still report the
   other kinds rather than failing entirely.
 - The issues report MUST list, for every defect: a unique key, its kind
-  (gap, overlap or micro-polygon), its area, its max width, and its geometry. A gap
+  (gap, overlap, micro-polygon or notch), its area, its max width, and its geometry. A gap
   entry MUST also carry a thinness ratio; an overlap entry MUST also
   identify the two units involved. Neither MUST appear on the other kind's
   entries.

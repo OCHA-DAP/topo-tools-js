@@ -23,11 +23,13 @@
   let showGaps = $state(true);
   let showOverlaps = $state(true);
   let showMicro = $state(true);
+  let showNotches = $state(true);
 
   const gapCount = $derived(rows.filter((r) => r.kind === "gap").length);
   const overlapCount = $derived(rows.filter((r) => r.kind === "overlap").length);
   const microCount = $derived(rows.filter((r) => r.kind === "micro-polygon").length);
-  // Every kind is auto-fixed (overlaps and micro-polygons always, gaps within the gap-width).
+  const notchCount = $derived(rows.filter((r) => r.kind === "notch").length);
+  // Every kind is auto-fixed (overlaps and micro-polygons always, gaps within the gap-width, notches the fix closes).
   const fixableCount = $derived(rows.length);
   const fixedCount = $derived(rows.filter((r) => fixedKeys.has(r.key)).length);
   const visible = $derived(
@@ -35,6 +37,7 @@
       if (r.kind === "gap") return showGaps;
       if (r.kind === "overlap") return showOverlaps;
       if (r.kind === "micro-polygon") return showMicro;
+      if (r.kind === "notch") return showNotches;
       return false;
     }),
   );
@@ -43,6 +46,7 @@
     overlap: "Overlap",
     gap: "Gap",
     "micro-polygon": "Micro-polygon",
+    notch: "Notch",
   };
 
   function kindLabel(r: IssueRow): string {
@@ -98,6 +102,20 @@
         title="Toggle micro-polygons (parts narrower than the snap tolerance, merged into a neighbour)"
       >
         <span class="tc-key tc-key--micro-polygon"></span> Micro-polygons {microCount}
+      </button>
+      <button
+        type="button"
+        class="tc-chip tc-chip--notch"
+        class:off={!showNotches}
+        class:failed={detectionFailed.has("notch")}
+        onclick={() => (showNotches = !showNotches)}
+        title={detectionFailed.has("notch")
+          ? "Notch detection failed for this coverage, so this count may be incomplete, not necessarily 0"
+          : "Toggle notches (two units' unshared edges running close together, closed into a shared edge)"}
+      >
+        <span class="tc-key tc-key--notch"></span> Notches {notchCount}{#if detectionFailed.has("notch")}<span
+            class="tc-fail-mark">⚠</span
+          >{/if}
       </button>
     </div>
   </div>
@@ -287,6 +305,9 @@
   }
   .tc-key--micro-polygon {
     background: var(--hdx-neutral-8);
+  }
+  .tc-key--notch {
+    background: var(--hdx-primary-7);
   }
   .tc-check-cell {
     text-align: center;

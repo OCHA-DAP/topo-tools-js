@@ -5,6 +5,7 @@ import {
   assembleIssues,
   buildGapRegions,
   buildMicroRegions,
+  buildNotchRegions,
   buildOverlapRegions,
   type IssueKind,
   type IssueRow,
@@ -55,7 +56,7 @@ export async function computeBounds(
   return null;
 }
 
-// Read-only scan of layer_01 for gap/overlap/micro-polygon defects; detect never modifies
+// Read-only scan of layer_01 for gap/overlap/micro-polygon/notch defects; detect never modifies
 // geometry, it only reports (see docs/reference/topo-detect.md). Overlap detection
 // is skipped (reported as zero) whenever the input already has no coverage
 // violations, matching topo-clean's own has-violations pre-check.
@@ -72,7 +73,7 @@ export async function runDetect(
   return { originalGeoJSON, bounds, ...scan };
 }
 
-// Writes dt_issues: layer_01's gap, overlap and micro-polygon regions.
+// Writes dt_issues: layer_01's gap, overlap, micro-polygon and notch regions.
 export async function scanTopology(
   conn: AsyncDuckDBConnection,
   onAssemble: () => void = () => {},
@@ -86,10 +87,12 @@ export async function scanTopology(
     hasViolations,
   );
   const microOk = await buildMicroRegions(conn, "dt_micro_regions", "layer_01");
+  const notchOk = await buildNotchRegions(conn, "dt_notch_regions", "layer_01");
   const failedKinds = new Set<IssueKind>();
   if (!gapOk) failedKinds.add("gap");
   if (!overlapOk) failedKinds.add("overlap");
   if (!microOk) failedKinds.add("micro-polygon");
+  if (!notchOk) failedKinds.add("notch");
 
   onAssemble();
   try {
@@ -104,6 +107,7 @@ export async function scanTopology(
         gapRegionsTable: "dt_gap_regions",
         overlapRegionsTable: "dt_overlap_regions",
         microRegionsTable: "dt_micro_regions",
+        notchRegionsTable: "dt_notch_regions",
       },
       failedKinds,
     );

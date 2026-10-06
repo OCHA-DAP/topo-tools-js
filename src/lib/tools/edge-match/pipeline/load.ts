@@ -1,6 +1,7 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { loadFile } from "$lib/db/loader";
 import { gatedCoverageClean } from "$lib/db/coverageClean";
+import { tryCloseNotches } from "$lib/db/notches";
 
 // Tables this tool owns, dropped defensively before every run so re-running
 // with different inputs in the same session starts clean. input_*/overlay_*
@@ -45,5 +46,6 @@ export async function loadLayers(
   // stageCleanInput) can't see defects between units assigned to different
   // groups, so both need their own whole-layer pass here.
   await gatedCoverageClean(conn, "overlay_layer_01", { anyHole: true });
+  await tryCloseNotches(conn, "input_layer_01");
   await gatedCoverageClean(conn, "input_layer_01", { anyHole: true });
 }
