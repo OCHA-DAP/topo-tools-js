@@ -21,15 +21,18 @@
   let showGaps = $state(true);
   let showOverlaps = $state(true);
   let showMicro = $state(true);
+  let showNotches = $state(true);
 
   const gapCount = $derived(rows.filter((r) => r.kind === "gap").length);
   const overlapCount = $derived(rows.filter((r) => r.kind === "overlap").length);
   const microCount = $derived(rows.filter((r) => r.kind === "micro-polygon").length);
+  const notchCount = $derived(rows.filter((r) => r.kind === "notch").length);
   const visible = $derived(
     rows.filter((r) => {
       if (r.kind === "gap") return showGaps;
       if (r.kind === "overlap") return showOverlaps;
       if (r.kind === "micro-polygon") return showMicro;
+      if (r.kind === "notch") return showNotches;
       return false;
     }),
   );
@@ -38,6 +41,7 @@
     overlap: "Overlap",
     gap: "Gap",
     "micro-polygon": "Micro-polygon",
+    notch: "Notch",
   };
 
   function kindLabel(r: IssueRow): string {
@@ -95,6 +99,20 @@
       >
         <span class="dt-key dt-key--micro-polygon"></span> Micro-polygons {microCount}{#if detectionFailed.has(
           "micro-polygon",
+        )}<span class="dt-fail-mark">⚠</span>{/if}
+      </button>
+      <button
+        type="button"
+        class="dt-chip dt-chip--notch"
+        class:off={!showNotches}
+        class:failed={detectionFailed.has("notch")}
+        onclick={() => (showNotches = !showNotches)}
+        title={detectionFailed.has("notch")
+          ? "Notch detection failed for this coverage, so this count may be incomplete, not necessarily 0"
+          : "Toggle notches (two units' unshared edges running close together)"}
+      >
+        <span class="dt-key dt-key--notch"></span> Notches {notchCount}{#if detectionFailed.has(
+          "notch",
         )}<span class="dt-fail-mark">⚠</span>{/if}
       </button>
     </div>
@@ -276,5 +294,8 @@
   }
   .dt-key--micro-polygon {
     background: var(--hdx-neutral-8);
+  }
+  .dt-key--notch {
+    background: var(--hdx-primary-7);
   }
 </style>

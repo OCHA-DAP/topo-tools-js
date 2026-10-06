@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { buildCoverageClean, needsCoverageClean } from "$lib/db/coverageClean";
+import { tryCloseNotches } from "$lib/db/notches";
 
 // Only cleans layer_01 when needsCoverageClean flags a defect: an
 // unconditional clean was tried and made WASM failure rates worse, not
@@ -9,7 +10,9 @@ import { buildCoverageClean, needsCoverageClean } from "$lib/db/coverageClean";
 export async function stageCleanInput(
   conn: AsyncDuckDBConnection,
   anyHole: boolean,
+  fixNotches: boolean,
 ): Promise<void> {
+  if (fixNotches) await tryCloseNotches(conn, "layer_01");
   console.log("[EE-DEBUG] clean:1 needs-clean-check");
   if (!(await needsCoverageClean(conn, "layer_01", anyHole))) return;
 

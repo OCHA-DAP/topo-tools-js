@@ -1,7 +1,8 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { tableToGeoJSON } from "$lib/db/geojson";
 import { setCentroidLat } from "$lib/db/units";
-import { buildClean, buildInput, countRows, inputHasViolations } from "./clean";
+import { buildNotchRegions } from "$lib/db/issues";
+import { buildClean, buildInput, buildNotched, countRows, inputHasViolations } from "./clean";
 import {
   buildGapRegions,
   buildIssues,
@@ -86,7 +87,7 @@ let totalCount = 0;
 let cachedIssues: IssueRow[] = [];
 let cachedIssuesGeoJSON = "";
 let cachedFailedKinds = new Set<IssueKind>();
-// layer_01 is static per load, so its violations check (see clean.ts's
+// The clean's source table is static per load, so its violations check (see clean.ts's
 // buildClean skip-gate) is computed once in runFromLoaded and reused by every
 // reclean instead of re-running ST_CoverageInvalidEdges_Agg on every slider drag.
 let cachedHasViolations = true;
@@ -146,11 +147,15 @@ export async function runFromLoaded(
   onProgress: ProgressFn,
 ): Promise<CleanResult> {
   onProgress(2, "Analyzing coverage");
-  totalCount = await buildInput(conn);
+  const notchOk = await buildNotchRegions(conn, "tc_notch_regions", "layer_01");
+  const source = await buildNotched(conn);
+  totalCount = await buildInput(conn, source);
   if (totalCount === 0) {
     throw new PipelineError("No polygons found to clean.", 2);
   }
-  cachedHasViolations = await inputHasViolations(conn);
+  const inputViolations = await inputHasViolations(conn, "layer_01");
+  cachedHasViolations =
+    source === "layer_01" ? inputViolations : await inputHasViolations(conn, source);
 
   const bounds = await computeBounds(conn);
   const originalGeoJSON = await tableToGeoJSON(conn, "layer_01", null);
@@ -160,10 +165,11 @@ export async function runFromLoaded(
   // Best-effort — failures degrade to an empty region table, never abort the
   // clean (their failure state is recorded instead).
   const gapOk = await buildGapRegions(conn);
-  const overlapOk = await buildOverlapRegions(conn, cachedHasViolations);
+  const overlapOk = await buildOverlapRegions(conn, inputViolations);
   const failedKinds = new Set<IssueKind>();
   if (!gapOk) failedKinds.add("gap");
   if (!overlapOk) failedKinds.add("overlap");
+  if (!notchOk) failedKinds.add("notch");
 
   onProgress(4, "Fixing topology");
   // Assemble issues (gap widths via ST_MaximumInscribedCircle), then run a

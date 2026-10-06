@@ -7,6 +7,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 - `edge-extend` MUST read the input via the shared loader (see
   `docs/reference/shared.md`).
+- `edge-extend` MUST close every notch in the loaded input (see
+  `docs/reference/shared.md`) before checking it for coverage violations.
+  Run from `edge-match`, it MUST skip this, since `edge-match` already
+  closed the whole input's notches.
 - If the loaded input has any coverage violation (an overlap or a
   mismatched shared edge), a micro-polygon or an enclosed hole, `edge-extend`
   MUST correct it via `gatedCoverageClean` before continuing; otherwise it

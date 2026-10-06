@@ -123,7 +123,7 @@ export interface RunPipelineOptions {
   // runPipeline call) leaves this false: layer_05 genuinely is (one of) its
   // final outputs, so cleaning here is cleaning at the end, not the middle.
   skipOutputClean?: boolean;
-  // Edge Matcher already cleaned the whole input with the any-hole trigger.
+  // Edge Matcher already closed the whole input's notches and cleaned it with the any-hole trigger.
   skipInputHoleCheck?: boolean;
 }
 
@@ -140,7 +140,7 @@ export async function runPipeline(
   // — Voronoi generation assumes a clean starting coverage. No-op, and no
   // progress update, when the input already has no invalid edges.
   console.log("[EE-DEBUG] === stageCleanInput ===");
-  await stageCleanInput(conn, !skipInputHoleCheck);
+  await stageCleanInput(conn, !skipInputHoleCheck, !skipInputHoleCheck);
 
   // Stage 2: lines (single attempt; _02a is stable across retries)
   console.log("[EE-DEBUG] === stageLines ===");

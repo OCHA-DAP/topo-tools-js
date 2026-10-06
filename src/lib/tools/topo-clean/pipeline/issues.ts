@@ -10,6 +10,7 @@ import {
   type IssueRow,
   type IssuesResult,
 } from "$lib/db/issues";
+import { detectNotches } from "$lib/db/notches";
 import { degSqToM2, degToM } from "$lib/db/units";
 import { niceNum } from "./units";
 
@@ -68,6 +69,7 @@ export async function buildIssues(
         gapRegionsTable: "tc_gap_regions",
         overlapRegionsTable: "tc_overlap_regions",
         microRegionsTable: "tc_micro_regions",
+        notchRegionsTable: "tc_notch_regions",
       },
       failedKinds,
     );
@@ -140,10 +142,32 @@ export async function checkFixedIssues(
           COALESCE((SELECT ST_Area(geom) FROM tc_clean WHERE fid = tc_issues.unit_b), 0)
           - COALESCE((SELECT ST_Area(geom) FROM layer_01 WHERE fid = tc_issues.unit_b), 0)
         ) * ${areaFactor}
-      WHERE kind = 'overlap'
+      WHERE kind IN ('overlap', 'notch')
     `);
   } catch (e) {
     console.warn("checkFixedIssues: persisting overlap fixed status failed:", e);
+  }
+
+  if (rows.some((r) => r.kind === "notch")) {
+    try {
+      // Fixed unless a notch between the same units still intersects it in the output.
+      await detectNotches(conn, "tc_clean", "tc_notch_remaining");
+      await conn.query(`--sql
+        UPDATE tc_issues i SET fixed = NOT EXISTS (
+          SELECT 1 FROM tc_notch_remaining r
+          WHERE least(r.unit_a, r.unit_b) = least(i.unit_a, i.unit_b)
+            AND greatest(r.unit_a, r.unit_b) = greatest(i.unit_a, i.unit_b)
+            AND ST_Intersects(r.geom, i.geom)
+        )
+        WHERE kind = 'notch'
+      `);
+      const result = await conn.query("SELECT key FROM tc_issues WHERE kind = 'notch' AND fixed");
+      for (const row of result.toArray() as Array<{ key: string }>) fixed.add(row.key);
+    } catch (e) {
+      console.warn("checkFixedIssues: notch fixed status unavailable:", e);
+    } finally {
+      await conn.query("DROP TABLE IF EXISTS tc_notch_remaining");
+    }
   }
 
   const hasGaps = rows.some((r) => r.kind === "gap");

@@ -496,7 +496,7 @@
       <section class="tc-step">
         <h2 class="tc-step-heading">Download issues</h2>
         <p class="tc-hint">
-          Just the detected gaps, overlaps and merged micro-polygons. Open in QGIS or ArcGIS to
+          Just the detected gaps, overlaps, notches and merged micro-polygons. Open in QGIS or ArcGIS to
           inspect or fix them yourself.
         </p>
         <DownloadMenu

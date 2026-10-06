@@ -8,6 +8,9 @@ with other tools.
 
 - `edge-match` MUST load the input (fine) layer and the overlay (coarse) layer
   independently via the shared loader (see `docs/reference/shared.md`).
+- `edge-match` MUST close every notch in the input layer (see
+  `docs/reference/shared.md`), not the overlay layer, before its
+  whole-layer clean.
 - `edge-match` MUST run a gated whole-layer `gatedCoverageClean` pass over both
   the overlay layer and the input layer immediately after loading, also
   triggered by any enclosed hole, at

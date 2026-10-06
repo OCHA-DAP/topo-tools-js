@@ -60,6 +60,8 @@
     GAP,
     "micro-polygon",
     MICRO,
+    "notch",
+    MAP_COLORS.notch,
     MAP_COLORS.fallback,
   ] as unknown as ExpressionSpecification;
 

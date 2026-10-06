@@ -6,6 +6,7 @@ export const MAP_COLORS = {
   overlap: "#c44536", // error-5
   gap: "#d48f2a", // warning-5
   micro: "#3f4748", // neutral-8
+  notch: "#0e3b82", // primary-7
   selected: "#1862d8", // primary-5
   fallback: "#7e8e8f", // neutral-6
   water: "#d1e0f7", // primary-1
