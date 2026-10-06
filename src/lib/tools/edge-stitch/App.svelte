@@ -133,7 +133,7 @@
       </div>
     {/if}
 
-    <InputStep title="Layer" collapsed={resultGeoJSON !== null} detail={files[0]?.name ?? ""}>
+    <InputStep title="Layer">
       <DropZone
         bind:files
         urlParam="url"

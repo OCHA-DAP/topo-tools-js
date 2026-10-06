@@ -357,7 +357,7 @@
       <div class="tc-error"><strong>Initialisation error:</strong> {duckdbState.initError}</div>
     {/if}
 
-    <InputStep title="Layer" collapsed={cleanedGeoJSON !== null} detail={files[0]?.name ?? ""}>
+    <InputStep title="Layer">
       <DropZone
         bind:files
         urlParam="url"

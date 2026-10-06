@@ -16,7 +16,7 @@ back to back, with no namespacing workaround needed.
 
 ## UI
 
-`App.svelte` shows three sections (Polygons, Points, Lines), each with its
-own summary line and `DownloadMenu`(s), and a single shared map with a
-selector to switch between the polygon level currently in view, the
-combined points layer, or the combined lines layer.
+`App.svelte` draws the package on one map (`PackageMap.svelte`), either
+polygons one level at a time or lines with point labels, and offers a
+single download: the whole package (every polygon level, points and
+lines) as one zip.

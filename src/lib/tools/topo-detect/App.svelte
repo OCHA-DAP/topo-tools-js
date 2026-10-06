@@ -163,7 +163,7 @@
       </div>
     {/if}
 
-    <InputStep title="Layer" collapsed={done} detail={files[0]?.name ?? ""}>
+    <InputStep title="Layer">
       <DropZone
         bind:files
         urlParam="url"

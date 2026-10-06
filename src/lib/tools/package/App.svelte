@@ -185,7 +185,7 @@
       </div>
     {/if}
 
-    <InputStep title="Layer" collapsed={result !== null} detail={files[0]?.name ?? ""}>
+    <InputStep title="Layer">
       <DropZone
         bind:files
         urlParam="url"
@@ -243,18 +243,6 @@
             label="Polygon level"
             options={polygonLevels.map((lvl, i) => ({ value: String(i), label: `Level ${lvl.level}` }))}
           />
-          <p class="field-hint">Each unit is filled by its parent level's unit, so siblings share a color.</p>
-          {#if selectedPolygonLevel}
-            {@const gaps = selectedPolygonLevel.issues.filter((i) => i.kind === "gap").length}
-            {@const micro = selectedPolygonLevel.issues.length - gaps}
-            <p class="summary-line">
-              {selectedPolygonLevel.keptColumns.length} kept, {selectedPolygonLevel.summedColumns
-                .length} summed, {selectedPolygonLevel.droppedColumns.length} dropped.
-              {gaps} gap issue{gaps === 1 ? "" : "s"}{micro > 0
-                ? `, ${micro} micro-polygon${micro === 1 ? "" : "s"} merged or dropped`
-                : ""}.
-            </p>
-          {/if}
         {:else}
           <ul class="legend">
             {#each levelList as s, i (s.depth)}
@@ -293,33 +281,6 @@
           zipName="{fileStem(files[0])}_package"
           exportSource={packageSources}
         />
-        {#if mode === "polygons" && selectedPolygonLevel}
-          {@const src = levelExportSource(selectedPolygonLevel.level)}
-          {#if src}
-            <DownloadMenu
-              primaryLabel="Download level {selectedPolygonLevel.level}"
-              filenameStem={fileStem(files[0])}
-              cachedGeoJSON={selectedPolygonLevel.resultGeoJSON}
-              exportSource={src}
-              variant="secondary"
-            />
-          {/if}
-        {:else}
-          <DownloadMenu
-            primaryLabel="Download points"
-            filenameStem={fileStem(files[0])}
-            cachedGeoJSON={result.points.resultGeoJSON}
-            exportSource="package_points"
-            variant="secondary"
-          />
-          <DownloadMenu
-            primaryLabel="Download lines"
-            filenameStem={fileStem(files[0])}
-            cachedGeoJSON={result.lines.resultGeoJSON}
-            exportSource="package_lines"
-            variant="secondary"
-          />
-        {/if}
       </section>
     {/if}
 
@@ -498,13 +459,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-  }
-
-  .summary-line {
-    font-size: 0.8rem;
-    color: var(--hdx-neutral-7);
-    line-height: 1.4;
-    margin: 0;
   }
 
   .map-container {
