@@ -24,12 +24,27 @@ export interface PackageResult {
   lines: PackageLinesResult;
 }
 
+// The finest level is the input itself; views give it the same export source as a dissolved level.
+async function exposeFinestLevel(conn: AsyncDuckDBConnection, level: number | undefined): Promise<void> {
+  const views = await conn.query(
+    `SELECT view_name FROM duckdb_views() WHERE regexp_full_match(view_name, 'pp_(geom|attr)_[0-9]+')`,
+  );
+  for (const { view_name } of views.toArray() as Array<{ view_name: string }>) {
+    await conn.query(`DROP VIEW "${view_name}"`);
+  }
+  if (level === undefined) return;
+  await conn.query(`CREATE VIEW pp_geom_${level} AS SELECT fid, geom FROM layer_01`);
+  await conn.query(`CREATE VIEW pp_attr_${level} AS SELECT * FROM layer_attr`);
+}
+
 // No table names collide across the three sub-pipelines (pp_/pkpt_/pl_ prefixes).
 export async function runPackage(
   conn: AsyncDuckDBConnection,
   schema: TargetSchema | null,
 ): Promise<PackageResult> {
+  await exposeFinestLevel(conn, undefined);
   const polygons = await runPackagePolygons(conn, schema);
+  await exposeFinestLevel(conn, polygons.levels.find((l) => !l.exportable)?.level);
   const points = await runPackagePoints(conn, schema);
   const lines = await runPackageLines(conn, schema);
   return { polygons, points, lines };

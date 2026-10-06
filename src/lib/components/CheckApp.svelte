@@ -10,8 +10,11 @@
   import type { TargetSchema } from "$lib/tools/schema-map/pipeline/targetSchema";
   import { onMount, untrack } from "svelte";
   import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
+  import { serialRunner } from "$lib/utils/serialRunner";
   import DemoLink from "$lib/components/DemoLink.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import IssueMapView from "$lib/components/IssueMapView.svelte";
   import type { FeatureInfo } from "$lib/components/MapPopup.svelte";
@@ -53,13 +56,11 @@
   let codeField = $state("");
   syncParam("name", textParam, () => nameField, (v) => (nameField = v));
   syncParam("code", textParam, () => codeField, (v) => (codeField = v));
-  let advancedOpen = $state(false);
 
   let running = $state(false);
   let error = $state<string | null>(null);
   let result = $state<R | null>(null);
   let selectedKey = $state<string | null>(null);
-  let runPending = false;
 
   onMount(() => {
     initDuckDB();
@@ -107,11 +108,6 @@
     }
   }
 
-  function requestRun(): void {
-    if (running) runPending = true;
-    else handleRun();
-  }
-
   async function handleRun(): Promise<void> {
     error = null;
     running = true;
@@ -124,12 +120,9 @@
       error = e instanceof Error ? e.message : String(e);
     } finally {
       running = false;
-      if (runPending) {
-        runPending = false;
-        handleRun();
-      }
     }
   }
+  const requestRun = serialRunner(handleRun);
 
   function select(key: string): void {
     selectedKey = selectedKey === key ? null : key;
@@ -146,10 +139,6 @@
   );
   const canRun = $derived(loaded && templateValid && !loading);
 
-  $effect(() => {
-    if (!bothBlank) advancedOpen = true;
-  });
-
   // Reads every setting so any change reruns; the debounce absorbs typing.
   $effect(() => {
     const _settings = [nameField, codeField];
@@ -162,7 +151,6 @@
     !loaded ? "Load a coded layer to check it." : running ? "Checking…" : "Fix the settings to run the checks.",
   );
 </script>
-
 
 <div class="layout">
   <aside class="sidebar">
@@ -180,8 +168,7 @@
       </div>
     {/if}
 
-    <section class="step">
-      <h2 class="step-heading">Layer</h2>
+    <InputStep title="Layer" collapsed={result !== null} detail={files[0]?.name ?? ""}>
       <DropZone
         bind:files
         urlParam="url"
@@ -190,23 +177,10 @@
       />
       {#if loading}<p class="status">Loading file…</p>{/if}
       {#if loadError}<div class="error-panel">{loadError}</div>{/if}
-    </section>
-
-    {#if error}
-      <div class="error-panel">{error}</div>
-    {/if}
-
-    {#if result}
-      <section class="step">
-        <h2 class="step-heading">Download</h2>
-        {#each typeof downloads === "function" ? downloads(result) : downloads as d (d.source)}
-          <DownloadMenu primaryLabel={d.label} filenameStem={fileStem(files[0])} exportSource={d.source} />
-        {/each}
-      </section>
-    {/if}
+    </InputStep>
 
     {#if loaded}
-      <AdvancedOptions bind:open={advancedOpen}>
+      <AdvancedOptions>
         <div class="group">
           <h3>Target schema</h3>
           <p class="field-hint">
@@ -230,7 +204,20 @@
       </AdvancedOptions>
     {/if}
 
-    <p class="privacy">Your files never leave your device.</p>
+    {#if error}
+      <div class="error-panel">{error}</div>
+    {/if}
+
+    {#if result}
+      <section class="step">
+        <h2 class="step-heading">Download</h2>
+        {#each typeof downloads === "function" ? downloads(result) : downloads as d (d.source)}
+          <DownloadMenu primaryLabel={d.label} filenameStem={fileStem(files[0])} exportSource={d.source} />
+        {/each}
+      </section>
+    {/if}
+
+    <PrivacyNote />
   </aside>
 
   <MapTableSplit>
@@ -382,10 +369,4 @@
     word-break: break-word;
   }
 
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
-  }
 </style>

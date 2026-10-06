@@ -1,6 +1,6 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { DuckDBDataProtocol } from "@duckdb/duckdb-wasm";
-import { zip as fflateZip } from "fflate";
+import { unzip as fflateUnzip, zip as fflateZip } from "fflate";
 import { duckdbState } from "./duckdb.svelte";
 import { flaggedUnitsSql } from "./flagged";
 
@@ -643,6 +643,30 @@ export async function runExport(
     case "csv":
       return exportCsv(source, format, filenameStem);
   }
+}
+
+// Exports every source in one format into a single zip, flattening multi-file formats into it.
+export async function runExportZip(
+  sources: ExportSource[],
+  format: ExportFormat,
+  filenameStem: string,
+  zipName: string,
+): Promise<ExportResult> {
+  const files: Record<string, Uint8Array> = {};
+  for (const source of sources) {
+    const r = await runExport(source, format, filenameStem);
+    const bytes = new Uint8Array(await r.blob.arrayBuffer());
+    if (format.ext.endsWith(".zip")) {
+      const parts = await new Promise<Record<string, Uint8Array>>((resolve, reject) =>
+        fflateUnzip(bytes, (err, data) => (err ? reject(err) : resolve(data))),
+      );
+      Object.assign(files, parts);
+    } else files[r.filename] = bytes;
+  }
+  const zipped = await new Promise<Uint8Array>((resolve, reject) =>
+    fflateZip(files, (err, data) => (err ? reject(err) : resolve(data))),
+  );
+  return { blob: toBlob(zipped, "application/zip"), filename: `${zipName}.zip` };
 }
 
 function requireDb(): { db: AsyncDuckDB; conn: AsyncDuckDBConnection } {

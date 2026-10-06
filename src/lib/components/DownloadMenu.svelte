@@ -3,6 +3,7 @@
     gdalGeoJSONFormat,
     listFormats,
     runExport,
+    runExportZip,
     sourceKind,
     type ExportFormat,
     type ExportResult,
@@ -14,6 +15,7 @@
     filenameStem,
     cachedGeoJSON,
     exportSource,
+    zipName,
     disabled = false,
     excludeFormatIds = [],
     variant = "primary",
@@ -21,7 +23,9 @@
     primaryLabel: string;
     filenameStem: string;
     cachedGeoJSON?: string;
-    exportSource: ExportSource;
+    // Several sources download together as one zip named `zipName`.
+    exportSource: ExportSource | ExportSource[];
+    zipName?: string;
     disabled?: boolean;
     excludeFormatIds?: string[];
     variant?: "primary" | "secondary";
@@ -59,7 +63,8 @@
     rank: 1,
   };
 
-  const isTabular = $derived(sourceKind(exportSource) === "tabular");
+  const firstSource = $derived(Array.isArray(exportSource) ? exportSource[0] : exportSource);
+  const isTabular = $derived(sourceKind(firstSource) === "tabular");
 
   $effect(() => {
     if (!open) return;
@@ -77,7 +82,7 @@
     loadingFormats = true;
     formatsError = null;
     try {
-      formats = await listFormats(exportSource);
+      formats = await listFormats(firstSource);
     } catch (e) {
       formatsError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -92,6 +97,12 @@
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportAs(fmt: ExportFormat): Promise<ExportResult> {
+    return Array.isArray(exportSource)
+      ? runExportZip(exportSource, fmt, filenameStem, zipName ?? filenameStem)
+      : runExport(exportSource, fmt, filenameStem, cachedGeoJSON);
   }
 
   async function handlePrimary() {
@@ -110,7 +121,7 @@
       } else {
         fmt = gdalGeoJSONFormat;
       }
-      const r = await runExport(exportSource, fmt, filenameStem, cachedGeoJSON);
+      const r = await exportAs(fmt);
       triggerDownload(r);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -132,7 +143,7 @@
     busy = true;
     error = null;
     try {
-      const r = await runExport(exportSource, fmt, filenameStem, cachedGeoJSON);
+      const r = await exportAs(fmt);
       triggerDownload(r);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);

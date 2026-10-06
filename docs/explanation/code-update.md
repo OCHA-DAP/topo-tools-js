@@ -148,11 +148,12 @@ pair, never a full N×M cross-product. The changelog table itself has no
 `predecessor_code` column (that lineage lives only on the output layer's
 own attribute table), matching Python's own changelog schema exactly.
 
-## UI scope: no per-polygon outcome coloring on the map
+## UI scope: `change`'s map and table, one level at a time
 
-The shared `MapView` component supports only fixed-color original/result
-layers, no categorical or property-based fill. `code-update`'s result map
-renders as a plain result layer over the NEW input, and the changelog
-table (with its own outcome-count summary) is the only place
-`code_outcome` is visible, rather than a `REL_COLORS`-style legend on the
-map itself.
+`code-update`'s result view is `change`'s own `ResultView`, fed one
+level's classification at a time, so a level's map and table read exactly
+like a `change` run between that level's OLD and NEW units. The map colors
+units by relationship class and draws `unchanged` units in the base input
+fill, without hover or click. Each NEW unit's assigned code stands in as
+its NEW code in the table, which is where the `code_outcome` result shows
+up.

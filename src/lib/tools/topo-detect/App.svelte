@@ -1,6 +1,8 @@
 <script lang="ts">
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
   import DemoLink from "$lib/components/DemoLink.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import { duckdbState, initDuckDB } from "$lib/db/duckdb.svelte";
   import { loadFile } from "$lib/db/loader";
@@ -161,34 +163,34 @@
       </div>
     {/if}
 
-    <section class="dt-step">
+    <InputStep title="Layer" collapsed={done} detail={files[0]?.name ?? ""}>
       <DropZone
         bind:files
         urlParam="url"
         disabled={running}
         helpText="Polygon coverage in any supported format — adjacent admin units, basins, etc."
       />
+    </InputStep>
 
-      {#if running || errorStage > 0}
-        <ol class="dt-stages">
-          {#each STAGE_LABELS as label, i}
-            {@const status = stageStatus(i)}
-            <li class={status}>
-              {#if status === "error"}
-                <span class="dt-stage-x">✕</span>
-              {:else}
-                <span class="dt-stage-dot"></span>
-              {/if}
-              <span>{i + 1 === currentStage && stageLabel ? stageLabel : label}</span>
-            </li>
-          {/each}
-        </ol>
-      {/if}
+    {#if running || errorStage > 0}
+      <ol class="dt-stages">
+        {#each STAGE_LABELS as label, i}
+          {@const status = stageStatus(i)}
+          <li class={status}>
+            {#if status === "error"}
+              <span class="dt-stage-x">✕</span>
+            {:else}
+              <span class="dt-stage-dot"></span>
+            {/if}
+            <span>{i + 1 === currentStage && stageLabel ? stageLabel : label}</span>
+          </li>
+        {/each}
+      </ol>
+    {/if}
 
-      {#if error}
-        <div class="dt-error">{error}</div>
-      {/if}
-    </section>
+    {#if error}
+      <div class="dt-error">{error}</div>
+    {/if}
 
     {#if done}
       <section class="dt-step">
@@ -206,7 +208,7 @@
       </section>
     {/if}
 
-    <p class="dt-privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <div class="dt-result">
@@ -378,13 +380,6 @@
     font-size: 0.825rem;
     color: var(--hdx-error-6);
     word-break: break-word;
-  }
-
-  .dt-privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
   }
 
   .dt-result {

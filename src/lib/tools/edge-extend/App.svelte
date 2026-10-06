@@ -4,6 +4,8 @@
   import { getOriginalGeojson, PipelineError, runPipeline } from "./pipeline/index";
   import { onMount, untrack } from "svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import MapView from "$lib/components/MapView.svelte";
   import SideToggle from "$lib/components/SideToggle.svelte";
@@ -140,47 +142,49 @@
       </div>
     {/if}
 
-    <section class="step">
+    <InputStep title="Layer" collapsed={resultGeoJSON !== null} detail={files[0]?.name ?? ""}>
       <DropZone
         bind:files
         urlParam="url"
         disabled={running}
         helpText="Polygon layer in WGS84 — admin boundaries, basins, etc. GeoJSON · GeoParquet · GeoPackage · Shapefile (ZIP)."
       />
+    </InputStep>
 
-      {#if running || errorStage > 0}
-        <ol class="stages">
-          {#each STAGE_LABELS as label, i}
-            {@const status = stageStatus(i)}
-            <li class={status}>
-              {#if status === "error"}
-                <span class="stage-x">✕</span>
-              {:else}
-                <span class="stage-dot"></span>
-              {/if}
-              <span class="stage-label"
-                >{i + 1 === currentStage && stageLabel ? stageLabel : label}</span
-              >
-            </li>
-          {/each}
-        </ol>
-      {/if}
+    {#if running || errorStage > 0}
+      <ol class="stages">
+        {#each STAGE_LABELS as label, i}
+          {@const status = stageStatus(i)}
+          <li class={status}>
+            {#if status === "error"}
+              <span class="stage-x">✕</span>
+            {:else}
+              <span class="stage-dot"></span>
+            {/if}
+            <span class="stage-label"
+              >{i + 1 === currentStage && stageLabel ? stageLabel : label}</span
+            >
+          </li>
+        {/each}
+      </ol>
+    {/if}
 
-      {#if error}
-        <div class="error-panel">{error}</div>
-      {/if}
+    {#if error}
+      <div class="error-panel">{error}</div>
+    {/if}
 
-      {#if resultGeoJSON}
+    {#if resultGeoJSON}
+      <section class="step">
         <DownloadMenu
           primaryLabel="Download GeoJSON"
           filenameStem={fileStem(files[0])}
           cachedGeoJSON={resultGeoJSON}
           exportSource="extend"
         />
-      {/if}
-    </section>
+      </section>
+    {/if}
 
-    <p class="privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <div class="map-container">
@@ -336,13 +340,6 @@
     font-size: 0.825rem;
     color: var(--hdx-error-6);
     word-break: break-word;
-  }
-
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
   }
 
   .map-container {

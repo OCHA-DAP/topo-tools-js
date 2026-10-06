@@ -1,6 +1,8 @@
 <script lang="ts">
   import CarryColumnsPicker from "$lib/components/CarryColumnsPicker.svelte";
   import DownloadMenu from "$lib/components/DownloadMenu.svelte";
+  import PrivacyNote from "$lib/components/PrivacyNote.svelte";
+  import InputStep from "$lib/components/InputStep.svelte";
   import DropZone from "$lib/components/DropZone.svelte";
   import CleanupNote from "$lib/components/CleanupNote.svelte";
   import AdvancedOptions from "$lib/components/AdvancedOptions.svelte";
@@ -19,10 +21,6 @@
   let inputFiles = $state<File[]>([]);
   let overlayFiles = $state<File[]>([]);
   let originalFiles = $state<File[]>([]);
-  let advancedOpen = $state(false);
-  $effect(() => {
-    if (originalFiles.length > 0) advancedOpen = true;
-  });
   let detachedMerged = $state(0);
   let detachedKept = $state(0);
   let running = $state(false);
@@ -206,27 +204,24 @@
       </div>
     {/if}
 
-    <section class="step">
-      <h2 class="step-heading">Input layer</h2>
+    <InputStep title="Layers" collapsed={resultGeoJSON !== null} detail={[inputFiles[0]?.name, overlayFiles[0]?.name].filter(Boolean).join(", ")}>
+      <h3>Input layer</h3>
       <DropZone
         bind:files={inputFiles}
         urlParam="input"
         disabled={running}
         helpText="The layer to assign and clip — one already-extended file's worth of units."
       />
-    </section>
-
-    <section class="step">
-      <h2 class="step-heading">Overlay layer</h2>
+      <h3>Overlay layer</h3>
       <DropZone
         bind:files={overlayFiles}
         urlParam="overlay"
         disabled={running}
         helpText="The boundary to assign and clip against, e.g. admin0 for an admin2/3 input layer."
       />
-    </section>
+    </InputStep>
 
-    <AdvancedOptions bind:open={advancedOpen}>
+    <AdvancedOptions>
       <div>
         <h3>Original layer</h3>
         <DropZone
@@ -333,7 +328,7 @@
       {/if}
     {/if}
 
-    <p class="privacy">Your files never leave your device.</p>
+    <PrivacyNote />
   </aside>
 
   <div class="map-container">
@@ -356,7 +351,6 @@
 </div>
 
 <style>
-
 
   .layout {
     display: grid;
@@ -416,9 +410,6 @@
     margin: 0;
     line-height: 1.4;
   }
-
-
-
 
   .blurb {
     font-size: 0.825rem;
@@ -522,13 +513,6 @@
     color: var(--hdx-warning-7);
     margin: 0;
     line-height: 1.4;
-  }
-
-  .privacy {
-    font-size: 0.75rem;
-    color: var(--hdx-neutral-7);
-    margin: 0;
-    margin-top: auto;
   }
 
   .map-container {
