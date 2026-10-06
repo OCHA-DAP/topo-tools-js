@@ -146,7 +146,7 @@
       </div>
     {/if}
 
-    <InputStep title="Layer" collapsed={ran} detail={files[0]?.name ?? ""}>
+    <InputStep title="Layer">
       <DropZone
         bind:files
         urlParam="url"

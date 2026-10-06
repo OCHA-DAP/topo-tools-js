@@ -1,13 +1,13 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
 
-  // A tool's inputs, folded into their heading whenever `collapsed` turns true (a result arrives).
+  // A tool's inputs; multi-input tools pass `collapsed` to fold them into their heading once a result arrives.
   let {
     title,
     collapsed,
     detail = "",
     children,
-  }: { title: string; collapsed: boolean; detail?: string; children: Snippet } = $props();
+  }: { title: string; collapsed?: boolean; detail?: string; children: Snippet } = $props();
 
   let open = $state(true);
   $effect(() => {
@@ -15,15 +15,24 @@
   });
 </script>
 
-<details class="input-step" bind:open>
-  <summary>
-    <span class="title">{title}</span>
-    {#if !open && detail}<span class="detail">{detail}</span>{/if}
-  </summary>
-  <div class="body">
-    {@render children()}
-  </div>
-</details>
+{#if collapsed === undefined}
+  <section class="input-step">
+    <h2 class="title">{title}</h2>
+    <div class="body">
+      {@render children()}
+    </div>
+  </section>
+{:else}
+  <details class="input-step" bind:open>
+    <summary>
+      <span class="title">{title}</span>
+      {#if !open && detail}<span class="detail">{detail}</span>{/if}
+    </summary>
+    <div class="body">
+      {@render children()}
+    </div>
+  </details>
+{/if}
 
 <style>
   summary {
@@ -35,6 +44,7 @@
     font-size: 1rem;
     font-weight: 600;
     color: var(--hdx-neutral-9);
+    margin: 0;
   }
 
   .detail {
