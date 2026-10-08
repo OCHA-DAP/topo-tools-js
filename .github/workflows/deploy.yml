@@ -76,7 +76,10 @@ jobs:
       - name: Check for broken links
         uses: lycheeverse/lychee-action@v2.9.0
         with:
-          args: --offline --no-progress --root-dir ${{ github.workspace }}/dist 'dist/**/*.html'
+          args: >-
+            --offline --no-progress --root-dir ${{ github.workspace }}/dist
+            --remap 'file://${{ github.workspace }}/dist${{ steps.pages.outputs.base_path }} file://${{ github.workspace }}/dist'
+            'dist/**/*.html'
           lycheeVersion: v0.24.2
       - uses: actions/upload-pages-artifact@v5
         with:
