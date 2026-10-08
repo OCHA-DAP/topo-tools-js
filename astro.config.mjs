@@ -12,9 +12,8 @@ const base = process.env.BASE_PATH ?? "";
 const iconBase = base ? `${base}/` : "/";
 
 export default defineConfig({
-  site: "https://topo-tools.org",
+  site: "https://ocha-dap.github.io",
   base,
-  redirects: { "/talk": "/intro" },
   integrations: [
     starlight({
       title: "Topology Tools",
@@ -80,7 +79,10 @@ export default defineConfig({
   markdown: {
     processor: unified({
       rehypePlugins: [
-        [rehypeAstroRelativeMarkdownLinks, { collectionBase: false, trailingSlash: "always" }],
+        [
+          rehypeAstroRelativeMarkdownLinks,
+          { collectionBase: false, trailingSlash: "always", base },
+        ],
       ],
     }),
   },
