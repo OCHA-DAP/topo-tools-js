@@ -5,4 +5,4 @@
 - [github.com/OCHA-DAP/topo-tools-js](https://github.com/OCHA-DAP/topo-tools-js)
 - [github.com/OCHA-DAP/topo-tools-py](https://github.com/OCHA-DAP/topo-tools-py)
 
-Both repos are MIT licensed. The Python one has the CLI and the Claude Code plugin.
+Both repos are MIT licensed. The Python one has the CLI and the agent skills.

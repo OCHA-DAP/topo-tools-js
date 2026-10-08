@@ -374,7 +374,8 @@ const after = await toSlides(outro);
     border-color: var(--hdx-brand-7);
     color: #fff;
   }
-  .title :global(h3) {
+  .title :global(h3),
+  .title :global(a) {
     color: #fff;
   }
   .title :global(p) {
@@ -553,10 +554,40 @@ const after = await toSlides(outro);
     align-items: center;
     column-gap: 4vw;
   }
-  :global(body.present) .slide:has(:global(p > img)) :global(h2) {
+  :global(body.present) .slide.current:has(.glue) {
+    display: grid;
+    grid-template-columns: 2fr 3fr;
+    align-content: center;
+    align-items: center;
+    column-gap: 4vw;
+  }
+  :global(body.present) .glue {
+    grid-template-columns: 1fr;
+    row-gap: 2.5rem;
+    margin: 0;
+  }
+  :global(body.present) .glue .core::before,
+  :global(body.present) .glue .core::after {
+    left: 50%;
+    right: auto;
+    top: auto;
+    width: 0;
+    height: 2.5rem;
+    border-top: none;
+    border-left: 2px solid var(--hdx-brand-6);
+  }
+  :global(body.present) .glue .core::before {
+    bottom: 100%;
+  }
+  :global(body.present) .glue .core::after {
+    top: 100%;
+  }
+  :global(body.present) .slide:has(:global(p > img)) :global(h2),
+  :global(body.present) .slide:has(.glue) :global(h2) {
     grid-column: 1 / -1;
   }
-  :global(body.present) .slide:has(:global(p > img)) :global(ul) {
+  :global(body.present) .slide:has(:global(p > img)) :global(ul),
+  :global(body.present) .slide:has(.glue) :global(ul) {
     font-size: 0.9em;
   }
   :global(body.present) .slide.wide :global(ul) {

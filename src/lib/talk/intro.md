@@ -2,7 +2,9 @@
 
 # Client-Side DuckDB: Data Cleaning in the Browser
 
-### Maxym Malynowsky, OCHA Centre for Humanitarian Data
+### Maxym Malynowsky, UN OCHA Centre for Humanitarian Data
+
+### maxym.malynowsky@un.org
 
 ### CNG Forum 2026
 
@@ -10,7 +12,7 @@ This page is both the slides from the talk and a standalone introduction to the 
 
 ---
 
-# What COD-ABs are, and why they matter
+# Part 1: What COD-ABs are, and why they matter
 
 ---
 
@@ -18,7 +20,7 @@ This page is both the slides from the talk and a standalone introduction to the 
 
 ![Cameroon's COD-AB at three levels, 10, 58 and 360 units, with one unit highlighted at each: Centre (CM002), Mbam-et-Kim (CM002004) and Yoko (CM002004005)](/talk/cmr-admin-levels.svg)
 
-- Admin boundaries for a common operational picture, most often sourced from national authorities
+- Admin boundaries form a common operational picture of humanitarian activities, sourced from national authorities if possible
 - P-codes: a stable code for every unit, down to the lowest level available
 - Maintained by OCHA for the countries where it operates
 
@@ -73,7 +75,7 @@ People in need are counted by district, against a baseline population for that d
 
 ---
 
-# The problems: fragmentation and delays
+# Part 2: The problems, fragmentation and delays
 
 ---
 
@@ -81,8 +83,8 @@ People in need are counted by district, against a baseline population for that d
 
 ![World map with a dot in each of the 40 countries where OCHA has a country office, regional office or humanitarian advisory team](/talk/ocha-presence.svg)
 
-- OCHA, WFP, UNICEF, UNHCR and IOM each maintain one, and so do FAO, the World Bank and others
-- Their field presence overlaps in some countries, and in others only one agency is there
+- OCHA, WFP, UNICEF, UNHCR and IOM each maintain one, and so do FAO, the World Bank and others, often for internal enterprise systems
+- Their field presence is complementary: they overlap in some countries, and in others only one agency is there
 
 Each dot is a country where OCHA has a country office, a regional office or a humanitarian advisory team. That's where OCHA has people with local knowledge of the boundaries.
 
@@ -113,19 +115,19 @@ The same city, with the same boundary, carries a different code in each source. 
 
 ---
 
-## The people with local knowledge lack the tools, and the experts are stretched
+## A COD-AB gets built in round trips between field and HQ
 
-- Excel and ArcGIS in the field, at most a basic ArcPy script, no AI
-- A few central experts cleaning topology by hand, for weeks per country
-- Data going back and forth for months
+![Two circles, Field (ground truth) and HQ (data quality), joined in a loop: candidate data goes from Field to HQ, and questions come back](/talk/field-hq-loop.svg)
 
-The people who know the ground are in country offices and national agencies. They know which districts split and what the names should be, but their tools stop at Excel and desktop GIS.
+- Field teams know the ground truth: which boundary is correct, how many divisions there are at each level, and what places are called
+- HQ knows data quality: cleaning topology, keeping codes and versions consistent, and catching name encoding errors
+- A question one side can't answer goes to the other, and each trip adds friction
 
-The specialist work happens centrally, with a very small team. In Mali, it took 121 days to get data back from the field, and the government's codes didn't match ours.
+Country offices and national agencies know the ground, but the cleaning and coding happen centrally. A dataset needs both, so files go back and forth until it's right.
 
 ---
 
-# Converging on a standard
+# Part 3: Growing COD-AB into a shared standard
 
 ---
 
@@ -143,11 +145,13 @@ For boundaries, that meant getting the five agencies in a room. Over three days 
 
 ---
 
-## Lessons from STAC
+## Lessons from STAC: build the tools with the standard
 
-- Tools before the standard was final: Ethiopia, Mozambique and DR Congo were cleaned while the standard was being agreed, and the lessons fed into it
-- A validator anyone can run: country offices check their own data before they submit it
-- Built for the people doing the work: ArcGIS and Excel users in the field
+![STAC and COD-AB side by side: STAC's spec, PySTAC and STAC Browser, and stac-validator line up with COD-AB's P-code standard, the CLI and web app, and validate](/talk/stac-cod-ab.svg)
+
+- Like STAC, we tested the standard on real data while it was still being agreed
+- Field teams run the same checks as HQ, so there are fewer round trips
+- Reaching staff on the ground who don't use git or Python was a priority from day one
 
 Element 84's STAC retrospective says a standard earns its authority through use, and warns against "if you build it, they will come". This audience has seen it work with STAC, GeoParquet and COG.
 
@@ -155,7 +159,7 @@ We also built on what already exists: GeoParquet, DuckDB, and P-codes aligned wi
 
 ---
 
-# From concepts to tools
+# Part 4: From concepts to tools
 
 ---
 
@@ -173,30 +177,33 @@ Each demo later in the talk is one of these steps.
 
 <!-- duckdb -->
 
-- The Python CLI came first, because it's faster to iterate on
-- The web app was planned from the start and built once the workflow worked
+- The Python CLI came first, because it's faster to iterate on and handles big data
+- The web app was developed alongside it, porting the logic to WASM and building a UI on top
 
 Each step is DuckDB spatial SQL, with GeoParquet between steps, so any intermediate result can be opened and checked. Because the logic lives in SQL, the same queries run in the browser.
 
 ---
 
-## Tools, then docs, then skills
+## Building the CLI: tools, then docs, then skills
 
-- Tools: the CLI does the work on its own, no AI needed
-- Docs: describe how to use the tools
-- Skills: Claude Code follows the docs to drive the tools
+![Three stacked layers: Tools at the base (institutional knowledge, made deterministic), Docs on top (how to use the CLI), and an optional Skills layer on top of that (agents drive the CLI)](/talk/tools-docs-skills.svg)
 
-Each layer sits on top of the one before it, and the skills are optional.
+- The CLI commands came first: institutional knowledge made deterministic
+- Docs came next: goal-oriented Diátaxis how-to guides, one per step, chained from raw data to release
+- Skills came last, so agents can follow the docs and run the CLI
 
-The skills open the CLI up to colleagues who are comfortable with data but aren't software developers. Our Field Information Services team works this way in VS Code on Windows, and went from about one country a week to several a day.
+The skills are optional. They open the CLI up to colleagues who are comfortable with data but aren't software developers. Our Field Information Services team works this way in VS Code on Windows.
 
 ---
 
-## Validated on real countries, then ported to the browser
+## Validated on our whole catalog, then ported to the browser
 
-- Topology cleaning: from weeks by hand to minutes
-- DuckDB-WASM runs the same SQL, with nothing to install
-- Files stay on the local machine, and the app works offline once cached
+![A terminal running topo-tools topo-clean on admin2.parquet with the Python CLI on DuckDB, and an arrow labelled same SQL to a browser window with the same file in a drop zone, the web app on DuckDB-WASM](/talk/cli-to-browser.svg)
+
+- We converted our COD-AB catalog to a Portolan catalog to test against, then ran every dataset from raw to cleaned
+- The hard algorithmic work happens in Python, then ports to JS with the UI added on top, so both stay at feature parity
+- Field teams get the same tools HQ uses, in a browser with nothing to install
+- Files stay on the local machine, so nothing has to be uploaded over a slow connection
 
 Some partners don't have Python or an AI subscription, and some can't install software at all. The browser app is a static site with no server, built with Astro, Svelte and MapLibre. Most of the work went into making the UI easy to use.
 

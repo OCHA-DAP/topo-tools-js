@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" font-family="Roboto, system-ui, sans-serif" font-size="30" text-anchor="middle">
+<defs><marker id="head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#5f6b6b"/></marker></defs>
+<rect x="0" y="40" width="420" height="300" rx="10" fill="#1f2324"/>
+<path d="M 10 40 H 410 A 10 10 0 0 1 420 50 V 80 H 0 V 50 A 10 10 0 0 1 10 40 Z" fill="#3f4748"/>
+<circle cx="28" cy="60" r="7" fill="#7e8e8f"/><circle cx="52" cy="60" r="7" fill="#7e8e8f"/><circle cx="76" cy="60" r="7" fill="#7e8e8f"/>
+<g font-family="Roboto Mono, ui-monospace, monospace" font-size="24" text-anchor="start">
+<text x="28" y="180" fill="#7dc1ad">$ topo-tools topo-clean \</text>
+<text x="86" y="220" fill="#d8e0e1">admin2.parquet</text>
+</g>
+<path d="M 440 190 H 560" stroke="#5f6b6b" stroke-width="4" marker-end="url(#head)"/>
+<text x="500" y="170" fill="#222" font-size="24" font-weight="600">same SQL</text>
+<rect x="580" y="40" width="420" height="300" rx="10" fill="#fff" stroke="#c4d0d1" stroke-width="2"/>
+<path d="M 590 41 H 990 A 9 9 0 0 1 999 50 V 80 H 581 V 50 A 9 9 0 0 1 590 41 Z" fill="#e2e8e8"/>
+<circle cx="608" cy="60" r="7" fill="#b1c1c2"/><circle cx="632" cy="60" r="7" fill="#b1c1c2"/><circle cx="656" cy="60" r="7" fill="#b1c1c2"/>
+<rect x="680" y="50" width="300" height="20" rx="10" fill="#fff"/>
+<rect x="620" y="120" width="340" height="140" rx="8" fill="#e9f5f1" stroke="#1e795f" stroke-width="3" stroke-dasharray="12 8"/>
+<text x="790" y="200" fill="#1e795f" font-family="Roboto Mono, ui-monospace, monospace" font-size="24">admin2.parquet</text>
+<text x="210" y="410" fill="#222" font-weight="600">Validated on every COD-AB</text>
+<text x="210" y="450" fill="#5f6b6b">Python CLI on DuckDB</text>
+<text x="790" y="410" fill="#222" font-weight="600">Ported to the browser</text>
+<text x="790" y="450" fill="#5f6b6b">Web app on DuckDB-WASM</text>
+</svg>

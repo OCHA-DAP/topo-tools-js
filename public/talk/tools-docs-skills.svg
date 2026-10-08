@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" font-family="Roboto, system-ui, sans-serif" font-size="30" text-anchor="middle">
+<rect x="100" y="12" width="800" height="140" rx="10" fill="#e9f5f1" stroke="#1e795f" stroke-width="3" stroke-dasharray="12 8"/>
+<text x="500" y="76" fill="#222" font-size="46" font-weight="600">Skills</text>
+<text x="500" y="118" fill="#5f6b6b">optional, agents drive the CLI</text>
+<rect x="50" y="176" width="900" height="140" rx="10" fill="#7dc1ad"/>
+<text x="500" y="240" fill="#0f3c30" font-size="46" font-weight="600">Docs</text>
+<text x="500" y="282" fill="#0f3c30">how to use the CLI</text>
+<rect x="0" y="340" width="1000" height="140" rx="10" fill="#1e795f"/>
+<text x="500" y="404" fill="#fff" font-size="46" font-weight="600">Tools</text>
+<text x="500" y="446" fill="#d4eae4">institutional knowledge, made deterministic</text>
+</svg>
