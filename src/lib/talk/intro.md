@@ -150,7 +150,7 @@ For boundaries, that meant getting the five agencies in a room. Over three days 
 ![STAC and COD-AB side by side: STAC's spec, PySTAC and STAC Browser, and stac-validator line up with COD-AB's P-code standard, the CLI and web app, and validate](/talk/stac-cod-ab.svg)
 
 - Like STAC, we tested the standard on real data while it was still being agreed
-- Field teams run the same checks as HQ, so fewer round trips
+- Field teams run the same checks as HQ, so there are fewer round trips
 - Reaching staff on the ground who don't use git or Python was a priority from day one
 
 Element 84's STAC retrospective says a standard earns its authority through use, and warns against "if you build it, they will come". This audience has seen it work with STAC, GeoParquet and COG.
@@ -203,7 +203,7 @@ The skills are optional. They open the CLI up to colleagues who are comfortable 
 - We converted our COD-AB catalog to a Portolan catalog to test against, then ran every dataset from raw to cleaned
 - The hard algorithmic work happens in Python, then ports to JS with the UI added on top, so both stay at feature parity
 - Field teams get the same tools HQ uses, in a browser with nothing to install
-- Files stay on the local machine, with no uploads, which is crucial in low-bandwidth settings
+- Files stay on the local machine, so nothing has to be uploaded over a slow connection
 
 Some partners don't have Python or an AI subscription, and some can't install software at all. The browser app is a static site with no server, built with Astro, Svelte and MapLibre. Most of the work went into making the UI easy to use.
 
