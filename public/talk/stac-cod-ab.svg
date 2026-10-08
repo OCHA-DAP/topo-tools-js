@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" font-family="Roboto, system-ui, sans-serif" font-size="26" text-anchor="middle">
+<defs><marker id="h" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#5f6b6b"/></marker></defs>
+<g font-size="36" font-weight="600" fill="#222"><text x="210" y="45">STAC</text><text x="790" y="45">COD-AB</text></g>
+<g fill="#e9f5f1"><rect x="20" y="80" width="380" height="110" rx="10"/><rect x="20" y="215" width="380" height="110" rx="10"/><rect x="20" y="350" width="380" height="110" rx="10"/></g>
+<g fill="#1e795f"><rect x="600" y="80" width="380" height="110" rx="10"/><rect x="600" y="215" width="380" height="110" rx="10"/><rect x="600" y="350" width="380" height="110" rx="10"/></g>
+<g fill="#222"><text x="210" y="145">Spec</text><text x="210" y="280">PySTAC, STAC Browser</text><text x="210" y="415">stac-validator</text></g>
+<g fill="#fff"><text x="790" y="145">P-code standard</text><text x="790" y="280">CLI, web app</text><text x="790" y="415">validate</text></g>
+<g fill="#5f6b6b" font-size="22"><text x="500" y="125">standard</text><text x="500" y="260">tools</text><text x="500" y="395">checks</text></g>
+<g stroke="#5f6b6b" stroke-width="3" marker-end="url(#h)"><path d="M 420 145 H 580"/><path d="M 420 280 H 580"/><path d="M 420 415 H 580"/></g>
+</svg>
