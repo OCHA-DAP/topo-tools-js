@@ -1,5 +1,6 @@
 ---
 import { explorerViews } from "$lib/talk/explorer";
+import { steps } from "$lib/steps";
 import { tools } from "$lib/tools";
 import Layout from "../layouts/Layout.astro";
 import * as intro from "$lib/talk/intro.md";
@@ -16,22 +17,17 @@ const toSlides = async (md: typeof intro) =>
     .map((html) => html.trim())
     .filter(Boolean);
 
-// The main tool of each step on the landing page, in pipeline order.
-const mainTools = [
-  "schema-map",
-  "topo-clean",
-  "edge-match",
-  "code-update",
-  "name-clean",
-  "package",
-];
-const demos = mainTools
-  .map((slug) => tools.find((t) => t.slug === slug))
+const demos = steps
+  .map((s) => tools.find((t) => t.slug === s.slug))
   .filter((t) => t?.demo)
   .map((t) => ({ ...t!, href: `${base}${t!.slug}?${new URLSearchParams(t!.demo)}` }));
 
-// A slide holding this comment gets the cycling boundary map in its place.
+// A slide holding one of these comments gets the cycling boundary map, the six-step diagram or the DuckDB diagram in its place.
 const EXPLORER_MARKER = "<!-- explorer -->";
+const STEPS_MARKER = "<!-- steps -->";
+const GLUE_MARKER = "<!-- duckdb -->";
+// A slide holding this comment keeps its image full width with the bullets underneath.
+const WIDE_MARKER = "<!-- wide -->";
 
 const before = await toSlides(intro);
 const after = await toSlides(outro);
@@ -59,8 +55,46 @@ const after = await toSlides(outro);
             </figure>
             <Fragment set:html={html.split(EXPLORER_MARKER)[1]} />
           </section>
+        ) : html.includes(STEPS_MARKER) ? (
+          <section class="slide">
+            <Fragment set:html={html.split(STEPS_MARKER)[0]} />
+            <ol class="pipeline">
+              {steps.map((s) => (
+                <li>
+                  <span class="num">{s.n}</span>
+                  <strong>{s.title}</strong>
+                  <span class="brief">{s.brief}</span>
+                </li>
+              ))}
+            </ol>
+            <Fragment set:html={html.split(STEPS_MARKER)[1]} />
+          </section>
+        ) : html.includes(GLUE_MARKER) ? (
+          <section class="slide">
+            <Fragment set:html={html.split(GLUE_MARKER)[0]} />
+            <div class="glue">
+              <div>
+                <strong>Python CLI</strong>
+                <span>DuckDB</span>
+              </div>
+              <div class="core">
+                <strong>Spatial SQL</strong>
+                <span>DuckDB</span>
+              </div>
+              <div>
+                <strong>Web app</strong>
+                <span>DuckDB-WASM</span>
+              </div>
+            </div>
+            <Fragment set:html={html.split(GLUE_MARKER)[1]} />
+          </section>
         ) : (
-          <section class:list={["slide", { title: i === 0 }]}>
+          <section
+            class:list={[
+              "slide",
+              { title: i === 0 || html.startsWith("<h1"), wide: html.includes(WIDE_MARKER) },
+            ]}
+          >
             <Fragment set:html={html} />
             {i === 0 && (
               <div class="logos">
@@ -113,7 +147,7 @@ const after = await toSlides(outro);
       ? startBoundaryLoop(
           explorer!.querySelector(".boundary-map")!,
           explorer!.querySelector("figcaption")!,
-          2500,
+          1500,
         )
       : undefined;
   };
@@ -365,6 +399,105 @@ const after = await toSlides(outro);
     border-radius: var(--hdx-radius-md);
   }
 
+  .pipeline {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: auto auto 1fr;
+    column-gap: 1.5rem;
+    list-style: none;
+    margin: 0.5rem 0 1rem;
+    padding: 0;
+  }
+  .pipeline li {
+    position: relative;
+    display: grid;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+    row-gap: 0.4rem;
+    min-height: 11rem;
+    padding: 0.8rem;
+    font-size: 0.8em;
+    border-top: 4px solid var(--hdx-brand-6);
+    border-radius: var(--hdx-radius-md);
+    background: var(--hdx-brand-05);
+  }
+  .pipeline li + li {
+    margin-top: 0;
+  }
+  .pipeline .num {
+    font-family: var(--hdx-font-display);
+    font-size: 2.6em;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--hdx-brand-6);
+  }
+  .pipeline strong {
+    line-height: 1.2;
+  }
+  .pipeline .brief {
+    font-size: 0.85em;
+    line-height: 1.35;
+    color: var(--hdx-neutral-7);
+  }
+  .pipeline li:not(:last-child)::after {
+    content: "›";
+    position: absolute;
+    top: 50%;
+    right: -1.5rem;
+    width: 1.5rem;
+    transform: translateY(-50%);
+    text-align: center;
+    font-size: 1.6em;
+    color: var(--hdx-brand-6);
+  }
+  .glue {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    column-gap: 3rem;
+    margin: 0.5rem 0 1.5rem;
+  }
+  .glue > div {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 1rem;
+    font-size: 0.8em;
+    border-top: 4px solid var(--hdx-brand-6);
+    border-radius: var(--hdx-radius-md);
+    background: var(--hdx-brand-05);
+  }
+  .glue span {
+    color: var(--hdx-neutral-7);
+  }
+  .glue .core {
+    justify-content: center;
+    text-align: center;
+    color: white;
+    background: var(--hdx-brand-6);
+  }
+  .glue .core strong {
+    font-family: var(--hdx-font-display);
+    font-size: 1.4em;
+  }
+  .glue .core span {
+    color: white;
+  }
+  .glue .core::before,
+  .glue .core::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    width: 3rem;
+    border-top: 2px solid var(--hdx-brand-6);
+  }
+  .glue .core::before {
+    right: 100%;
+  }
+  .glue .core::after {
+    left: 100%;
+  }
+
   .explorer figure {
     margin: 0;
   }
@@ -406,6 +539,35 @@ const after = await toSlides(outro);
   }
   :global(body.present) .slide :global(p:not(:has(> img))) {
     display: none;
+  }
+  :global(body.present) .slide :global(p > img) {
+    display: block;
+    width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+  }
+  :global(body.present) .slide.current:not(.wide):has(:global(p > img)):has(:global(ul)) {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    align-content: center;
+    align-items: center;
+    column-gap: 4vw;
+  }
+  :global(body.present) .slide:has(:global(p > img)) :global(h2) {
+    grid-column: 1 / -1;
+  }
+  :global(body.present) .slide:has(:global(p > img)) :global(ul) {
+    font-size: 0.9em;
+  }
+  :global(body.present) .slide.wide :global(ul) {
+    margin-top: 2vh;
+  }
+  :global(body.present) .slide.wide :global(p > img) {
+    max-height: 46vh;
+  }
+  :global(body.present) .slide :global(p:has(> img)) {
+    margin: 0;
+    max-width: none;
   }
   :global(body.present) .logos {
     position: absolute;
@@ -449,8 +611,13 @@ const after = await toSlides(outro);
   :global(body.present) .slide :global(h3) {
     font-size: 1.1em;
   }
-  :global(body.present) .slide :global(ul),
-  :global(body.present) .slide :global(table) {
+  :global(body.present) .slide :global(ul) {
     font-size: 1.1em;
+  }
+  :global(body.present) .slide :global(table) {
+    font-size: 0.97em;
+  }
+  :global(body.present) .slide :global(td) {
+    padding-block: 0.3em;
   }
 </style>
