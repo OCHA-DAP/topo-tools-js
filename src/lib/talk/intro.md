@@ -20,7 +20,7 @@ This page is both the slides from the talk and a standalone introduction to the 
 
 ![Cameroon's COD-AB at three levels, 10, 58 and 360 units, with one unit highlighted at each: Centre (CM002), Mbam-et-Kim (CM002004) and Yoko (CM002004005)](/talk/cmr-admin-levels.svg)
 
-- Admin boundaries for a common operational picture, sourced from national authorities when available
+- Admin boundaries form a common operational picture of humanitarian activities, sourced from national authorities if possible
 - P-codes: a stable code for every unit, down to the lowest level available
 - Maintained by OCHA for the countries where it operates
 
@@ -83,8 +83,8 @@ People in need are counted by district, against a baseline population for that d
 
 ![World map with a dot in each of the 40 countries where OCHA has a country office, regional office or humanitarian advisory team](/talk/ocha-presence.svg)
 
-- OCHA, WFP, UNICEF, UNHCR and IOM each maintain one, and so do FAO, the World Bank and others
-- Their field presence overlaps in some countries, and in others only one agency is there
+- OCHA, WFP, UNICEF, UNHCR and IOM each maintain one, and so do FAO, the World Bank and others, often for internal enterprise systems
+- Their field presence is complementary: they overlap in some countries, and in others only one agency is there
 
 Each dot is a country where OCHA has a country office, a regional office or a humanitarian advisory team. That's where OCHA has people with local knowledge of the boundaries.
 
@@ -186,11 +186,11 @@ Each step is DuckDB spatial SQL, with GeoParquet between steps, so any intermedi
 
 ## Building the CLI: tools, then docs, then skills
 
-![Three stacked layers: Tools at the base (CLI commands, no AI needed), Docs on top (how to use the CLI), and an optional Skills layer on top of that (Claude Code drives the CLI)](/talk/tools-docs-skills.svg)
+![Three stacked layers: Tools at the base (institutional knowledge, made deterministic), Docs on top (how to use the CLI), and an optional Skills layer on top of that (agents drive the CLI)](/talk/tools-docs-skills.svg)
 
-- The CLI commands came first, and each one runs on its own
+- The CLI commands came first: institutional knowledge made deterministic
 - Docs came next: goal-oriented Diátaxis how-to guides, one per step, chained from raw data to release
-- Skills came last, so Claude Code can follow the docs and run the CLI
+- Skills came last, so agents can follow the docs and run the CLI
 
 The skills are optional. They open the CLI up to colleagues who are comfortable with data but aren't software developers. Our Field Information Services team works this way in VS Code on Windows.
 
@@ -201,9 +201,9 @@ The skills are optional. They open the CLI up to colleagues who are comfortable 
 ![A terminal running topo-tools topo-clean on admin2.parquet with the Python CLI on DuckDB, and an arrow labelled same SQL to a browser window with the same file in a drop zone, the web app on DuckDB-WASM](/talk/cli-to-browser.svg)
 
 - We converted our COD-AB catalog to a Portolan catalog to test against, then ran every dataset from raw to cleaned
-- Topology cleaning: from weeks by hand to minutes
-- DuckDB-WASM runs the same SQL, with nothing to install
-- Files stay on the local machine
+- The hard algorithmic work happens in Python, then ports to JS with the UI added on top, so both stay at feature parity
+- Field teams get the same tools HQ uses, in a browser with nothing to install
+- Files stay on the local machine, with no uploads, which is crucial in low-bandwidth settings
 
 Some partners don't have Python or an AI subscription, and some can't install software at all. The browser app is a static site with no server, built with Astro, Svelte and MapLibre. Most of the work went into making the UI easy to use.
 
