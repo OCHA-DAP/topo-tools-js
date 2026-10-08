@@ -66,7 +66,7 @@ jobs:
                   description: $description,
                   source: {
                     source: "archive",
-                    url: "https://topo-tools.org/topo-tools-plugin.zip",
+                    url: "https://ocha-dap.github.io/topo-tools-js/topo-tools-plugin.zip",
                     sha256: $sha256
                   }
                 }
